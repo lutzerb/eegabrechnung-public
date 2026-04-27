@@ -1,0 +1,38 @@
+name: Mirror to Public Repo
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "publish" to confirm'
+        required: true
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    if: github.event.inputs.confirm == 'publish'
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Push squashed snapshot to public repo
+        env:
+          DEPLOY_KEY_B64: ${{ secrets.PUBLIC_REPO_DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$DEPLOY_KEY_B64" | base64 -d > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          export GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
+
+          git config user.email "actions@github.com"
+          git config user.name "GitHub Actions"
+
+          git checkout --orphan public-release
+          git add -A
+          git commit -m "Release $(date +'%Y-%m-%d')"
+
+          git remote add public git@github.com:lutzerb/eegabrechnung-public.git
+          git push public public-release:main --force

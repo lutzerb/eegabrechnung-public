@@ -1,0 +1,2310 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xd:schema xmlns:_="urn:iso:std:iso:20022:tech:xsd:pain.008.001.08" xmlns:doc="AT-Documentation" xmlns:xd="http://www.w3.org/2001/XMLSchema" xmlns:xml="http://www.w3.org/XML/1998/namespace" xmlns:vc="http://www.w3.org/2007/XMLSchema-versioning" targetNamespace="urn:iso:std:iso:20022:tech:xsd:pain.008.001.08" elementFormDefault="qualified" vc:minVersion="1.1">
+	<xd:annotation>
+		<xd:documentation>
+			<doc:source>
+				<doc:line>PSA Payment Services Austria</doc:line>
+				<doc:line>Edited by Hendrik Muus</doc:line>
+			</doc:source>
+			<doc:useCase>
+				<doc:line>Definition for validation according SEPA RB 2023 for use in Austria</doc:line>
+				<doc:line>SEPA Direct Debit; Core and B2B</doc:line>
+			</doc:useCase>
+			<doc:changeLog>
+				<doc:date on="2024-04-04">
+					<doc:line>correct pattern of ISODateTime</doc:line>
+					<doc:line>Release as Version 4</doc:line>
+				</doc:date>
+				<doc:date on="2023-10-18">
+					<doc:line>correct pattern of ISODateTime</doc:line>
+					<doc:line>Release as Version 3</doc:line>
+				</doc:date>
+				<doc:date on="2023-06-23">
+					<doc:line>insert UETR under CstmrDrctDbtInitn/PmtInf/DrctDbtTxInf/PmtId</doc:line>
+					<doc:line>Release as Version 2</doc:line>
+				</doc:date>
+				<doc:date on="2023-02-13">
+					<doc:line>initial release with redefinition</doc:line>
+					<doc:line>new structure</doc:line>
+					<doc:line>use schema definition 1.1 to allow asserts</doc:line>
+					<doc:line>former BIC now is named BICFI</doc:line>
+					<doc:line>former BICOrBEI now is named AnyBIC</doc:line>
+					<doc:line>insert asserts at various levels to ensure / enable more detailed validation</doc:line>
+					<doc:line>shift old EPC attributes to xml:old_id and place new EPC attributes into id</doc:line>
+					<doc:line>remove PostalAddress from Creditor (old AT-05 new AT-E004)</doc:line>
+					<doc:line>Release as Version 1</doc:line>
+				</doc:date>
+			</doc:changeLog>
+		</xd:documentation>
+	</xd:annotation>
+	<!-- Include code list file -->
+	<!--  ********************** start replace include node with copy of type definitions of schema to get stand-alone schema  -->
+	<xd:include schemaLocation="pain.008.codelists.xsd"/>
+	<!--  ********************** end replace include node with copy of type definitions of schema to get stand-alone schema  -->
+	<!-- Redefinition through deriving types by restriction and added documentation -->
+	<xd:redefine schemaLocation="pain.008.001.08.xsd">
+		<!-- root element type -->
+		<xd:complexType name="Document">
+			<xd:complexContent>
+				<xd:restriction base="_:Document">
+					<xd:sequence>
+						<xd:element name="CstmrDrctDbtInitn" type="_:CustomerDirectDebitInitiationV08">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Lastschriftsnachricht.
+
+Diese Version definiert die Beschränkungen der ISO-Struktur basierend auf den ImplementationRecommendations des EPC für die Verwendung in Österreich</xd:documentation>
+								<xd:documentation xml:lang="en">Direct debit message.
+
+This version defines the restrictions of the ISO structure based on ImplementationRecommendations of EPC for use in Austria</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<!-- complex types with simple content -->
+		<xd:complexType name="ActiveOrHistoricCurrencyAndAmount">
+			<xd:simpleContent>
+				<xd:restriction base="_:ActiveOrHistoricCurrencyAndAmount">
+					<xd:annotation>
+						<xd:documentation xml:lang="de">Begrenzung der Länge und Darstellung des Einzelbetrags</xd:documentation>
+						<xd:documentation xml:lang="en">Limitation of length and representation of transaction amount</xd:documentation>
+					</xd:annotation>
+					<xd:minInclusive value="0.01"/>
+					<xd:maxInclusive value="999999999.99"/>
+					<xd:fractionDigits value="2"/>
+					<xd:totalDigits value="11"/>
+					<xd:attribute name="Ccy" type="_:ActiveOrHistoricCurrencyCode_TX" use="required"/>
+				</xd:restriction>
+			</xd:simpleContent>
+		</xd:complexType>
+		<!-- complex types with complex content -->
+		<xd:complexType name="AmendmentInformationDetails13">
+			<xd:complexContent>
+				<xd:restriction base="_:AmendmentInformationDetails13">
+					<xd:sequence>
+						<xd:annotation>
+							<xd:documentation xml:lang="de">MINDESTENS EIN FOLGE-ELEMENT</xd:documentation>
+							<xd:documentation xml:lang="en">AT LEAST ONE SUBSEQUENT ELEMENT</xd:documentation>
+						</xd:annotation>
+						<xd:element name="OrgnlMndtId" type="_:Max35Text_REF" id="AT-M005" minOccurs="0" xml:old_id="AT-19">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Ursprüngliche Mandatsidentifikation.
+
+Im Falle einer Änderung der Mandatsidentifikation</xd:documentation>
+								<xd:documentation xml:lang="en">Original mandate identification.
+
+In case of change of mandate identification</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="OrgnlCdtrSchmeId" type="_:PartyIdentification135_OrgnlCdtrSchemeId" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Ursprüngliche Identifikation und/oder ursprünglicher Name des Einziehers.
+
+Im Falle einer Änderung von Identifikation und/oder Name des Einziehers</xd:documentation>
+								<xd:documentation xml:lang="en">Original identification and/or name of drawer.
+
+In case of change of drawer identification and/or name</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="OrgnlDbtrAcct" type="_:CashAccount38_Amdmnt" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Ursprüngliches Konto des Bezogenen.
+
+Siehe auch OrgnlDbtrAgt.
+Grundsätzlich mit Othr/Id mit SMNDA, im Falle des gleichen Instituts mit IBAN erlaubt</xd:documentation>
+								<xd:documentation xml:lang="en">Original account of drawee.
+
+See also OrgnlDbtrAgt.
+In principle with Othr/Id with SMNDA, in case of same bank allowed with IBAN</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="OrgnlDbtrAgt" type="_:BranchAndFinancialInstitutionIdentification6_Amdmnt" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Ursprüngliches Institut des Bezogenen.
+
+Siehe auch OrgnlDbtrAcct.
+Nur im Falle des gleichen Instituts mit BIC erlaubt</xd:documentation>
+								<xd:documentation xml:lang="en">Original financial institution of drawee.
+
+See also OrgnlDbtrAcct.
+Only in case of same bank allowed with BIC</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+					<xd:assert test="count(*) gt 0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Mindestens 1 Folgeelement</xd:documentation>
+							<xd:documentation xml:lang="en">At least 1 consequent element</xd:documentation>
+						</xd:annotation>
+					</xd:assert>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="CategoryPurpose1Choice">
+			<xd:complexContent>
+				<xd:restriction base="_:CategoryPurpose1Choice">
+					<xd:choice>
+						<xd:element name="Cd" type="_:ISO_ExternalCategoryPurpose1Code">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Verarbeitung.
+
+Spezifischer Kode zur Verarbeitungssteuerung beim empfangenden Institut.
+Siehe externe Codeliste</xd:documentation>
+								<xd:documentation xml:lang="en">Processing.
+
+Specific code for processing identification at receiving institution.
+See external code list</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="Prtry" type="_:Max35Text_REF">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Verarbeitung.
+
+Spezifischer Kode zur Verarbeitungssteuerung beim empfangenden Institut</xd:documentation>
+								<xd:documentation xml:lang="en">Processing.
+
+Specific code for processing identification at receiving institution</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:choice>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="CreditorReferenceInformation2">
+			<xd:complexContent>
+				<xd:restriction base="_:CreditorReferenceInformation2">
+					<xd:sequence>
+						<xd:element name="Tp" type="_:CreditorReferenceType2">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Typ und Herkunft der Referenz</xd:documentation>
+								<xd:documentation xml:lang="en">Type and issuer of reference</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="Ref" type="_:Max35Text_REF">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Lastschriftreferenz, Bezogenenreferenz</xd:documentation>
+								<xd:documentation xml:lang="en">Payment/Debit reference, debtor's reference.</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="CreditorReferenceType1Choice">
+			<xd:complexContent>
+				<xd:restriction base="_:CreditorReferenceType1Choice">
+					<xd:choice>
+						<xd:element name="Cd" type="_:DocumentType3Code">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Kodierter Referenztyp.
+
+Einzig verfügbarer Wert ist SCOR</xd:documentation>
+								<xd:documentation xml:lang="en">Coded reference type.
+
+Only available value is SCOR</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:choice>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="CreditorReferenceType2">
+			<xd:complexContent>
+				<xd:restriction base="_:CreditorReferenceType2">
+					<xd:sequence>
+						<xd:element name="CdOrPrtry" type="_:CreditorReferenceType1Choice">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Codetyp</xd:documentation>
+								<xd:documentation xml:lang="en">Code type</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="Issr" type="_:Max35Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Referenz vergebende Organisation
+
+Wenn die Referenz eine nach ISO 11649 strukturierte Referenz ist ("RF"CheckDigits"Reference"), dann soll "ISO" als Herausgeber genannt werden</xd:documentation>
+								<xd:documentation xml:lang="en">Reference assigning organisation
+
+If the reference is an ISO 11649 structured reference ("RF"CheckDigits"Reference"), then "ISO" shall be used as issuer</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="CustomerDirectDebitInitiationV08">
+			<xd:complexContent>
+				<xd:restriction base="_:CustomerDirectDebitInitiationV08">
+					<xd:sequence>
+						<xd:element name="GrpHdr" type="_:GroupHeader83">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Nachrichtenkopf.
+
+Grundlegende Informationen zur übermittelten Datei</xd:documentation>
+								<xd:documentation xml:lang="en">Message header.
+
+Basic information on transmitted file</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="PmtInf" type="_:PaymentInstruction29" maxOccurs="unbounded">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Bestände.
+
+Maximal 9.999 Bestände.
+Größere Anzahl kann nicht verarbeitet werden und die gesamte Datei wird zurückgewiesen</xd:documentation>
+								<xd:documentation xml:lang="en">Batches.
+
+Restricted to 9.999 batches.
+Larger count can not be processed and complete file will be rejected</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+					<xd:assert test="xd:integer(_:GrpHdr/_:NbOfTxs) eq sum(_:PmtInf/xd:integer(_:NbOfTxs))">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Anzahl der Transaktionen in der gesamten Datei</xd:documentation>
+							<xd:documentation xml:lang="en">Count of transactions in entire message</xd:documentation>
+						</xd:annotation>
+					</xd:assert>
+					<xd:assert test="_:GrpHdr/_:CtrlSum eq sum(_:PmtInf/_:CtrlSum)">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Arithmetische Summe der Transaktionen in der gesamten Datei</xd:documentation>
+							<xd:documentation xml:lang="en">Arithmetic sum of transactions in entire message</xd:documentation>
+						</xd:annotation>
+					</xd:assert>
+					<xd:assert test="count(_:PmtInf/_:PmtInfId) eq count(distinct-values(_:PmtInf/_:PmtInfId))">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Eindeutige Bestandsnummern</xd:documentation>
+							<xd:documentation xml:lang="en">Unique batch identifications</xd:documentation>
+						</xd:annotation>
+					</xd:assert>
+					<xd:assert test="count(_:PmtInf) lt 10000">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Maximale Anzahl Bestände in Nachricht</xd:documentation>
+							<xd:documentation xml:lang="en">Maximum batch count in message</xd:documentation>
+						</xd:annotation>
+					</xd:assert>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="DateAndPlaceOfBirth1">
+			<xd:complexContent>
+				<xd:restriction base="_:DateAndPlaceOfBirth1">
+					<xd:sequence>
+						<xd:element name="BirthDt" type="_:ISODate">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Geburtsdatum</xd:documentation>
+								<xd:documentation xml:lang="en">Date of birth</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="PrvcOfBirth" type="_:Max35Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Geburtsprovinz</xd:documentation>
+								<xd:documentation xml:lang="en">Province of birth</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="CityOfBirth" type="_:Max35Text">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Geburtsstadt</xd:documentation>
+								<xd:documentation xml:lang="en">City of birth</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="CtryOfBirth" type="_:CountryCode">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Geburtsland</xd:documentation>
+								<xd:documentation xml:lang="en">Country of birth</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="DirectDebitTransaction10">
+			<xd:complexContent>
+				<xd:restriction base="_:DirectDebitTransaction10">
+					<xd:sequence>
+						<xd:element name="MndtRltdInf" type="_:MandateRelatedInformation14">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Mandatsbezogene Informationen</xd:documentation>
+								<xd:documentation xml:lang="en">Mandate related information</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="CdtrSchmeId" type="_:PartyIdentification135_CdtrSchmeId" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Kreditorenidentifikation
+
+Die Kreditorenidentifikation muss entweder hier angegeben werden (und gilt dann nur für diese Lastschrift) oder auf der Bestandsebene (und gilt dann für alle Lastschriften des Bestands).
+Gleichzeitige Angabe nicht gestattet</xd:documentation>
+								<xd:documentation xml:lang="en">Creditor identification
+
+The creditor identification needs to be populated either at this position (and is than valid just for this single debit) or at batch level (and is than valid for all debits of the batch).
+Mutually exclusive</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="DirectDebitTransactionInformation23">
+			<xd:complexContent>
+				<xd:restriction base="_:DirectDebitTransactionInformation23">
+					<xd:sequence>
+						<xd:element name="PmtId" type="_:PaymentIdentification6">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Referenzen des Auftragggebers</xd:documentation>
+								<xd:documentation xml:lang="en">Initiator's references</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="PmtTpInf" type="_:PaymentTypeInformation29_Single" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Einzelverarbeitung.
+
+Diese Struktur existiert ebenfalls auf Bestandsebene. EINE DIESER STRUKTUREN MUSS VERWENDET WERDEN! Gleichzeitige Nennung ist nicht erlaubt. DIE STRUKTUR AUF EINZELUMSATZEBENE VERHINDERT DIE ANWENDUNG VON SPEZIELLEN SERVICES ZWISCHEN AUFTRAGGEBER UND AUFTRAGGEBERBANK! DIESE KÖNNEN NUR BEI VERWENDUNG DER BESTANDSEBENE ANGEWENDET WERDEN! Siehe Servicelevel, LocalInstrument und CategoryPurpose.
+
+WIRD DIESE STRUKTUR AUF EINZELUMSATZEBENE VERWENDET, MÜSSEN ALLE LOCALINSTRUMENT/CODE DEN GLEICHEN WERT TRAGEN, MISCHUNG UNTERSCHIEDLICHER WERTE IST UNZULÄSSIG.
+
+Von der Verwendung dieses Elements wird dringend abgeraten</xd:documentation>
+								<xd:documentation xml:lang="en">Single processing.
+
+This structure is also available on batch level. ONE OF THESE STRUCTURES MUST BE POPULATED! Concurrent population is not permitted. THE POPULATION ON SINGLE TRANSACTION LEVEL INHIBITS SPECIAL SERVICES OFFERED BY INITIATORS BANK TO INITIATOR! THESE SERVICES CAN ONLY BE APPLIED WHEN POPULATION IS MADE ON BATCH LEVEL! See Servicelevel, LocalInstrument and CategoryPurpose.
+
+WHEN POPULATION THIS STRUCTURE ON SINGLE TRANSACTION LEVEL ALL LOCALINSTRUMENT/CODE NEEDS TO CARRY THE IDENT VALUE, MIXING VARIOUS VALUES IS INVALID.
+
+Element is strongly discouraged</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="InstdAmt" type="_:ActiveOrHistoricCurrencyAndAmount" id="AT-T002" xml:old_id="AT-06">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Einzelbetrag.
+
+Begrenzt auf maximal 999999999.99 und minimal 0.01.
+Punkt als Dezimalzeichen.
+Keine negativen Werte</xd:documentation>
+								<xd:documentation xml:lang="en">Single amount.
+
+Restricted to a maximum 999999999.99 and a minimum of 0.01.
+Decimal sign is the dot.
+No negative values</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="ChrgBr" type="_:ChargeBearerType1Code" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Spesenoption.
+
+Einzig verfügbarer Wert ist SLEV</xd:documentation>
+								<xd:documentation xml:lang="en">Charge option.
+
+Only available value is SLEV</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="DrctDbtTx" type="_:DirectDebitTransaction10">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Mandatsbezogene Informationen</xd:documentation>
+								<xd:documentation xml:lang="en">Mandate related information</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="UltmtCdtr" type="_:PartyIdentification135_UltmtCdtr" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Referenzpartei des Kontoinhabers / Auftraggeber, d.h. üblicherweise der eigentliche Schuldner.
+
+Gleichzeitige Nennung auf Bestandsebene ist nicht erlaubt</xd:documentation>
+								<xd:documentation xml:lang="en">Reference party of account owner / principal, i.e. habitually the actual debtor.
+
+Concurrent quoting on batch level is not allowed</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="DbtrAgt" type="_:BranchAndFinancialInstitutionIdentification6_Dbtr">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Kontoführendes Institut des Kontoinhabers / Bezogenen</xd:documentation>
+								<xd:documentation xml:lang="en">Financial institution servicing the account owner / debtor</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="Dbtr" type="_:PartyIdentification135_Dbtr">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Kontoinhaber / Bezogener</xd:documentation>
+								<xd:documentation xml:lang="en">Account owner / debited principal</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="DbtrAcct" type="_:CashAccount38_Dbtr" id="AT-D001" xml:old_id="AT-07">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Kontonummer des Kontoinhabers / Bezogenen</xd:documentation>
+								<xd:documentation xml:lang="en">Account number of account owner / debited principal</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="UltmtDbtr" type="_:PartyIdentification135_UltmtDbtr" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Referenzpartei des Kontoinhabers / Bezogenen, d.h. üblicherweise der eigentliche Schuldner</xd:documentation>
+								<xd:documentation xml:lang="en">Reference party of account owner / debited principal, i.e. habitually the actual debtor</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="Purp" type="_:Purpose2Choice" id="AT-T007" minOccurs="0" xml:old_id="AT-58">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Kodierter Zahlungsgrund.
+
+Dieser Kode identifiziert einen Zahlungsgrund für den Zahler, kann aber auch speziellen Services bei den Banken dienen</xd:documentation>
+								<xd:documentation xml:lang="en">Coded payment reason.
+
+This code identifies a payment purpose or reason for the debtor, but may triggers special services of banks too</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="RmtInf" type="_:RemittanceInformation16" id="AT-T012" minOccurs="0" xml:old_id="AT-22">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Verwendungszweck / Bezogenenreferenz</xd:documentation>
+								<xd:documentation xml:lang="en">Remittance information / debtor reference</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="GenericPersonIdentification1">
+			<xd:complexContent>
+				<xd:restriction base="_:GenericPersonIdentification1">
+					<xd:sequence>
+						<xd:element name="Id" type="_:Max35Text">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Identifikation der Person</xd:documentation>
+								<xd:documentation xml:lang="en">Identification of person</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="SchmeNm" type="_:PersonIdentificationSchemeName1Choice" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Typ der Identifikation</xd:documentation>
+								<xd:documentation xml:lang="en">Type of identification</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="Issr" type="_:Max35Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Identifikation vergebende Organisation</xd:documentation>
+								<xd:documentation xml:lang="en">Identification assigning organisation</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="GroupHeader83">
+			<xd:complexContent>
+				<xd:restriction base="_:GroupHeader83">
+					<xd:sequence>
+						<xd:element name="MsgId" type="_:Max35Text_REF">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Technische Referenz der Übermittlungsdatei.
+
+Eindeutigkeit über mindestens 30 Tage ist herzustellen.
+Beschränken Sie sich für einen sicheren Ablauf auf Buchstaben, Ziffern und Bindestrich.
+Eindeutigkeit erreicht man zB einfach über die Kombination des Datums mit einem Tageszähler</xd:documentation>
+								<xd:documentation xml:lang="en">Technical reference of transmitted file.
+
+Ensure uniqueness for at least 30 days.
+For save processing limit yourselves to digits, letters and minus sign.
+Uniqueness is simple achievable e.g. with combining the date with a daily counter</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="CreDtTm" type="_:ISODateTime">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Dateierzeugungsdatum und -zeit
+
+Lokale Zeit mit Zeitoffset oder UTC</xd:documentation>
+								<xd:documentation xml:lang="en">File creation date and time
+
+Local time with time offset or UTC</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="NbOfTxs" type="_:Max15NumericText">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Anzahl der Einzeltransaktionen der Datei.
+
+Maximal 999.999 Transaktionen.
+Mehr als 100.000 Umsätze bedürfen der vorherigen Abstimmung</xd:documentation>
+								<xd:documentation xml:lang="en">Count of single transactions of file.
+
+Maximum 999.999 transactions.
+More than 100.000 transactions need preliminary agreement</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="CtrlSum" type="_:DecimalNumber">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Summe der Einzeltransaktionen der Datei.
+
+Ein Wert zwischen 0.01 und 999999999999.99.
+Punkt als Dezimalzeichen.
+Keine negativen Werte</xd:documentation>
+								<xd:documentation xml:lang="en">Sum of single transactions of file.
+
+A value between 0.01 and 999999999999.99.
+Decimal sign is the dot.
+No negative values</xd:documentation>
+								<xd:documentation>Beispiele / Examples
+-- ungültig / invalid --
+.87
+645.
+942.80352132
+00023
+000343.00
+-- gültig und empfohlen / valid and recommended --
+0.34
+74.5
+456
+3.04
+-- möglich / possible --
+10.0
+10.40
+10.00</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="InitgPty" type="_:PartyIdentification135_InitgPty">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Identifizierung des Kommunikationsberechtigten.
+
+Stimmen Sie Ihre Id mit dem empfangenden Finanzinstitut ab.
+Üblicherweise die Hauptkontonummer</xd:documentation>
+								<xd:documentation xml:lang="en">Identification of communication entitled party.
+
+Agree your Id with receiving financial institution.
+Habitually the main account number</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="LocalInstrument2Choice">
+			<xd:complexContent>
+				<xd:restriction base="_:LocalInstrument2Choice">
+					<xd:choice>
+						<xd:element name="Cd" type="_:AT_ExternalLocalInstrument1Code" id="AT-T001_B" xml:old_id="AT-20-B">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Zahlungsinstrument.
+
+[CORE]   (Basis-)Lastschrift
+[B2B]   Firmen-Lastschrift</xd:documentation>
+								<xd:documentation xml:lang="en">Payment instrument.
+
+[CORE]   (basic) debit
+[B2B]   business debit</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:choice>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="MandateRelatedInformation14">
+			<xd:complexContent>
+				<xd:restriction base="_:MandateRelatedInformation14">
+					<xd:sequence>
+						<xd:element name="MndtId" type="_:Max35Text_REF" id="AT-M001" xml:old_id="AT-01">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Mandatsidentifikation</xd:documentation>
+								<xd:documentation xml:lang="en">Mandate identification</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="DtOfSgntr" type="_:ISODate" id="AT-M008" xml:old_id="AT-25">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Unterzeichnungsdatum des Mandats</xd:documentation>
+								<xd:documentation xml:lang="en">Signing date of mandate</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="AmdmntInd" type="_:TrueFalseIndicator" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Indikator für Mandatsänderungen.
+
+"true" heißt Mandatsänderungen liegen vor, Mandatsänderung (AmdmntInfDtls) folgt.
+"false" (oder nicht gesetzt) heißt keine Mandatsänderungen, Mandatsänderung (AmdmntInfDtls) nicht vorhanden</xd:documentation>
+								<xd:documentation xml:lang="en">Indicator for mandate changes.
+
+"true" means mandate changes made, mandate change (AmdmntInfDtls) follows.
+"false" (or not set) means no mandate changes, mandate change (AmdmntInfDtls) not quoted</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="AmdmntInfDtls" type="_:AmendmentInformationDetails13" id="AT-M007" minOccurs="0" xml:old_id="AT-24">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Änderungen zum Mandat.
+
+Bedingt, dass der Indikator eine Änderung anzeigt</xd:documentation>
+								<xd:documentation xml:lang="en">Changes to mandate.
+
+Indicator must be set accordingly</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="ElctrncSgntr" type="_:Max1025Text" id="AT-M010_AT-M002_AT-M013" minOccurs="0" xml:old_id="AT-16_AT-17_AT-60">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Elektronische Signatur oder
+Mandatstyp oder
+Prüfreferenz.
+
+Im Falle eines Einzugs nach CORE ist dieses Element
+a) nicht verwendet und indiziert damit das Vorliegen eines papierhaften Mandats (Mandatstyp 'paper') oder
+b) enthält die Prüfreferenz der Debtorbank und indiziert damit das Vorliegen eines elektronischen Mandats (Mandatstyp 'e-Mandate')
+Im Falle eines Einzugs nach B2B ist dieses Element
+a) nicht verwendet und indiziert damit das Vorliegen eines papierhaften Mandats (Mandatstyp 'paper') oder
+b) enthält vereinbarte Signaturdaten</xd:documentation>
+								<xd:documentation xml:lang="en">Electronic signature or
+mandate type or
+validation reference.
+
+In case of a debit according CORE this element is
+a) not used and inherit indicates a debit based on a paper mandate (mandate type 'paper') or
+b) contains the validation reference of debtor bank and inherit indicates a debit based on an electronic mandate (mandate type 'e-Mandate')
+In case of a debit according B2B this element is
+a) not used and inherit indicates a debit based on a paper mandate (mandate type 'paper') or
+b) contains agreed signature data</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+					<xd:assert test="((((count(_:AmdmntInd) eq 0) or (xd:boolean(_:AmdmntInd) eq false())) and (count(_:AmdmntInfDtls) eq 0)) or ((xd:boolean(_:AmdmntInd) eq true()) and (count(_:AmdmntInfDtls) eq 1)))">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Wenn AmdmntInd WAHR ist, dann muss ein AmdmntInfDtls vorhanden sein</xd:documentation>
+							<xd:documentation xml:lang="en">If AmdmntInd is TRUE, then a AmdmntInfDtls must be present</xd:documentation>
+						</xd:annotation>
+					</xd:assert>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="PaymentIdentification6">
+			<xd:complexContent>
+				<xd:restriction base="_:PaymentIdentification6">
+					<xd:sequence>
+						<xd:element name="InstrId" type="_:Max35Text_REF" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Lastschrift Auftrags Nummer
+
+Dieses Element ist nur aus Kompatibilitätsgründen möglich, damit keine Ablehnung aus technischen Gründen erfolgt.
+Angabe wird ignoriert</xd:documentation>
+								<xd:documentation xml:lang="en">Debit instruction Identification
+
+This element is only possible for compatibility reasons, to avoid rejects for technical reasons.
+Information is ignored</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="EndToEndId" type="_:Max35Text_REF" id="AT-T015" xml:old_id="AT-10">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Auftraggeberreferenz.
+
+Kann im Kontoauszug zur eigenen Referenzierung zurückgegeben, daher ist Eindeutigkeit wichtig (z.B. bei Rückleitungen).
+Falls dennoch keine Referenz angegeben werden soll, mit dem Wert NOTPROVIDED zu füllen</xd:documentation>
+								<xd:documentation xml:lang="en">Initiator's reference.
+
+May be returned in account statement for reconciliation, uniqueness therefore matters (e.g. with return/reversal).
+If still no specific reference shall be provided, to be populated with the value NOTPROVIDED</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="UETR" type="_:UUIDv4Identifier" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Universelle eindeutige Identifikation der Lastschrift
+
+Dieses Element ist für zukünftige Anwendungen reserviert. Derzeit gibt es kein Finanzinstitut in Österreich, dass eine Anwendung dieses Elements anbietet.
+
+UUID nach RFC 4122 Version 4</xd:documentation>
+								<xd:documentation xml:lang="en">Debit's universally unique identifier
+
+This element is reserved for future use. Currently there is no single financial institution in Austria supporting an action on this element.
+
+UUID following RFC 4122 version 4</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="PaymentInstruction29">
+			<xd:complexContent>
+				<xd:restriction base="_:PaymentInstruction29">
+					<xd:sequence>
+						<xd:element name="PmtInfId" type="_:Max35Text_REF">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Bestandskontrollnummer.
+
+Eindeutigkeit über mindestens 1 Jahr ist herzustellen.
+Kann im Kontoauszug zur Referenzierung zurückgegeben werden.
+Das Element wird auch zur Prüfung von Doppelanlieferungen verwendet.
+Eindeutigkeit erreicht man z.B. einfach über die Kombination des Datums mit einem Tageszähler</xd:documentation>
+								<xd:documentation xml:lang="en">Batch control number.
+
+Ensure uniqueness for at least 1 year.
+Can be returned in account statement for reference purposes.
+Element is also used to check for duplicate submission.
+Uniqueness is simple achievable e.g. with combining the date with a daily counter</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="PmtMtd" type="_:PaymentMethod2Code">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Zahlungsmethode.
+
+Einzig verfügbarer Wert ist DD</xd:documentation>
+								<xd:documentation xml:lang="en">Payment method.
+
+Only available value is DD</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="BtchBookg" type="_:BatchBookingIndicator" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Sammel- oder Einzelbuchung.
+
+Berücksichtigung in Absprache mit dem beauftragten Kreditinstitut.
+Überschreibt dann die am Konto hinterlegte Standard-Buchungsmethode.
+"true" heißt Bestandsbuchung gewünscht.
+"false" heißt Einzelbuchung gewünscht</xd:documentation>
+								<xd:documentation xml:lang="en">Batch or single booking.
+
+Consideration according to agreement with the instructed financial institution.
+Then overwrites standard booking method saved at account.
+"true" means batch booking requested.
+"false" means single booking requested</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="NbOfTxs" type="_:Max15NumericText">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Anzahl der Einzeltransaktionen des Bestands.
+
+Maximal 999.999 Transaktionen.
+Mehr als 100.000 Umsätze bedürfen der vorherigen Abstimmung</xd:documentation>
+								<xd:documentation xml:lang="en">Count of single transactions of batch.
+
+Maximum 999.999 transactions.
+More than 100.000 transactions need preliminary agreement</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="CtrlSum" type="_:DecimalNumber">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Summe der Einzeltransaktionen des Bestands.
+
+Ein Wert zwischen 0.01 und 999999999999.99. Punkt als Dezimalzeichen.
+Keine negativen Werte</xd:documentation>
+								<xd:documentation xml:lang="en">Sum of single transactions of batch.
+
+A value between 0.01 and 999999999999.99. Decimal sign is the dot.
+No negative values</xd:documentation>
+								<xd:documentation>Beispiele / Examples
+-- ungültig / invalid --
+.87
+645.
+942.80352132
+00023
+000343.00
+-- gültig und empfohlen / valid and recommended --
+0.34
+74.5
+456
+3.04
+-- möglich / possible --
+10.0
+10.40
+10.00</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="PmtTpInf" type="_:PaymentTypeInformation29" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Bestandsverarbeitung.
+
+Diese Struktur existiert ebenfalls auf Einzelumsatzebene. EINE DIESER STRUKTUREN MUSS VERWENDET WERDEN! Gleichzeitige Nennung ist nicht erlaubt. DIE STRUKTUR AUF EINZELUMSATZEBENE VERHINDERT DIE ANWENDUNG VON SPEZIELLEN SERVICES ZWISCHEN AUFTRAGGEBER UND AUFTRAGGEBERBANK! DIESE KÖNNEN NUR BEI VERWENDUNG AUF DIESER EBENE ANGEWENDET WERDEN! Siehe Servicelevel, LocalInstrument und CategoryPurpose.
+
+WIRD DIESE STRUKTUR AUF EINZELUMSATZEBENE VERWENDET, MÜSSEN ALLE LOCALINSTRUMENT/CODE DEN GLEICHEN WERT TRAGEN, MISCHUNG UNTERSCHIEDLICHER WERTE IST UNZULÄSSIG.
+
+Die Verwendung dieses Elements auf dieser Ebene ist dringend angeraten
+</xd:documentation>
+								<xd:documentation xml:lang="en">Batch processing.
+
+This structure is also available on single transaction level. ONE OF THESE STRUCTURES MUST BE POPULATED! Concurrent population is not permitted. THE POPULATION ON SINGLE TRANSACTION LEVEL INHIBITS SPECIAL SERVICES OFFERED BY INITIATORS BANK TO INITIATOR! THESE SERVICES CAN ONLY BE APPLIED WHEN POPULATION IS MADE ON THIS LEVEL! See Servicelevel, LocalInstrument and CategoryPurpose.
+
+WHEN POPULATION THIS STRUCTURE ON SINGLE TRANSACTION LEVEL ALL LOCALINSTRUMENT/CODE NEEDS TO CARRY THE IDENT VALUE, MIXING VARIOUS VALUES IS INVALID.
+
+Element population on this level is strongly recommended.</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="ReqdColltnDt" type="_:ISODate" id="AT-T013" xml:old_id="AT-11">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Gewünschtes Lastschriftsdatum.
+
+Kann dieses z.B. durch Spätlieferung nicht eingehalten werden, kann ggf. eine Weiterrollung gemäß vorheriger Vereinbarung erfolgen</xd:documentation>
+								<xd:documentation xml:lang="en">Requested collection date.
+
+If this cannot be respected, e.g. on late delivery, debit may be executed later according preliminary agreement</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="Cdtr" type="_:PartyIdentification135_Cdtr">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Kontoinhaber / Auftraggeber</xd:documentation>
+								<xd:documentation xml:lang="en">Account owner / principal</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="CdtrAcct" type="_:CashAccount38_Cdtr" id="AT-C001" xml:old_id="AT-04">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Kontonummer des Kontoinhabers / Auftraggebers</xd:documentation>
+								<xd:documentation xml:lang="en">Account number of account owner / principal</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="CdtrAgt" type="_:BranchAndFinancialInstitutionIdentification6_Cdtr">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Kontoführendes Institut des Kontoinhabers / Auftraggebers</xd:documentation>
+								<xd:documentation xml:lang="en">Financial institution servicing the account owner / principal</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="UltmtCdtr" type="_:PartyIdentification135_UltmtCdtr" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Referenzpartei des Kontoinhabers / Auftraggeber, d.h. üblicherweise der eigentliche Gläubiger.
+
+Gleichzeitige Nennung auf Einzelebene ist nicht erlaubt</xd:documentation>
+								<xd:documentation xml:lang="en">Reference party of account owner / principal, i.e. habitually the actual creditor.
+
+Concurrent quoting on transaction level is not allowed</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="ChrgBr" type="_:ChargeBearerType1Code" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Spesenoption.
+
+Einzig verfügbarer Wert ist SLEV</xd:documentation>
+								<xd:documentation xml:lang="en">Charge option.
+
+Only available value is SLEV</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="CdtrSchmeId" type="_:PartyIdentification135_CdtrSchmeId" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Kreditorenidentifikation
+
+Die Kreditorenidentifikation muss entweder hier angegeben werden (und ist dann für alle einzelnen Lastschriften gleich) oder bei allen einzelnen Lastschriften (im Bereich der Mandatsdaten) und kann dann je Lastschrift wechseln.
+Gleichzeitige Angabe nicht gestattet</xd:documentation>
+								<xd:documentation xml:lang="en">Creditor identification
+
+The creditor identification needs to be populated either at this position (and is then identical for all single debits) or at all single debits (in the area of mandate data) and can differ on each debit.
+Mutually exclusive</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="DrctDbtTxInf" type="_:DirectDebitTransactionInformation23" maxOccurs="unbounded">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Einzelumsätze.
+
+Maximal 999.999 Umsätze je Bestand.
+Größere Anzahl kann nicht verarbeitet werden und die gesamte Datei wird zurückgewiesen.
+Mehr als 100.000 Umsätzen bedürfen der vorherigen Abstimmung</xd:documentation>
+								<xd:documentation xml:lang="en">Single transactions.
+
+Restricted to 999.999 transactions per batch.
+Larger count can not be processed and complete file will be rejected.
+More than 100.000 transactions need preliminary agreement</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+					<xd:assert test="if(count(_:PmtTpInf) eq 1) then (count(_:DrctDbtTxInf/_:PmtTpInf) eq 0) else (count(_:DrctDbtTxInf/_:PmtTpInf) eq count(_:DrctDbtTxInf))">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">ISO rule: Entweder ein PmtTpInf auf dieser Ebene und kein PmtTpInf auf der nächsten Ebene oder kein PmtTpInf auf dieser Ebene und alle PmtTpInf auf der nächsten Ebene</xd:documentation>
+							<xd:documentation xml:lang="en">ISO rule: Either one PmtTpInf on this level and no PmtTpInf on next level or no PmtTpInf on this level and all PmtTpInf on next level</xd:documentation>
+						</xd:annotation>
+					</xd:assert>
+					<xd:assert test="if(count(_:UltmtCdtr) eq 1) then (count(_:DrctDbtTxInf/_:UltmtCdtr) eq 0) else true()">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">ISO rule: Entweder ein UltmtCdtr auf dieser Ebene und kein UltmtCdtr auf der nächsten Ebene oder kein UltmtCdtr auf dieser Ebene und beliebige UltmtCdtr auf der nächsten Ebene</xd:documentation>
+							<xd:documentation xml:lang="en">ISO rule: Either one UltmtCdtr on this level and no UltmtCdtr on next level or no UltmtCdtr on this level and any UltmtCdtr on next level</xd:documentation>
+						</xd:annotation>
+					</xd:assert>
+					<xd:assert test="if(count(_:ChrgBr) eq 1) then (count(_:DrctDbtTxInf/_:ChrgBr) eq 0) else true()">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">ISO rule: Entweder ein ChrgBr auf dieser Ebene und kein ChrgBr auf der nächsten Ebene oder kein ChrgBr auf dieser Ebene und beliebige ChrgBr auf der nächsten Ebene</xd:documentation>
+							<xd:documentation xml:lang="en">ISO rule: Either one ChrgBr on this level and no ChrgBr on next level or no ChrgBr on this level and any ChrgBr on next level</xd:documentation>
+						</xd:annotation>
+					</xd:assert>
+					<xd:assert test="if(count(_:CdtrSchmeId) eq 1) then (count(_:DrctDbtTxInf/_:DrctDbtTx/_:CdtrSchmeId) eq 0) else (count(_:DrctDbtTxInf/_:DrctDbtTx/_:CdtrSchmeId) eq count(_:DrctDbtTxInf))">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">ISO rule: Entweder ein CdtrSchmeId auf dieser Ebene und kein CdtrSchmeId auf der nächsten Ebene oder kein CdtrSchmeId auf dieser Ebene und alle CdtrSchmeId auf der nächsten Ebene</xd:documentation>
+							<xd:documentation xml:lang="en">ISO rule: Either one CdtrSchmeId on this level and no CdtrSchmeId on next level or no CdtrSchmeId on this level and all CdtrSchmeId on next level</xd:documentation>
+						</xd:annotation>
+					</xd:assert>
+					<xd:assert test="if(count(_:PmtTpInf) eq 0) then (count(distinct-values(_:DrctDbtTxInf/_:PmtTpInf/_:LclInstrm/_:Cd)) eq 1) else true()">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Alle Lastschriften entweder CORE oder B2B, keine Mischung</xd:documentation>
+							<xd:documentation xml:lang="en">All debits either CORE or B2B, no mixture</xd:documentation>
+						</xd:annotation>
+					</xd:assert>
+					<xd:assert test="xd:integer(_:NbOfTxs) eq count(_:DrctDbtTxInf)">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Anzahl der Transaktionen im Bestand</xd:documentation>
+							<xd:documentation xml:lang="en">Count of transactions in batch</xd:documentation>
+						</xd:annotation>
+					</xd:assert>
+					<xd:assert test="_:CtrlSum eq sum(_:DrctDbtTxInf/_:InstdAmt)">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Arithmetische Summe der Transaktionen im Bestand</xd:documentation>
+							<xd:documentation xml:lang="en">Arithmetic sum of transactions in batch</xd:documentation>
+						</xd:annotation>
+					</xd:assert>
+					<xd:assert test="count(_:DrctDbtTxInf) lt 1000000">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Maximale Anzahl Transaktionen im Bestand</xd:documentation>
+							<xd:documentation xml:lang="en">Maximum count of transactions in batch</xd:documentation>
+						</xd:annotation>
+					</xd:assert>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="PaymentTypeInformation29">
+			<xd:complexContent>
+				<xd:restriction base="_:PaymentTypeInformation29">
+					<xd:sequence>
+						<xd:element name="SvcLvl" type="_:ServiceLevel8Choice" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Service Spezifikation.
+
+Wird dieses Element nicht angegeben, wird der Standardwert SEPA angenommen.</xd:documentation>
+								<xd:documentation xml:lang="en">Service specification.
+
+If this element is not quoted, the standard value SEPA is assumed.</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="LclInstrm" type="_:LocalInstrument2Choice">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Zahlungsinstrument.
+
+Unterscheidung zwischen (Basis-)Lastschrift [CORE] und Firmen-Lastschrift [B2B]</xd:documentation>
+								<xd:documentation xml:lang="en">Payment instrument.
+
+Distinction between (basic) debit [CORE] and business debit [B2B]</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="SeqTp" type="_:SequenceType3Code" id="AT-M006_Batch" xml:old_id="AT-21_Batch">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Lastschriftsart.
+
+FRST	Erster Einzug einer Serie
+RCUR	Wiederkehrender Einzug einer Serie
+FNAL	Letzter Einzug einer Serie
+OOFF	Einmaliger Einzug</xd:documentation>
+								<xd:documentation xml:lang="en">Debits sequence type.
+
+FRST	First collection of a sequence
+RCUR	Recurrent collection of a sequence
+FNAL	Last/final collection of a sequence
+OOFF	Single/one of collection</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="CtgyPurp" type="_:CategoryPurpose1Choice" id="AT-T008_Batch" minOccurs="0" xml:old_id="AT-59_Batch">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Verarbeitung.
+
+Spezifischer Code zur Verarbeitungssteuerung beim empfangenden Institut. Siehe auch Purp auf Einzelebene
+Vor der Verwendung ist mit dem empfangenden Institut eine Vereinbarung zu treffen, anderenfalls wird dies ignoriert</xd:documentation>
+								<xd:documentation xml:lang="en">Processing.
+
+Specific code for processing identification at receiving institution. See also Purp at single transaction
+Before use an agreement with receiving institution is necessary, otherwise this is ignored</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="PersonIdentificationSchemeName1Choice">
+			<xd:complexContent>
+				<xd:restriction base="_:PersonIdentificationSchemeName1Choice">
+					<xd:choice>
+						<xd:element name="Cd" type="_:ISO_ExternalPersonIdentification1Code">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Kodierte Identifikation.
+
+Kode aus Codeliste</xd:documentation>
+								<xd:documentation xml:lang="en">Coded identification.
+
+Code from code list</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="Prtry" type="_:Max35Text">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Kodierte Identifikation.
+
+Proprietärer Kode</xd:documentation>
+								<xd:documentation xml:lang="en">Coded identification.
+
+Proprietary code</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:choice>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="PostalAddress24">
+			<xd:complexContent>
+				<xd:restriction base="_:PostalAddress24">
+					<xd:sequence>
+						<xd:element name="Dept" type="_:Max70Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Abteilung</xd:documentation>
+								<xd:documentation xml:lang="en">Department</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="SubDept" type="_:Max70Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Unterabteilung</xd:documentation>
+								<xd:documentation xml:lang="en">Sub department</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="StrtNm" type="_:Max70Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Straße</xd:documentation>
+								<xd:documentation xml:lang="en">Street name</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="BldgNb" type="_:Max16Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Hausnummer</xd:documentation>
+								<xd:documentation xml:lang="en">Building number</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="BldgNm" type="_:Max35Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Gebäudename</xd:documentation>
+								<xd:documentation xml:lang="en">Building name</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="Flr" type="_:Max70Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Stockwerk</xd:documentation>
+								<xd:documentation xml:lang="en">Floor</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="PstBx" type="_:Max16Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Postfach</xd:documentation>
+								<xd:documentation xml:lang="en">Post box</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="Room" type="_:Max70Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Raum</xd:documentation>
+								<xd:documentation xml:lang="en">Room</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="PstCd" type="_:Max16Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Postleitzahl</xd:documentation>
+								<xd:documentation xml:lang="en">Post code</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="TwnNm" type="_:Max35Text">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Stadt / Ort</xd:documentation>
+								<xd:documentation xml:lang="en">Town name</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="TwnLctnNm" type="_:Max35Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Stadtteil / Ortsteil</xd:documentation>
+								<xd:documentation xml:lang="en">Town location name</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="DstrctNm" type="_:Max35Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Bezirk</xd:documentation>
+								<xd:documentation xml:lang="en">District name</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="CtrySubDvsn" type="_:Max35Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Bundesland</xd:documentation>
+								<xd:documentation xml:lang="en">Country sub division</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="Ctry" type="_:CountryCode">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Land
+
+ISO 3166 2-Buchstaben Ländercode</xd:documentation>
+								<xd:documentation xml:lang="en">Country
+
+ISO 3166 2-character country code</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="Purpose2Choice">
+			<xd:complexContent>
+				<xd:restriction base="_:Purpose2Choice">
+					<xd:choice>
+						<xd:element name="Cd" type="_:ISO_ExternalPurpose1Code">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Geschäftsfallkode.
+
+Siehe auch CtgyPurp.
+Kode aus Codeliste</xd:documentation>
+								<xd:documentation xml:lang="en">Business codes.
+
+See also CtgyPurp.
+Code from code list</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:choice>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="RemittanceInformation16">
+			<xd:complexContent>
+				<xd:restriction base="_:RemittanceInformation16">
+					<xd:sequence>
+						<xd:annotation>
+							<xd:documentation xml:lang="de">GENAU EIN FOLGE-ELEMENT</xd:documentation>
+							<xd:documentation xml:lang="en">EXACTLY ONE SUBSEQUENT ELEMENT</xd:documentation>
+						</xd:annotation>
+						<xd:element name="Ustrd" type="_:Max140Text" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Verwendungszweck Textzeile.
+							
+Eine Zeile mit maximal 140 Zeichen.
+Typische Verwendung bei Endkunden.
+Siehe Strd bei Verwendung mit Firmenkunden</xd:documentation>
+								<xd:documentation xml:lang="en">Remittance information text line.
+
+One line with maximum 140 characters.
+Typical use with customers.
+See Strd with corporates</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+						<xd:element name="Strd" type="_:StructuredRemittanceInformation16" minOccurs="0">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Verwendungszweck strukturiert: Lastschriftreferenz, Bezogenenreferenz.
+
+Alle Daten INKLUSIVE der notwendigen XML-Tags müssen in 140 Zeichen Platz finden.
+Typische Verwendung bei Firmenkunden.
+Sie Ustrd bei Verwendung mit Endkunden</xd:documentation>
+								<xd:documentation xml:lang="en">Remittance information data structure: Payment/Debit reference, debtor's reference.
+
+All data INCLUDING the necessary XML tags must fit into 140 character.
+Typical use with corporates.
+See Ustrd with customers</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+					<xd:assert test="count(*) eq 1">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Genau 1 Folgeelement</xd:documentation>
+							<xd:documentation xml:lang="en">Exactly 1 consequent element</xd:documentation>
+						</xd:annotation>
+					</xd:assert>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="ServiceLevel8Choice">
+			<xd:complexContent>
+				<xd:restriction base="_:ServiceLevel8Choice">
+					<xd:choice>
+						<xd:element name="Cd" type="_:AT_ExternalServiceLevel1Code" id="AT-T001_A" xml:old_id="AT-20-A">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Service Spezifikation.
+
+Einzig verfügbarer Wert ist SEPA</xd:documentation>
+								<xd:documentation xml:lang="en">Service specification.
+
+Only available value is SEPA</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:choice>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<xd:complexType name="StructuredRemittanceInformation16">
+			<xd:complexContent>
+				<xd:restriction base="_:StructuredRemittanceInformation16">
+					<xd:sequence>
+						<xd:element name="CdtrRefInf" type="_:CreditorReferenceInformation2">
+							<xd:annotation>
+								<xd:documentation xml:lang="de">Lastschriftreferenz, Bezogenenreferenz.
+
+Referenz des Bezogenen zur Zuordnung im System des Bezogenen.
+Siehe EndToEndId</xd:documentation>
+								<xd:documentation xml:lang="en">Payment/Debit reference, debtor's reference.
+
+Debtor's reference for reconciliation in debtor's system.
+See EndToEndId</xd:documentation>
+							</xd:annotation>
+						</xd:element>
+					</xd:sequence>
+				</xd:restriction>
+			</xd:complexContent>
+		</xd:complexType>
+		<!-- simple types -->
+		<xd:simpleType name="ChargeBearerType1Code">
+			<xd:restriction base="_:ChargeBearerType1Code">
+				<xd:enumeration value="SLEV">
+					<xd:annotation>
+						<xd:documentation xml:lang="de">Spesenoption gemäß SEPA Richtlinie</xd:documentation>
+						<xd:documentation xml:lang="en">Charge option according SEPA regulation</xd:documentation>
+					</xd:annotation>
+				</xd:enumeration>
+			</xd:restriction>
+		</xd:simpleType>
+		<xd:simpleType name="DecimalNumber">
+			<xd:restriction base="_:DecimalNumber">
+				<xd:annotation>
+					<xd:documentation xml:lang="de">Der Maximalwert der Kontrollsumme. Mehr kann eine Datei nicht beauftragen</xd:documentation>
+					<xd:documentation xml:lang="en">The maximum value of the control sum. One file cannot instruct lager values</xd:documentation>
+				</xd:annotation>
+				<xd:minInclusive value="0.01"/>
+				<xd:maxInclusive value="999999999999.99"/>
+				<xd:fractionDigits value="2"/>
+				<xd:totalDigits value="14"/>
+			</xd:restriction>
+		</xd:simpleType>
+		<xd:simpleType name="DocumentType3Code">
+			<xd:restriction base="_:DocumentType3Code">
+				<xd:enumeration value="SCOR">
+					<xd:annotation>
+						<xd:documentation xml:lang="de">Vom Empfänger vorgegebene Referenz zur Zuordnung des Eingangs</xd:documentation>
+						<xd:documentation xml:lang="en">Referenz assigned by creditor to identify and associate receipt</xd:documentation>
+					</xd:annotation>
+				</xd:enumeration>
+			</xd:restriction>
+		</xd:simpleType>
+		<xd:simpleType name="ISODateTime">
+			<xd:restriction base="_:ISODateTime">
+				<xd:pattern value="\d{4}(-\d{2}){2}T\d{2}(:\d{2}){2}(\.\d{0,2}[1-9])?(Z|[-+]\d{2}(:\d{2})?)">
+					<xd:annotation>
+						<xd:documentation>ISO 8601 local time with time offset or UTC
+Last digit of seconds fraction must not be 0. If no fraction given, delimeter "." is not allowed (3.2.7.2 Canonical representation in XML Schema Part 2: Datatypes Second Edition)
+E.g.
+2030-12-12T12:12Z
+2030-12-12T12:12+02
+2030-12-12T12:12+02:00
+2030-12-12T12:12:12Z
+2030-12-12T12:12:12+02
+2030-12-12T12:12:12+02:00
+2030-12-12T12:12:12.123Z
+2030-12-12T12:12:12.123+02
+2030-12-12T12:12:12.123+02:00</xd:documentation>
+					</xd:annotation>
+				</xd:pattern>
+			</xd:restriction>
+		</xd:simpleType>
+		<xd:simpleType name="Max140Text">
+			<xd:restriction base="_:Max140Text">
+				<xd:annotation>
+					<xd:documentation xml:lang="de">Begrenzung des Zeichensatzes für Namen und Verwendungszweck
+
+Ein Text oder Wert muss mindestens ein druckbares Zeichen enthalten</xd:documentation>
+					<xd:documentation xml:lang="en">Limitation of character set for names and remittance information
+
+A text or value must contain at least one printable character</xd:documentation>
+				</xd:annotation>
+				<xd:pattern value="( *[\-A-Za-z0-9+/?:().,'äöüßÄÖÜ&amp;&gt;&lt;&quot;|€$§%!=#~;*{}\[\]@\\_°\^])+ *">
+					<xd:annotation>
+						<xd:documentation>Remember that the pattern notation is governed by XML and XSD rules.
+The regex is anchored to the whole string, which needs a ^ and a $ in other environments.
+Entities like &#x09;, &amp;, &gt;, &lt; and &quot; need to be exchanged to their entity's meaning or other encoding in other environments.
+The / might need to be escaped to \/ in other environments.</xd:documentation>
+					</xd:annotation>
+				</xd:pattern>
+			</xd:restriction>
+		</xd:simpleType>
+		<xd:simpleType name="Max15NumericText">
+			<xd:restriction base="_:Max15NumericText">
+				<xd:annotation>
+					<xd:documentation xml:lang="de">Begrenzung der Länge des Transaktionszählers</xd:documentation>
+					<xd:documentation xml:lang="en">Limitation of length of transaction counter</xd:documentation>
+				</xd:annotation>
+				<xd:pattern value="[1-9][0-9]{0,5}">
+					<xd:annotation>
+						<xd:documentation>Remember that the pattern notation is governed by XML and XSD rules.
+The regex is anchored to the whole string, which needs a ^ and a $ in other environments.
+Entities like &#x09;, &amp;, &gt;, &lt; and &quot; need to be exchanged to their entity's meaning or other encoding in other environments.
+The / might need to be escaped to \/ in other environments.</xd:documentation>
+					</xd:annotation>
+				</xd:pattern>
+			</xd:restriction>
+		</xd:simpleType>
+		<xd:simpleType name="Max34Text">
+			<xd:restriction base="_:Max34Text">
+				<xd:enumeration value="SMNDA">
+					<xd:annotation>
+						<xd:documentation xml:lang="de">Festgelegter Wert für Mandatsänderung</xd:documentation>
+						<xd:documentation xml:lang="en">Fixed value for mandate change</xd:documentation>
+					</xd:annotation>
+				</xd:enumeration>
+			</xd:restriction>
+		</xd:simpleType>
+		<xd:simpleType name="Max35Text">
+			<xd:restriction base="_:Max35Text">
+				<xd:annotation>
+					<xd:documentation xml:lang="de">Begrenzung des Zeichensatzes für Namen
+
+Ein Text oder Wert muss mindestens ein druckbares Zeichen enthalten</xd:documentation>
+					<xd:documentation xml:lang="en">Limitation of character set for names
+
+A text or value must contain at least one printable character</xd:documentation>
+				</xd:annotation>
+				<xd:pattern value="( *[\-A-Za-z0-9+/?:().,'äöüßÄÖÜ&amp;&gt;&lt;&quot;|€$§%!=#~;*{}\[\]@\\_°\^])+ *">
+					<xd:annotation>
+						<xd:documentation>Remember that the pattern notation is governed by XML and XSD rules.
+The regex is anchored to the whole string, which needs a ^ and a $ in other environments.
+Entities like &#x09;, &amp;, &gt;, &lt; and &quot; need to be exchanged to their entity's meaning or other encoding in other environments.
+The / might need to be escaped to \/ in other environments.</xd:documentation>
+					</xd:annotation>
+				</xd:pattern>
+			</xd:restriction>
+		</xd:simpleType>
+		<xd:simpleType name="Max16Text">
+			<xd:restriction base="_:Max16Text">
+				<xd:annotation>
+					<xd:documentation xml:lang="de">Begrenzung des Zeichensatzes
+
+Ein Text oder Wert muss mindestens ein druckbares Zeichen enthalten</xd:documentation>
+					<xd:documentation xml:lang="en">Limitation of character set
+
+A text or value must contain at least one printable character</xd:documentation>
+				</xd:annotation>
+				<xd:pattern value="( *[\-A-Za-z0-9+/?:().,'äöüßÄÖÜ&amp;&gt;&lt;&quot;|€$§%!=#~;*{}\[\]@\\_°\^])+ *">
+					<xd:annotation>
+						<xd:documentation>Remember that the pattern notation is governed by XML and XSD rules.
+The regex is anchored to the whole string, which needs a ^ and a $ in other environments.
+Entities like &#x09;, &amp;, &gt;, &lt; and &quot; need to be exchanged to their entity's meaning or other encoding in other environments.
+The / might need to be escaped to \/ in other environments.</xd:documentation>
+					</xd:annotation>
+				</xd:pattern>
+			</xd:restriction>
+		</xd:simpleType>
+		<xd:simpleType name="Max2048Text">
+			<xd:restriction base="_:Max2048Text">
+				<xd:annotation>
+					<xd:documentation xml:lang="de">Begrenzung des Zeichensatzes
+
+Ein Text oder Wert muss mindestens ein druckbares Zeichen enthalten</xd:documentation>
+					<xd:documentation xml:lang="en">Limitation of character set
+
+A text or value must contain at least one printable character</xd:documentation>
+				</xd:annotation>
+				<xd:pattern value="( *[\-A-Za-z0-9+/?:().,'äöüßÄÖÜ&amp;&gt;&lt;&quot;|€$§%!=#~;*{}\[\]@\\_°\^])+ *">
+					<xd:annotation>
+						<xd:documentation>Remember that the pattern notation is governed by XML and XSD rules.
+The regex is anchored to the whole string, which needs a ^ and a $ in other environments.
+Entities like &#x09;, &amp;, &gt;, &lt; and &quot; need to be exchanged to their entity's meaning or other encoding in other environments.
+The / might need to be escaped to \/ in other environments.</xd:documentation>
+					</xd:annotation>
+				</xd:pattern>
+			</xd:restriction>
+		</xd:simpleType>
+		<xd:simpleType name="Max70Text">
+			<xd:restriction base="_:Max70Text">
+				<xd:annotation>
+					<xd:documentation xml:lang="de">Begrenzung des Zeichensatzes für Adressen
+
+Ein Text oder Wert muss mindestens ein druckbares Zeichen enthalten</xd:documentation>
+					<xd:documentation xml:lang="en">Limitation of character set for addresses
+
+A text or value must contain at least one printable character</xd:documentation>
+				</xd:annotation>
+				<xd:pattern value="( *[\-A-Za-z0-9+/?:().,'äöüßÄÖÜ&amp;&gt;&lt;&quot;|€$§%!=#~;*{}\[\]@\\_°\^])+ *">
+					<xd:annotation>
+						<xd:documentation>Remember that the pattern notation is governed by XML and XSD rules.
+The regex is anchored to the whole string, which needs a ^ and a $ in other environments.
+Entities like &#x09;, &amp;, &gt;, &lt; and &quot; need to be exchanged to their entity's meaning or other encoding in other environments.
+The / might need to be escaped to \/ in other environments.</xd:documentation>
+					</xd:annotation>
+				</xd:pattern>
+			</xd:restriction>
+		</xd:simpleType>
+		<xd:simpleType name="SequenceType3Code">
+			<xd:restriction base="_:SequenceType3Code">
+				<xd:enumeration value="FRST"/>
+				<xd:enumeration value="RCUR"/>
+				<xd:enumeration value="FNAL"/>
+				<xd:enumeration value="OOFF"/>
+			</xd:restriction>
+		</xd:simpleType>
+	</xd:redefine>
+	<!-- Attributes  -->
+	<xd:attribute name="lastEdit" fixed="2024-04-04">
+		<xd:annotation>
+			<xd:documentation xml:lang="de">Datum der letzten Veränderung</xd:documentation>
+			<xd:documentation xml:lang="en">Date of last change</xd:documentation>
+		</xd:annotation>
+	</xd:attribute>
+	<xd:attribute name="replaceLastEdit" fixed="2023-10-18">
+		<xd:annotation>
+			<xd:documentation xml:lang="de">Ersetztes Versionsdatum</xd:documentation>
+			<xd:documentation xml:lang="en">Replaced version date</xd:documentation>
+		</xd:annotation>
+	</xd:attribute>
+	<!-- derived types -->
+	<!-- complex types with complex content -->
+	<xd:complexType name="AccountIdentification4Choice_Amdmnt">
+		<xd:complexContent>
+			<xd:restriction base="_:AccountIdentification4Choice">
+				<xd:choice>
+					<xd:element name="IBAN" type="_:IBAN2007Identifier" id="AT-D001_Old" xml:old_id="none">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">IBAN eines Kontos im SEPA-Raum</xd:documentation>
+							<xd:documentation xml:lang="en">IBAN of an account in SEPA area</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="Othr" type="_:GenericAccountIdentification1_Amdmnt">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Kontowechsel</xd:documentation>
+							<xd:documentation xml:lang="en">Account change</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:choice>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="AccountIdentification4Choice_Cdtr_Dbtr">
+		<xd:complexContent>
+			<xd:restriction base="_:AccountIdentification4Choice">
+				<xd:choice>
+					<xd:element name="IBAN" type="_:IBAN2007Identifier">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">IBAN eines Kontos im SEPA-Raum</xd:documentation>
+							<xd:documentation xml:lang="en">IBAN of an account in SEPA area</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:choice>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="BranchAndFinancialInstitutionIdentification6_Amdmnt">
+		<xd:complexContent>
+			<xd:restriction base="_:BranchAndFinancialInstitutionIdentification6">
+				<xd:sequence>
+					<xd:element name="FinInstnId" type="_:FinancialInstitutionIdentification18_Amdmnt">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Identifikation einer Bank im SEPA-Raum oder
+Kontowechselindikator</xd:documentation>
+							<xd:documentation xml:lang="en">Identification of a bank in SEPA area or
+Account change indicator</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="BranchAndFinancialInstitutionIdentification6_Dbtr">
+		<xd:complexContent>
+			<xd:restriction base="_:BranchAndFinancialInstitutionIdentification6">
+				<xd:sequence>
+					<xd:element name="FinInstnId" type="_:FinancialInstitutionIdentification18_Dbtr">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Identifikation einer Bank im SEPA-Raum</xd:documentation>
+							<xd:documentation xml:lang="en">Identification of a bank in SEPA area</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="BranchAndFinancialInstitutionIdentification6_Cdtr">
+		<xd:complexContent>
+			<xd:restriction base="_:BranchAndFinancialInstitutionIdentification6">
+				<xd:sequence>
+					<xd:element name="FinInstnId" type="_:FinancialInstitutionIdentification18_Cdtr">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Identifikation einer Bank im SEPA-Raum</xd:documentation>
+							<xd:documentation xml:lang="en">Identification of a bank in SEPA area</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="CashAccount38_Amdmnt">
+		<xd:complexContent>
+			<xd:restriction base="_:CashAccount38">
+				<xd:sequence>
+					<xd:element name="Id" type="_:AccountIdentification4Choice_Amdmnt">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">IBAN eines Kontos im SEPA-Raum oder
+Kontowechselindikator</xd:documentation>
+							<xd:documentation xml:lang="en">IBAN of an account in SEPA area or
+Account change indicator</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="CashAccount38_Cdtr">
+		<xd:complexContent>
+			<xd:restriction base="_:CashAccount38">
+				<xd:sequence>
+					<xd:element name="Id" type="_:AccountIdentification4Choice_Cdtr_Dbtr">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">IBAN eines Kontos im SEPA-Raum</xd:documentation>
+							<xd:documentation xml:lang="en">IBAN of an account in SEPA area</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="Ccy" type="_:ActiveOrHistoricCurrencyCode" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Kontowährung des erkannten Kontos.
+
+Nur notwendig bei Mehrwährungskonto</xd:documentation>
+							<xd:documentation xml:lang="en">Account currency of credited account.
+
+Only necessary with multi currency account</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="CashAccount38_Dbtr">
+		<xd:complexContent>
+			<xd:restriction base="_:CashAccount38">
+				<xd:sequence>
+					<xd:element name="Id" type="_:AccountIdentification4Choice_Cdtr_Dbtr">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">IBAN eines Kontos im SEPA-Raum</xd:documentation>
+							<xd:documentation xml:lang="en">IBAN of an account in SEPA area</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="FinancialInstitutionIdentification18_Amdmnt">
+		<xd:complexContent>
+			<xd:restriction base="_:FinancialInstitutionIdentification18">
+				<xd:sequence>
+					<xd:annotation>
+						<xd:documentation xml:lang="de">GENAU EIN FOLGE-ELEMENT</xd:documentation>
+						<xd:documentation xml:lang="en">ONLY ONE SUBSEQUENT ELEMENT</xd:documentation>
+					</xd:annotation>
+					<xd:element name="BICFI" type="_:BICFIDec2014Identifier" id="AT-C002_Old" minOccurs="0" xml:old_id="AT-12_old">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Identifikation einer Bank im SEPA-Raum</xd:documentation>
+							<xd:documentation xml:lang="en">Identification of a bank in SEPA area</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="Othr" type="_:GenericFinancialIdentification1_Amdmnt" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Kontowechselindikator</xd:documentation>
+							<xd:documentation xml:lang="en">Account change indicator</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+				<xd:assert test="count(*) eq 1">
+					<xd:annotation>
+						<xd:documentation xml:lang="de">Genau 1 Folgeelement</xd:documentation>
+						<xd:documentation xml:lang="en">Exactly 1 consequent element</xd:documentation>
+					</xd:annotation>
+				</xd:assert>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="FinancialInstitutionIdentification18_Cdtr">
+		<xd:complexContent>
+			<xd:restriction base="_:FinancialInstitutionIdentification18">
+				<xd:sequence>
+					<xd:annotation>
+						<xd:documentation xml:lang="de">GENAU EIN FOLGE-ELEMENT</xd:documentation>
+						<xd:documentation xml:lang="en">ONLY ONE SUBSEQUENT ELEMENT</xd:documentation>
+					</xd:annotation>
+					<xd:element name="BICFI" type="_:BICFIDec2014Identifier" id="AT-C002" minOccurs="0" xml:old_id="AT-12">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">BIC einer Bank im SEPA-Raum</xd:documentation>
+							<xd:documentation xml:lang="en">BIC of a bank in SEPA area</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="Othr" type="_:GenericFinancialIdentification1_Gen" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Andere Identifikation (IBAN only)</xd:documentation>
+							<xd:documentation xml:lang="en">Other identification (IBAN only)</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+				<xd:assert test="count(*) eq 1">
+					<xd:annotation>
+						<xd:documentation xml:lang="de">Genau 1 Folgeelement</xd:documentation>
+						<xd:documentation xml:lang="en">Exactly 1 consequent element</xd:documentation>
+					</xd:annotation>
+				</xd:assert>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="FinancialInstitutionIdentification18_Dbtr">
+		<xd:complexContent>
+			<xd:restriction base="_:FinancialInstitutionIdentification18">
+				<xd:sequence>
+					<xd:annotation>
+						<xd:documentation xml:lang="de">GENAU EIN FOLGE-ELEMENT</xd:documentation>
+						<xd:documentation xml:lang="en">ONLY ONE SUBSEQUENT ELEMENT</xd:documentation>
+					</xd:annotation>
+					<xd:element name="BICFI" type="_:BICFIDec2014Identifier" id="AT-D002" minOccurs="0" xml:old_id="AT-13">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">BIC einer Bank im SEPA-Raum</xd:documentation>
+							<xd:documentation xml:lang="en">BIC of a bank in SEPA area</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="Othr" type="_:GenericFinancialIdentification1_Gen" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Andere Identifikation (IBAN only)</xd:documentation>
+							<xd:documentation xml:lang="en">Other identification (IBAN only)</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+				<xd:assert test="count(*) eq 1">
+					<xd:annotation>
+						<xd:documentation xml:lang="de">Genau 1 Folgeelement</xd:documentation>
+						<xd:documentation xml:lang="en">Exactly 1 consequent element</xd:documentation>
+					</xd:annotation>
+				</xd:assert>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="GenericAccountIdentification1_Amdmnt">
+		<xd:complexContent>
+			<xd:restriction base="_:GenericAccountIdentification1">
+				<xd:sequence>
+					<xd:element name="Id" type="_:Max34Text">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Kontowechselindikator.
+
+Einzig verfügbarer Wert ist SMNDA</xd:documentation>
+							<xd:documentation xml:lang="en">Account change indicator.
+
+Only available value is SMNDA</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="GenericFinancialIdentification1_Amdmnt">
+		<xd:complexContent>
+			<xd:restriction base="_:GenericFinancialIdentification1">
+				<xd:sequence>
+					<xd:element name="Id" type="_:Max35Text_Mandate">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Kontowechselindikator.
+
+Einzig verfügbarer Wert ist SMNDA</xd:documentation>
+							<xd:documentation xml:lang="en">Account change indicator.
+
+Only available value is SMNDA</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="GenericFinancialIdentification1_Gen">
+		<xd:complexContent>
+			<xd:restriction base="_:GenericFinancialIdentification1">
+				<xd:sequence>
+					<xd:element name="Id" type="_:Max35Text_IBANonly">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Identifikation (IBAN only).
+
+Fixer Wert "NOTPROVIDED"</xd:documentation>
+							<xd:documentation xml:lang="en">Identification (IBAN only).
+
+Fixed value "NOTPROVIDED"</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="GenericOrganisationIdentification1_Cdtr_Dbtr_Ultmt">
+		<xd:complexContent>
+			<xd:restriction base="_:GenericOrganisationIdentification1">
+				<xd:sequence>
+					<xd:element name="Id" type="_:Max35Text_REF">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Identifikation der Organisation</xd:documentation>
+							<xd:documentation xml:lang="en">Identification of organisation</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="SchmeNm" type="_:OrganisationIdentificationSchemeName1Choice_Cdtr_Dbtr_Ultmt" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Typ der Identifikation</xd:documentation>
+							<xd:documentation xml:lang="en">Type of identification</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="Issr" type="_:Max35Text" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Identifikation vergebende Organisation</xd:documentation>
+							<xd:documentation xml:lang="en">Identification assigning organisation</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="GenericOrganisationIdentification1_InitgPty">
+		<xd:complexContent>
+			<xd:restriction base="_:GenericOrganisationIdentification1">
+				<xd:sequence>
+					<xd:element name="Id" type="_:Max35Text_REF">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Von der Bank vergebene Identifikation</xd:documentation>
+							<xd:documentation xml:lang="en">Identification assigned by bank</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="SchmeNm" type="_:OrganisationIdentificationSchemeName1Choice_InitgPty" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Typ der Identifikation</xd:documentation>
+							<xd:documentation xml:lang="en">Type of identification</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="GenericPersonIdentification1_CdtrSchmeId">
+		<xd:complexContent>
+			<xd:restriction base="_:GenericPersonIdentification1">
+				<xd:sequence>
+					<xd:element name="Id" type="_:Max35Text_REF">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Kreditorenidentifikation</xd:documentation>
+							<xd:documentation xml:lang="en">Creditor identification</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="SchmeNm" type="_:PersonIdentificationSchemeName1Choice_CdtrSchmeId" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Typ der Identifikation</xd:documentation>
+							<xd:documentation xml:lang="en">Type of identification</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="OrganisationIdentification29_Cdtr_Dbtr_Ultmt">
+		<xd:complexContent>
+			<xd:restriction base="_:OrganisationIdentification29">
+				<xd:sequence>
+					<xd:annotation>
+						<xd:documentation xml:lang="de">GENAU EIN FOLGE-ELEMENT</xd:documentation>
+						<xd:documentation xml:lang="en">EXACTLY ONE SUBSEQUENT ELEMENT</xd:documentation>
+					</xd:annotation>
+					<xd:element name="AnyBIC" type="_:AnyBICDec2014Identifier" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">BIC oder BEI</xd:documentation>
+							<xd:documentation xml:lang="en">BIC or BEI</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="LEI" type="_:LEIIdentifier" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Legal Entity Identifier
+
+Z.B. Firmenbuchnummer</xd:documentation>
+							<xd:documentation xml:lang="en">Legal Entity Identifier
+
+E.g. Industrial Court ID</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="Othr" type="_:GenericOrganisationIdentification1_Cdtr_Dbtr_Ultmt" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Andere Identifikation</xd:documentation>
+							<xd:documentation xml:lang="en">Other identification</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+				<xd:assert test="count(*) eq 1">
+					<xd:annotation>
+						<xd:documentation xml:lang="de">Genau 1 Folgeelement</xd:documentation>
+						<xd:documentation xml:lang="en">Exactly 1 consequent element</xd:documentation>
+					</xd:annotation>
+				</xd:assert>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="OrganisationIdentification29_InitgPty">
+		<xd:complexContent>
+			<xd:restriction base="_:OrganisationIdentification29">
+				<xd:sequence>
+					<xd:annotation>
+						<xd:documentation xml:lang="de">GENAU EIN FOLGE-ELEMENT</xd:documentation>
+						<xd:documentation xml:lang="en">EXACTLY ONE SUBSEQUENT ELEMENT</xd:documentation>
+					</xd:annotation>
+					<xd:element name="AnyBIC" type="_:AnyBICDec2014Identifier" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">BIC oder BEI</xd:documentation>
+							<xd:documentation xml:lang="en">BIC or BEI</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="LEI" type="_:LEIIdentifier" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Legal Entity Identifier</xd:documentation>
+							<xd:documentation xml:lang="en">Legal Entity Identifier</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="Othr" type="_:GenericOrganisationIdentification1_InitgPty" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Andere Identifikation</xd:documentation>
+							<xd:documentation xml:lang="en">Other identification</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+				<xd:assert test="count(*) eq 1">
+					<xd:annotation>
+						<xd:documentation xml:lang="de">Genau 1 Folgeelement</xd:documentation>
+						<xd:documentation xml:lang="en">Exactly 1 consequent element</xd:documentation>
+					</xd:annotation>
+				</xd:assert>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="OrganisationIdentificationSchemeName1Choice_Cdtr_Dbtr_Ultmt">
+		<xd:complexContent>
+			<xd:restriction base="_:OrganisationIdentificationSchemeName1Choice">
+				<xd:choice>
+					<xd:element name="Cd" type="_:ISO_ExternalOrganisationIdentification1Code">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Kodierte Identifikation.
+
+Kode aus Codeliste</xd:documentation>
+							<xd:documentation xml:lang="en">Coded identification.
+
+Code from code list</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="Prtry" type="_:Max35Text_REF">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Kodierte Identifikation.
+
+Proprietärer Kode</xd:documentation>
+							<xd:documentation xml:lang="en">Coded identification.
+
+Proprietary code</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:choice>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="OrganisationIdentificationSchemeName1Choice_InitgPty">
+		<xd:complexContent>
+			<xd:restriction base="_:OrganisationIdentificationSchemeName1Choice">
+				<xd:choice>
+					<xd:element name="Cd" type="_:AT_ExternalOrganisationIdentification1Code_InitgPty">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Kodierte Identifikation.
+
+Einzig verfügbarer Wert ist BANK</xd:documentation>
+							<xd:documentation xml:lang="en">Coded identification.
+
+Only available value is BANK</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:choice>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="Party38Choice_Cdtr_Dbtr_Ultmt">
+		<xd:complexContent>
+			<xd:restriction base="_:Party38Choice">
+				<xd:choice>
+					<xd:element name="OrgId" type="_:OrganisationIdentification29_Cdtr_Dbtr_Ultmt">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Identifikation der Organisation</xd:documentation>
+							<xd:documentation xml:lang="en">Identification of organisation</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="PrvtId" type="_:PersonIdentification13_Cdtr_Dbtr_Ultmt">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Identifikation der Person</xd:documentation>
+							<xd:documentation xml:lang="en">Identification of person</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:choice>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="Party38Choice_CdtrSchmeId">
+		<xd:complexContent>
+			<xd:restriction base="_:Party38Choice">
+				<xd:choice>
+					<xd:element name="PrvtId" type="_:PersonIdentification13_CdtrSchmeId">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Kreditorenidentifikation</xd:documentation>
+							<xd:documentation xml:lang="en">Creditor identification</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:choice>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="Party38Choice_InitgPty">
+		<xd:complexContent>
+			<xd:restriction base="_:Party38Choice">
+				<xd:choice>
+					<xd:element name="OrgId" type="_:OrganisationIdentification29_InitgPty">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Identifikation der Organisation</xd:documentation>
+							<xd:documentation xml:lang="en">Identification of organisation</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:choice>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="PartyIdentification135_Cdtr">
+		<xd:complexContent>
+			<xd:restriction base="_:PartyIdentification135">
+				<xd:sequence>
+					<xd:element name="Nm" type="_:Max140Text_Nm" id="AT-E001" xml:old_id="AT-03">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Name des Kontoinhabers / Auftraggeber.
+
+Auf 70 Zeichen begrenzt</xd:documentation>
+							<xd:documentation xml:lang="en">Name of account owner / credited principal.
+
+Limited to 70 characters</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="PartyIdentification135_CdtrSchmeId">
+		<xd:complexContent>
+			<xd:restriction base="_:PartyIdentification135">
+				<xd:sequence>
+					<xd:element name="Id" type="_:Party38Choice_CdtrSchmeId" id="AT-E005" xml:old_id="AT-02">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Kreditorenidentifikation</xd:documentation>
+							<xd:documentation xml:lang="en">Creditor identification</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="PartyIdentification135_Dbtr">
+		<xd:complexContent>
+			<xd:restriction base="_:PartyIdentification135">
+				<xd:sequence>
+					<xd:element name="Nm" type="_:Max140Text_Nm" id="AT-P001" xml:old_id="AT-14">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Name des Kontoinhabers / Bezogenen.
+
+Auf 70 Zeichen begrenzt</xd:documentation>
+							<xd:documentation xml:lang="en">Name of account owner / debited principal.
+
+Limited to 70 characters</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="PstlAdr" type="_:PostalAddress24" id="AT-P004" minOccurs="0" xml:old_id="AT-27">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Adresse des Kontoinhabers / Bezogenen.
+
+Verwendung in Absprache mit beauftragter Bank</xd:documentation>
+							<xd:documentation xml:lang="en">Address of account owner / debited principal.
+
+Consult ordered institute prior use</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="Id" type="_:Party38Choice_Cdtr_Dbtr_Ultmt" id="AT-P005" minOccurs="0" xml:old_id="AT-09">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Identification des Kontoinhabers / Bezogenen</xd:documentation>
+							<xd:documentation xml:lang="en">Identification of account owner / debited principal</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="PartyIdentification135_InitgPty">
+		<xd:complexContent>
+			<xd:restriction base="_:PartyIdentification135">
+				<xd:sequence>
+					<xd:annotation>
+						<xd:documentation xml:lang="de">GENAU EIN FOLGE-ELEMENT</xd:documentation>
+						<xd:documentation xml:lang="en">EXACTLY ONE SUBSEQUENT ELEMENT</xd:documentation>
+					</xd:annotation>
+					<xd:element name="Nm" type="_:Max140Text_Nm" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Name des Senders
+
+Auf 70 Zeichen begrenzt</xd:documentation>
+							<xd:documentation xml:lang="en">Name of Sender
+
+Limited to 70 characters</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="Id" type="_:Party38Choice_InitgPty" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Identifikation des Senders</xd:documentation>
+							<xd:documentation xml:lang="en">Identification of sender</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+				<xd:assert test="count(*) eq 1">
+					<xd:annotation>
+						<xd:documentation xml:lang="de">Genau 1 Folgeelement</xd:documentation>
+						<xd:documentation xml:lang="en">Exactly 1 consequent element</xd:documentation>
+					</xd:annotation>
+				</xd:assert>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="PartyIdentification135_OrgnlCdtrSchemeId">
+		<xd:complexContent>
+			<xd:restriction base="_:PartyIdentification135">
+				<xd:sequence>
+					<xd:annotation>
+						<xd:documentation xml:lang="de">MINDESTENS EIN FOLGE-ELEMENT</xd:documentation>
+						<xd:documentation xml:lang="en">AT LEAST ONE SUBSEQUENT ELEMENT</xd:documentation>
+					</xd:annotation>
+					<xd:element name="Nm" type="_:Max140Text_Nm" id="AT-E001_Old" minOccurs="0" xml:old_id="AT-03_old">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Vorheriger Name des Lastschriftseinreichers</xd:documentation>
+							<xd:documentation xml:lang="en">Previous name of the debiting creditor</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="Id" type="_:Party38Choice_CdtrSchmeId" id="AT-M004" minOccurs="0" xml:old_id="AT-18">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Vorherige Identifikation des Lastschriftseinreichers</xd:documentation>
+							<xd:documentation xml:lang="en">Previous identification of debiting creditor</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+				<xd:assert test="count(*) gt 0">
+					<xd:annotation>
+						<xd:documentation xml:lang="de">Mindestens 1 Folgeelement</xd:documentation>
+						<xd:documentation xml:lang="en">At least 1 consequent element</xd:documentation>
+					</xd:annotation>
+				</xd:assert>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="PartyIdentification135_UltmtCdtr">
+		<xd:complexContent>
+			<xd:restriction base="_:PartyIdentification135">
+				<xd:sequence>
+					<xd:annotation>
+						<xd:documentation xml:lang="de">MINDESTENS EIN FOLGE-ELEMENT</xd:documentation>
+						<xd:documentation xml:lang="en">AT LEAST ONE SUBSEQUENT ELEMENT</xd:documentation>
+					</xd:annotation>
+					<xd:element name="Nm" type="_:Max140Text_Nm" id="AT-E007" minOccurs="0" xml:old_id="AT-38">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Name / Bezeichnung der Referenzpartei des Kontoinhabers / Auftraggebers, d.h. üblicherweise der eigentliche Gläubiger.
+
+Auf 70 Zeichen begrenzt</xd:documentation>
+							<xd:documentation xml:lang="en">Name / Designation of reference party of account owner / principal, i.e. habitually the actual creditor.
+
+Limited to 70 characters</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="Id" type="_:Party38Choice_Cdtr_Dbtr_Ultmt" id="AT-E010" minOccurs="0" xml:old_id="AT-39">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Identifikation der Referenzpartei des Kontoinhabers / Auftraggebers, d.h. üblicherweise der eigentliche Gläubiger</xd:documentation>
+							<xd:documentation xml:lang="en">Identification of reference party of account owner / principal, i.e. habitually the actual creditor</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+				<xd:assert test="count(*) gt 0">
+					<xd:annotation>
+						<xd:documentation xml:lang="de">Mindestens 1 Folgeelement</xd:documentation>
+						<xd:documentation xml:lang="en">At least 1 consequent element</xd:documentation>
+					</xd:annotation>
+				</xd:assert>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="PartyIdentification135_UltmtDbtr">
+		<xd:complexContent>
+			<xd:restriction base="_:PartyIdentification135">
+				<xd:sequence>
+					<xd:annotation>
+						<xd:documentation xml:lang="de">MINDESTENS EIN FOLGE-ELEMENT</xd:documentation>
+						<xd:documentation xml:lang="en">AT LEAST ONE SUBSEQUENT ELEMENT</xd:documentation>
+					</xd:annotation>
+					<xd:element name="Nm" type="_:Max140Text_Nm" id="AT-P006" minOccurs="0" xml:old_id="AT-15">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Name / Bezeichnung der Referenzpartei des Kontoinhabers / Bezogenen, d.h. üblicherweise der eigentliche Schuldner.
+
+Auf 70 Zeichen begrenzt</xd:documentation>
+							<xd:documentation xml:lang="en">Name / Designation of reference party of account owner / principal, i.e. habitually the actual debtor.
+
+Limited to 70 characters</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="Id" type="_:Party38Choice_Cdtr_Dbtr_Ultmt" id="AT-P007" minOccurs="0" xml:old_id="AT-37">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Identifikation der Referenzpartei des Kontoinhabers / Bezogenen, d.h. üblicherweise der eigentliche Schuldner</xd:documentation>
+							<xd:documentation xml:lang="en">Identification of reference party of account owner / principal, i.e. habitually the actual debtor</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+				<xd:assert test="count(*) gt 0">
+					<xd:annotation>
+						<xd:documentation xml:lang="de">Mindestens 1 Folgeelement</xd:documentation>
+						<xd:documentation xml:lang="en">At least 1 consequent element</xd:documentation>
+					</xd:annotation>
+				</xd:assert>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="PaymentTypeInformation29_Single">
+		<xd:complexContent>
+			<xd:restriction base="_:PaymentTypeInformation29">
+				<xd:sequence>
+					<xd:element name="SvcLvl" type="_:ServiceLevel8Choice" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Siehe Beschreibung auf Bestandsebene</xd:documentation>
+							<xd:documentation xml:lang="en">See description on batch level</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="LclInstrm" type="_:LocalInstrument2Choice">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Siehe Beschreibung auf Bestandsebene</xd:documentation>
+							<xd:documentation xml:lang="en">See description on batch level</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="SeqTp" type="_:SequenceType3Code" id="AT-M006_Single" xml:old_id="AT-21_Single">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Siehe Beschreibung auf Bestandsebene</xd:documentation>
+							<xd:documentation xml:lang="en">See description on batch level</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="CtgyPurp" type="_:CategoryPurpose1Choice" id="AT-T008_Single" minOccurs="0" xml:old_id="AT-59_Single">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Siehe Beschreibung auf Bestandsebene</xd:documentation>
+							<xd:documentation xml:lang="en">See description on batch level</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="PersonIdentification13_Cdtr_Dbtr_Ultmt">
+		<xd:complexContent>
+			<xd:restriction base="_:PersonIdentification13">
+				<xd:sequence>
+					<xd:annotation>
+						<xd:documentation xml:lang="de">GENAU EIN FOLGE-ELEMENT</xd:documentation>
+						<xd:documentation xml:lang="en">EXACTLY ONE SUBSEQUENT ELEMENT</xd:documentation>
+					</xd:annotation>
+					<xd:element name="DtAndPlcOfBirth" type="_:DateAndPlaceOfBirth1" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Datum und Ort der Geburt</xd:documentation>
+							<xd:documentation xml:lang="en">Date and place of birth</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+					<xd:element name="Othr" type="_:GenericPersonIdentification1" minOccurs="0">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Andere Identifikation</xd:documentation>
+							<xd:documentation xml:lang="en">Other identification</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+				<xd:assert test="count(*) eq 1">
+					<xd:annotation>
+						<xd:documentation xml:lang="de">Genau 1 Folgeelement</xd:documentation>
+						<xd:documentation xml:lang="en">Exactly 1 consequent element</xd:documentation>
+					</xd:annotation>
+				</xd:assert>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="PersonIdentification13_CdtrSchmeId">
+		<xd:complexContent>
+			<xd:restriction base="_:PersonIdentification13">
+				<xd:sequence>
+					<xd:element name="Othr" type="_:GenericPersonIdentification1_CdtrSchmeId">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Kreditorenidentifikation</xd:documentation>
+							<xd:documentation xml:lang="en">Creditor identification</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:sequence>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<xd:complexType name="PersonIdentificationSchemeName1Choice_CdtrSchmeId">
+		<xd:complexContent>
+			<xd:restriction base="_:PersonIdentificationSchemeName1Choice">
+				<xd:choice>
+					<xd:element name="Prtry" type="_:Max35Text_CdtrSchmeId">
+						<xd:annotation>
+							<xd:documentation xml:lang="de">Kodierte Identifikation.
+
+Einzig verfügbarer Wert ist SEPA</xd:documentation>
+							<xd:documentation xml:lang="en">Coded identification.
+
+Only available value is SEPA</xd:documentation>
+						</xd:annotation>
+					</xd:element>
+				</xd:choice>
+			</xd:restriction>
+		</xd:complexContent>
+	</xd:complexType>
+	<!-- simple types -->
+	<xd:simpleType name="ActiveOrHistoricCurrencyCode_TX">
+		<xd:restriction base="_:ActiveOrHistoricCurrencyCode">
+			<xd:enumeration value="EUR">
+				<xd:annotation>
+					<xd:documentation xml:lang="de">SEPA kann nur EUR transferieren</xd:documentation>
+					<xd:documentation xml:lang="en">SEPA just enables EUR transfers</xd:documentation>
+				</xd:annotation>
+			</xd:enumeration>
+		</xd:restriction>
+	</xd:simpleType>
+	<xd:simpleType name="Max140Text_Nm">
+		<xd:restriction base="_:Max140Text">
+			<xd:annotation>
+				<xd:documentation xml:lang="de">Begrenzung der Länge der Namenselemente</xd:documentation>
+				<xd:documentation xml:lang="en">Limitation of length of name elements</xd:documentation>
+			</xd:annotation>
+			<xd:maxLength value="70"/>
+		</xd:restriction>
+	</xd:simpleType>
+	<xd:simpleType name="Max35Text_CdtrSchmeId">
+		<xd:restriction base="_:Max35Text">
+			<xd:enumeration value="SEPA">
+				<xd:annotation>
+					<xd:documentation xml:lang="de">Festgelegter Wert für Kreditorenidentifikation</xd:documentation>
+					<xd:documentation xml:lang="en">Fixed value for creditor identification</xd:documentation>
+				</xd:annotation>
+			</xd:enumeration>
+		</xd:restriction>
+	</xd:simpleType>
+	<xd:simpleType name="Max35Text_IBANonly">
+		<xd:restriction base="_:Max35Text">
+			<xd:enumeration value="NOTPROVIDED">
+				<xd:annotation>
+					<xd:documentation xml:lang="de">Festgelegter Wert für IBAN-only Beauftragungen</xd:documentation>
+					<xd:documentation xml:lang="en">Fixed value for IBAN only initiations</xd:documentation>
+				</xd:annotation>
+			</xd:enumeration>
+		</xd:restriction>
+	</xd:simpleType>
+	<xd:simpleType name="Max35Text_Mandate">
+		<xd:restriction base="_:Max35Text">
+			<xd:enumeration value="SMNDA">
+				<xd:annotation>
+					<xd:documentation xml:lang="de">Festgelegter Wert für Mandatsänderung</xd:documentation>
+					<xd:documentation xml:lang="en">Fixed value for mandate change</xd:documentation>
+				</xd:annotation>
+			</xd:enumeration>
+		</xd:restriction>
+	</xd:simpleType>
+	<xd:simpleType name="Max35Text_REF">
+		<xd:restriction base="_:Max35Text">
+			<xd:annotation>
+				<xd:documentation xml:lang="de">Begrenzung des Zeichensatzes für Kodes, Referenzen und Identifikatoren
+
+Erlaubte Struktur für Kodes, Referenzen und Identifikatoren nach EPC217-08 Best Practices SEPA Requirements for Character Set SSG.pdf
+Ein Text oder Wert muss mindestens ein druckbares Zeichen enthalten, jedoch
+startet nicht mit /
+endet nicht mit /
+enthält kein //</xd:documentation>
+				<xd:documentation xml:lang="en">Limitation of character set for codes, references and identifications
+
+Allowed structure for codes, references and identifications according EPC217-08 Best Practices SEPA Requirements for Character Set SSG.pdf
+A text or value must contain at least one printable character, but
+don't start with /
+don't end with /
+don't contain //</xd:documentation>
+			</xd:annotation>
+			<xd:pattern value="((([\-A-Za-z0-9+?:().,' ]+/)+[\-A-Za-z0-9+?:().,' ]+)|(( *[\-A-Za-z0-9+?:().,'])+ *))">
+				<xd:annotation>
+					<xd:documentation>Remember that the pattern notation is governed by XML and XSD rules.
+The regex is anchored to the whole string, which needs a ^ and a $ in other environments.
+Entities like &#x09;, &amp;, &gt;, &lt; and &quot; need to be exchanged to their entity's meaning or other encoding in other environments.
+The / might need to be escaped to \/ in other environments.</xd:documentation>
+				</xd:annotation>
+			</xd:pattern>
+		</xd:restriction>
+	</xd:simpleType>
+</xd:schema>

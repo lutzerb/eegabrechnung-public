@@ -1,0 +1,29 @@
+<cp:CMRequest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cp="http://www.ebutilities.at/schemata/customerconsent/cmrequest/01p21" xmlns:ct="http://www.ebutilities.at/schemata/customerprocesses/common/types/01p20" xsi:schemaLocation="http://www.ebutilities.at/schemata/customerconsent/cmrequest/01p21 http://www.ebutilities.at/schemata/customerconsent/cmrequest/01p21/CMRequest_01p21.xsd">
+  <cp:MarketParticipantDirectory DocumentMode="PROD" Duplicate="false" SchemaVersion="01.21">
+    <ct:RoutingHeader>
+      <ct:Sender AddressType="ECNumber">
+        <ct:MessageAddress>RC105970</ct:MessageAddress>
+      </ct:Sender>
+      <ct:Receiver AddressType="ECNumber">
+        <ct:MessageAddress>AT002000</ct:MessageAddress>
+      </ct:Receiver>
+      <ct:DocumentCreationDateTime>2026-03-25T16:17:45</ct:DocumentCreationDateTime>
+    </ct:RoutingHeader>
+    <ct:Sector>01</ct:Sector>
+    <cp:MessageCode>ANFORDERUNG_ECON</cp:MessageCode>
+  </cp:MarketParticipantDirectory>
+  <cp:ProcessDirectory>
+    <ct:MessageId>RC105970202603251617458050000000001</ct:MessageId>
+    <ct:ConversationId>RC105970202603251617458050000000001</ct:ConversationId>
+    <cp:ProcessDate>2026-03-25</cp:ProcessDate>
+    <cp:MeteringPoint>AT0020000000000000000000100242261</cp:MeteringPoint>
+    <cp:CMRequestId>DKPSPX56</cp:CMRequestId>
+    <cp:CMRequest>
+      <cp:ReqDatType>EnergyCommunityRegistration</cp:ReqDatType>
+      <cp:DateFrom>2026-03-26</cp:DateFrom>
+      <cp:ECID>AT00200000000RC105970000000001289</cp:ECID>
+      <cp:ECPartFact>100</cp:ECPartFact>
+      <cp:EnergyDirection>GENERATION</cp:EnergyDirection>
+    </cp:CMRequest>
+  </cp:ProcessDirectory>
+</cp:CMRequest>

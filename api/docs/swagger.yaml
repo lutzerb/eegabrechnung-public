@@ -1,0 +1,5434 @@
+basePath: /api/v1
+definitions:
+  domain.BillingRun:
+    properties:
+      created_at:
+        type: string
+      eeg_id:
+        type: string
+      id:
+        type: string
+      invoice_count:
+        type: integer
+      period_end:
+        type: string
+      period_start:
+        type: string
+      status:
+        type: string
+      total_amount:
+        type: number
+    type: object
+  domain.EDAError:
+    properties:
+      created_at:
+        type: string
+      direction:
+        type: string
+      eeg_id:
+        type: string
+      error_msg:
+        type: string
+      id:
+        type: string
+      message_type:
+        type: string
+      raw_content:
+        type: string
+      subject:
+        type: string
+    type: object
+  domain.EDAMessage:
+    properties:
+      body:
+        description: plain-text email body (MAIL transport)
+        type: string
+      created_at:
+        type: string
+      direction:
+        type: string
+      error_msg:
+        type: string
+      from_address:
+        description: sender EDA address
+        type: string
+      id:
+        type: string
+      message_id:
+        description: external message-id from MaKo header
+        type: string
+      message_type:
+        type: string
+      process:
+        description: EDA process code, e.g. EC_EINZEL_ANM, DATEN_CRMSG
+        type: string
+      processed_at:
+        type: string
+      status:
+        description: pending | sent | ack | error | processed
+        type: string
+      subject:
+        type: string
+      to_address:
+        description: recipient EDA address
+        type: string
+    type: object
+  domain.EDAProcess:
+    properties:
+      completed_at:
+        type: string
+      conversation_id:
+        description: links outbound to inbound confirmations
+        type: string
+      created_at:
+        type: string
+      date_to:
+        description: ECMPList DateTo
+        type: string
+      deadline_at:
+        description: 2 months for ANM (EAG §16e)
+        type: string
+      ec_dis_model:
+        description: ECMPList-specific fields (EC_PRTFACT_CHG)
+        type: string
+      ec_share:
+        description: optional share % in static model
+        type: number
+      eeg_id:
+        type: string
+      energy_direction:
+        description: CONSUMPTION or GENERATION
+        type: string
+      error_msg:
+        type: string
+      error_notification_sent_at:
+        type: string
+      id:
+        type: string
+      initiated_at:
+        type: string
+      member_name:
+        description: Joined field — only populated by ListByEEG, empty in other queries.
+        type: string
+      meter_point_id:
+        type: string
+      participation_factor:
+        type: number
+      process_type:
+        description: EC_REQ_ONL, EC_REQ_OFF, CM_REV_SP, EC_PRTFACT_CHG, EC_REQ_PT
+        type: string
+      share_type:
+        description: GC, RC_R, RC_L, CC, NONE, MULTI
+        type: string
+      status:
+        description: pending, sent, first_confirmed, confirmed, completed, rejected,
+          error
+        type: string
+      valid_from:
+        type: string
+      zaehlpunkt:
+        type: string
+    type: object
+  domain.EDAWorkerStatus:
+    properties:
+      last_error:
+        type: string
+      last_poll_at:
+        type: string
+      transport_mode:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  domain.EEG:
+    properties:
+      accounting_debitor_prefix:
+        description: base for member debitor accounts (default 10000)
+        type: integer
+      accounting_expense_account:
+        description: Aufwandskonto Einspeisung (default 5000)
+        type: integer
+      accounting_revenue_account:
+        description: Accounting / DATEV export configuration
+        type: integer
+      auto_billing_day_of_month:
+        description: 1–28
+        type: integer
+      auto_billing_enabled:
+        description: 'Auto-billing: create draft billing run automatically on a fixed
+          day each month/quarter'
+        type: boolean
+      auto_billing_last_run_at:
+        type: string
+      auto_billing_period:
+        description: '"monthly"|"quarterly"'
+        type: string
+      bic:
+        description: EEG's bank BIC (optional)
+        type: string
+      billing_period:
+        description: monthly | quarterly | semiannual | annual
+        type: string
+      created_at:
+        type: string
+      credit_note_number_digits:
+        description: e.g. 5
+        type: integer
+      credit_note_number_prefix:
+        description: e.g. "GS"
+        type: string
+      datev_client_nr:
+        description: DATEV Mandantennummer (optional)
+        type: string
+      datev_consultant_nr:
+        description: DATEV Beraternummer (optional)
+        type: string
+      discount_pct:
+        description: discount on consumption in %
+        type: number
+      eda_imap_host:
+        description: |-
+          Per-EEG EDA credentials (IMAP polling + SMTP send to edanet.at).
+          Passwords are stored encrypted in the DB; the repository decrypts them.
+          Returned as "***" via API if set; send empty or "***" to keep existing.
+        type: string
+      eda_imap_password:
+        type: string
+      eda_imap_user:
+        type: string
+      eda_marktpartner_id:
+        description: own EC/GC/RC number for outbound messages
+        type: string
+      eda_netzbetreiber_id:
+        description: Netzbetreiber ECNumber to send messages to
+        type: string
+      eda_smtp_from:
+        type: string
+      eda_smtp_host:
+        type: string
+      eda_smtp_password:
+        type: string
+      eda_smtp_user:
+        type: string
+      eda_transition_date:
+        description: EDA communication settings (Austrian MaKo protocol)
+        type: string
+      energy_price:
+        description: consumer work price ct/kWh (net)
+        type: number
+      free_kwh:
+        description: complimentary kWh per member per period
+        type: number
+      gap_alert_enabled:
+        description: 'Gap alert: notify when meter points have no readings for N days'
+        type: boolean
+      gap_alert_threshold_days:
+        description: default 5
+        type: integer
+      gemeinschaft_id:
+        type: string
+      generate_credit_notes:
+        description: Credit note settings (for VAT-liable producers)
+        type: boolean
+      gruendungsdatum:
+        description: Founding date — coverage tool will not flag days before this
+          as missing
+        type: string
+      iban:
+        description: SEPA banking details for payment file generation
+        type: string
+      id:
+        type: string
+      invoice_footer_text:
+        type: string
+      invoice_number_digits:
+        type: integer
+      invoice_number_prefix:
+        type: string
+      invoice_number_start:
+        description: first invoice number for this EEG
+        type: integer
+      invoice_post_text:
+        type: string
+      invoice_pre_text:
+        type: string
+      is_demo:
+        description: IsDemo marks this EEG as a demo — emails and EDA messages are
+          suppressed
+        type: boolean
+      logo_path:
+        description: Company logo path (stored as absolute filesystem path)
+        type: string
+      meter_fee_eur:
+        description: fixed fee per consumer meter point per period
+        type: number
+      name:
+        type: string
+      netzbetreiber:
+        type: string
+      onboarding_contract_text:
+        description: Onboarding contract text shown to applicants (may include {iban}
+          and {datum} placeholders)
+        type: string
+      organization_id:
+        type: string
+      ort:
+        type: string
+      participation_fee_eur:
+        description: fixed member participation fee per period
+        type: number
+      plz:
+        type: string
+      portal_show_full_energy:
+        description: 'Portal: whether to show full energy data (total consumption/generation)
+          in the member portal'
+        type: boolean
+      producer_price:
+        description: producer feed-in price ct/kWh (net)
+        type: number
+      sepa_creditor_id:
+        description: SEPA Gläubiger-ID for pain.008
+        type: string
+      sepa_pre_notification_days:
+        description: |-
+          SepaPreNotificationDays is the minimum days between invoice date and SEPA collection.
+          SEPA Rulebook mandates ≥14 days. Configurable per EEG. Default: 14.
+        type: integer
+      smtp_from:
+        type: string
+      smtp_host:
+        description: Per-EEG invoice SMTP credentials (Rechnungsversand via resend
+          / own SMTP).
+        type: string
+      smtp_password:
+        type: string
+      smtp_user:
+        type: string
+      strasse:
+        description: Rechnungssteller (§11 UStG) — EEG address shown on invoices
+        type: string
+      uid_nummer:
+        description: EEG VAT ID (optional, not all EEGs are VAT-registered)
+        type: string
+      use_vat:
+        description: include VAT on invoices
+        type: boolean
+      vat_pct:
+        description: VAT percentage (e.g. 20)
+        type: number
+    type: object
+  domain.EEGMeterParticipation:
+    properties:
+      created_at:
+        type: string
+      eeg_id:
+        type: string
+      id:
+        type: string
+      meter_point_id:
+        type: string
+      notes:
+        type: string
+      participation_factor:
+        description: 0.0001–100
+        type: number
+      share_type:
+        description: GC | RC_R | RC_L | CC
+        type: string
+      valid_from:
+        type: string
+      valid_until:
+        description: nil = open-ended
+        type: string
+    type: object
+  domain.EnergyReading:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      meter_point_id:
+        type: string
+      quality:
+        description: L0 (total), L1 (measured), L2 (substitute), L3 (faulty — excluded
+          from billing)
+        type: string
+      source:
+        description: '"xlsx" or "eda"'
+        type: string
+      ts:
+        type: string
+      wh_community:
+        type: number
+      wh_self:
+        type: number
+      wh_total:
+        type: number
+    type: object
+  domain.EnergySummaryRow:
+    properties:
+      period:
+        type: string
+      wh_community:
+        description: EEG share fed in (GENERATION wh_community)
+        type: number
+      wh_restbedarf:
+        description: grid demand = wh_total_consumption - wh_self
+        type: number
+      wh_resteinspeisung:
+        description: grid export  = wh_total_generation - wh_community
+        type: number
+      wh_self:
+        description: EEG share consumed (CONSUMPTION wh_self)
+        type: number
+      wh_total_consumption:
+        description: total consumption (CONSUMPTION wh_total)
+        type: number
+      wh_total_generation:
+        description: total generation (GENERATION wh_total)
+        type: number
+    type: object
+  domain.Invoice:
+    properties:
+      billing_run_id:
+        type: string
+      consumption_kwh:
+        description: community kWh consumed
+        type: number
+      consumption_net_amount:
+        description: Split net amounts — stored separately to enable per-account EA
+          import bookings
+        type: number
+      consumption_vat_amount:
+        type: number
+      consumption_vat_pct:
+        description: Split VAT — consumption uses EEG-level rate, generation uses
+          member-specific rate
+        type: number
+      created_at:
+        type: string
+      document_type:
+        description: '"invoice" or "credit_note"'
+        type: string
+      eeg_id:
+        type: string
+      generation_kwh:
+        description: community kWh generated/fed in
+        type: number
+      generation_net_amount:
+        description: net Einspeisung (generation credit before VAT)
+        type: number
+      generation_vat_amount:
+        type: number
+      generation_vat_pct:
+        type: number
+      id:
+        type: string
+      invoice_number:
+        type: integer
+      member_id:
+        type: string
+      net_amount:
+        description: net amount before VAT
+        type: number
+      pdf_path:
+        type: string
+      period_end:
+        type: string
+      period_start:
+        type: string
+      sent_at:
+        type: string
+      sepa_return_at:
+        description: SEPA return (Rücklastschrift) tracking
+        type: string
+      sepa_return_note:
+        type: string
+      sepa_return_reason:
+        type: string
+      status:
+        type: string
+      storno_pdf_path:
+        description: set when invoice is formally cancelled (storno document)
+        type: string
+      total_amount:
+        description: gross saldo incl. VAT (may be negative for producers)
+        type: number
+      total_kwh:
+        description: consumption kWh (for display/stats)
+        type: number
+      vat_amount:
+        description: total VAT (consumption + generation)
+        type: number
+      vat_pct_applied:
+        description: EEG-level VAT rate (consumption side)
+        type: number
+    type: object
+  domain.Member:
+    properties:
+      austritts_datum:
+        type: string
+      beitritts_datum:
+        type: string
+      business_role:
+        description: |-
+          BusinessRole classifies the member for VAT purposes on credit notes.
+          Valid values: "privat", "kleinunternehmer", "landwirt_pauschaliert",
+          "unternehmen", "gemeinde_bga", "gemeinde_hoheitlich"
+        type: string
+      created_at:
+        type: string
+      eeg_id:
+        type: string
+      email:
+        type: string
+      iban:
+        type: string
+      id:
+        type: string
+      mitglieds_nr:
+        type: string
+      name1:
+        type: string
+      name2:
+        type: string
+      ort:
+        type: string
+      plz:
+        type: string
+      sepa_mandate_signed_at:
+        description: SEPA mandate data captured during onboarding (used for mandate
+          PDF)
+        type: string
+      sepa_mandate_signed_ip:
+        type: string
+      sepa_mandate_text:
+        type: string
+      status:
+        description: 'Status tracks the member''s lifecycle: ACTIVE | REGISTERED |
+          NEW | INACTIVE'
+        type: string
+      strasse:
+        type: string
+      uid_nummer:
+        description: |-
+          UidNummer is the member's VAT ID (UID).
+          When set, the member is treated as VAT-liable → Reverse Charge on credit notes.
+        type: string
+      use_vat:
+        description: |-
+          UseVat / VatPct: reserved for future manual override on credit notes.
+          NOT applied to consumer invoices (those use only the EEG's settings).
+        type: boolean
+      vat_pct:
+        type: number
+    type: object
+  domain.MemberStat:
+    properties:
+      consumption_kwh:
+        description: EEG share consumed (wh_self)
+        type: number
+      consumption_total_kwh:
+        description: total consumption (wh_total); 0 for billed mode
+        type: number
+      generation_kwh:
+        description: EEG share fed in (wh_community)
+        type: number
+      generation_total_kwh:
+        description: total generation (wh_total); 0 for billed mode
+        type: number
+      invoice_count:
+        type: integer
+      member_id:
+        type: string
+      total_amount:
+        type: number
+    type: object
+  domain.MeterPoint:
+    properties:
+      abgemeldet_am:
+        type: string
+      consent_id:
+        description: NB-assigned ConsentId from ZUSTIMMUNG_ECON; required for CM_REV_SP
+        type: string
+      created_at:
+        type: string
+      eeg_id:
+        type: string
+      energierichtung:
+        type: string
+      gap_alert_sent_at:
+        type: string
+      generation_type:
+        description: PV | Windkraft | Wasserkraft; only for GENERATION meters
+        type: string
+      id:
+        type: string
+      member_id:
+        type: string
+      notes:
+        type: string
+      registriert_seit:
+        type: string
+      status:
+        type: string
+      verteilungsmodell:
+        type: string
+      zaehlpunkt:
+        type: string
+      zugeteilte_menge_pct:
+        type: number
+    type: object
+  domain.MonthlyEnergyRow:
+    properties:
+      consumption_kwh:
+        type: number
+      generation_kwh:
+        type: number
+      month:
+        type: string
+      payouts:
+        description: absolute sum of negative invoice totals (producer credits)
+        type: number
+      revenue:
+        description: sum of positive invoice totals (consumer charges incl. VAT)
+        type: number
+    type: object
+  domain.OnboardingMeterPoint:
+    properties:
+      direction:
+        description: CONSUMPTION or GENERATION
+        type: string
+      generation_type:
+        description: PV | Windkraft | Wasserkraft | Biomasse | Sonstige — only for
+          GENERATION
+        type: string
+      participation_factor:
+        description: 0..100; 0 means default (100)
+        type: number
+      zaehlpunkt:
+        type: string
+    type: object
+  domain.OnboardingRequest:
+    properties:
+      admin_notes:
+        type: string
+      beitritts_datum:
+        description: desired join date from applicant
+        type: string
+      bic:
+        type: string
+      business_role:
+        description: privat | kleinunternehmer | ...
+        type: string
+      contract_accepted_at:
+        type: string
+      contract_ip:
+        type: string
+      converted_member_id:
+        type: string
+      created_at:
+        type: string
+      eeg_id:
+        type: string
+      email:
+        type: string
+      iban:
+        type: string
+      id:
+        type: string
+      member_type:
+        description: CONSUMER | PRODUCER | PROSUMER
+        type: string
+      meter_points:
+        items:
+          $ref: '#/definitions/domain.OnboardingMeterPoint'
+        type: array
+      name1:
+        type: string
+      name2:
+        type: string
+      ort:
+        type: string
+      phone:
+        type: string
+      plz:
+        type: string
+      reminder_sent_at:
+        type: string
+      status:
+        type: string
+      strasse:
+        type: string
+      uid_nummer:
+        type: string
+      updated_at:
+        type: string
+      use_vat:
+        type: boolean
+    type: object
+  domain.TariffEntry:
+    properties:
+      created_at:
+        type: string
+      energy_price:
+        description: ct/kWh
+        type: number
+      id:
+        type: string
+      producer_price:
+        description: ct/kWh
+        type: number
+      schedule_id:
+        type: string
+      valid_from:
+        type: string
+      valid_until:
+        type: string
+    type: object
+  domain.TariffSchedule:
+    properties:
+      created_at:
+        type: string
+      eeg_id:
+        type: string
+      entries:
+        items:
+          $ref: '#/definitions/domain.TariffEntry'
+        type: array
+      entry_count:
+        type: integer
+      granularity:
+        description: annual | monthly | daily | quarter_hour
+        type: string
+      id:
+        type: string
+      is_active:
+        type: boolean
+      name:
+        type: string
+    type: object
+  domain.User:
+    properties:
+      created_at:
+        type: string
+      email:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      organization_id:
+        type: string
+      role:
+        type: string
+    type: object
+  handler.EEGBackup:
+    properties:
+      billing_runs:
+        items:
+          $ref: '#/definitions/domain.BillingRun'
+        type: array
+      created_at:
+        type: string
+      eeg:
+        $ref: '#/definitions/domain.EEG'
+      invoices:
+        items:
+          $ref: '#/definitions/domain.Invoice'
+        type: array
+      members:
+        items:
+          $ref: '#/definitions/domain.Member'
+        type: array
+      meter_points:
+        items:
+          $ref: '#/definitions/domain.MeterPoint'
+        type: array
+      participations:
+        items:
+          $ref: '#/definitions/domain.EEGMeterParticipation'
+        type: array
+      readings:
+        items:
+          $ref: '#/definitions/domain.EnergyReading'
+        type: array
+      tariff_schedules:
+        items:
+          $ref: '#/definitions/domain.TariffSchedule'
+        type: array
+      version:
+        type: string
+    type: object
+  handler.anmeldungRequest:
+    properties:
+      participation_factor:
+        description: 0..100
+        type: number
+      share_type:
+        description: GC, RC_R, RC_L, CC …
+        type: string
+      valid_from:
+        description: YYYY-MM-DD
+        type: string
+      zaehlpunkt:
+        type: string
+    type: object
+  handler.austrittRequest:
+    properties:
+      austritt_datum:
+        description: YYYY-MM-DD, must be >= tomorrow (Vienna time)
+        type: string
+    type: object
+  handler.createUserRequest:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      password:
+        type: string
+      role:
+        description: '"admin" or "user"'
+        type: string
+    type: object
+  handler.edaMessagesResponse:
+    properties:
+      limit:
+        type: integer
+      messages:
+        items:
+          $ref: '#/definitions/domain.EDAMessage'
+        type: array
+      offset:
+        type: integer
+      total_count:
+        type: integer
+    type: object
+  handler.eegRequest:
+    properties:
+      accounting_debitor_prefix:
+        type: integer
+      accounting_expense_account:
+        type: integer
+      accounting_revenue_account:
+        description: Accounting / DATEV
+        type: integer
+      auto_billing_day_of_month:
+        type: integer
+      auto_billing_enabled:
+        description: Auto-billing
+        type: boolean
+      auto_billing_period:
+        type: string
+      bic:
+        type: string
+      billing_period:
+        type: string
+      credit_note_number_digits:
+        type: integer
+      credit_note_number_prefix:
+        type: string
+      datev_client_nr:
+        type: string
+      datev_consultant_nr:
+        type: string
+      discount_pct:
+        type: number
+      eda_imap_host:
+        description: Per-EEG EDA credentials (IMAP + SMTP for MaKo)
+        type: string
+      eda_imap_password:
+        type: string
+      eda_imap_user:
+        type: string
+      eda_marktpartner_id:
+        type: string
+      eda_netzbetreiber_id:
+        type: string
+      eda_smtp_from:
+        type: string
+      eda_smtp_host:
+        type: string
+      eda_smtp_password:
+        type: string
+      eda_smtp_user:
+        type: string
+      eda_transition_date:
+        type: string
+      energy_price:
+        type: number
+      free_kwh:
+        type: number
+      gap_alert_enabled:
+        description: Gap alert
+        type: boolean
+      gap_alert_threshold_days:
+        type: integer
+      gemeinschaft_id:
+        type: string
+      generate_credit_notes:
+        type: boolean
+      gruendungsdatum:
+        description: Gründungsdatum (date-only, YYYY-MM-DD)
+        type: string
+      iban:
+        type: string
+      invoice_footer_text:
+        type: string
+      invoice_number_digits:
+        type: integer
+      invoice_number_prefix:
+        type: string
+      invoice_number_start:
+        type: integer
+      invoice_post_text:
+        type: string
+      invoice_pre_text:
+        type: string
+      meter_fee_eur:
+        type: number
+      name:
+        type: string
+      netzbetreiber:
+        type: string
+      onboarding_contract_text:
+        description: Onboarding
+        type: string
+      ort:
+        type: string
+      participation_fee_eur:
+        type: number
+      plz:
+        type: string
+      portal_show_full_energy:
+        description: Member portal
+        type: boolean
+      producer_price:
+        type: number
+      sepa_creditor_id:
+        type: string
+      smtp_from:
+        type: string
+      smtp_host:
+        description: Per-EEG invoice SMTP credentials
+        type: string
+      smtp_password:
+        type: string
+      smtp_user:
+        type: string
+      strasse:
+        description: Rechnungssteller address (§11 UStG)
+        type: string
+      uid_nummer:
+        type: string
+      use_vat:
+        type: boolean
+      vat_pct:
+        type: number
+    type: object
+  handler.memberRequest:
+    properties:
+      austritts_datum:
+        type: string
+      beitritts_datum:
+        description: 'BeitrittsDatum / AustrittsDatum: YYYY-MM-DD date strings'
+        type: string
+      business_role:
+        description: |-
+          BusinessRole: "privat", "kleinunternehmer", "landwirt_pauschaliert",
+          "unternehmen", "gemeinde_bga", "gemeinde_hoheitlich"
+        type: string
+      email:
+        type: string
+      iban:
+        type: string
+      mitglieds_nr:
+        type: string
+      name1:
+        type: string
+      name2:
+        type: string
+      ort:
+        type: string
+      plz:
+        type: string
+      status:
+        description: 'Status: ACTIVE | REGISTERED | NEW | INACTIVE'
+        type: string
+      strasse:
+        type: string
+      uid_nummer:
+        description: 'UidNummer: VAT ID of the member. When set → Reverse Charge on
+          credit notes.'
+        type: string
+      use_vat:
+        description: |-
+          UseVat / VatPct: reserved for manual override on credit notes.
+          NOT applied to consumer invoices.
+        type: boolean
+      vat_pct:
+        type: number
+    type: object
+  handler.memberWithMeterPoints:
+    properties:
+      austritts_datum:
+        type: string
+      beitritts_datum:
+        type: string
+      business_role:
+        type: string
+      eeg_id:
+        type: string
+      email:
+        type: string
+      iban:
+        type: string
+      id:
+        type: string
+      meter_points:
+        items:
+          $ref: '#/definitions/handler.meterPointShort'
+        type: array
+      mitglieds_nr:
+        type: string
+      name:
+        type: string
+      name1:
+        type: string
+      name2:
+        type: string
+      ort:
+        type: string
+      plz:
+        type: string
+      status:
+        type: string
+      strasse:
+        type: string
+      uid_nummer:
+        type: string
+      use_vat:
+        type: boolean
+      vat_pct:
+        type: number
+    type: object
+  handler.meterPointRequest:
+    properties:
+      energierichtung:
+        type: string
+      generation_type:
+        description: PV | Windkraft | Wasserkraft
+        type: string
+      notes:
+        type: string
+      registriert_seit:
+        type: string
+      status:
+        type: string
+      verteilungsmodell:
+        type: string
+      zaehlpunkt:
+        type: string
+      zugeteilte_menge_pct:
+        type: number
+    type: object
+  handler.meterPointShort:
+    properties:
+      abgemeldet_am:
+        type: string
+      abmeldung_status:
+        description: latest CM_REV_SP status
+        type: string
+      anmeldung_status:
+        description: latest EC_REQ_ONL status
+        type: string
+      direction:
+        type: string
+      generation_type:
+        type: string
+      id:
+        type: string
+      meter_id:
+        type: string
+      participation_factor:
+        type: number
+      registriert_seit:
+        type: string
+    type: object
+  handler.onboardingSubmitRequest:
+    properties:
+      beitritts_datum:
+        description: optional YYYY-MM-DD
+        type: string
+      bic:
+        type: string
+      business_role:
+        description: privat | kleinunternehmer | ...
+        type: string
+      contract_accepted:
+        type: boolean
+      email:
+        type: string
+      iban:
+        type: string
+      member_type:
+        type: string
+      meter_points:
+        items:
+          $ref: '#/definitions/domain.OnboardingMeterPoint'
+        type: array
+      name1:
+        type: string
+      name2:
+        type: string
+      ort:
+        type: string
+      phone:
+        type: string
+      plz:
+        type: string
+      strasse:
+        type: string
+      uid_nummer:
+        type: string
+      use_vat:
+        type: boolean
+    type: object
+  handler.participationRequest:
+    properties:
+      meter_point_id:
+        type: string
+      notes:
+        type: string
+      participation_factor:
+        description: 0.0001–100
+        type: number
+      share_type:
+        type: string
+      valid_from:
+        description: YYYY-MM-DD
+        type: string
+      valid_until:
+        description: YYYY-MM-DD or empty
+        type: string
+    type: object
+  handler.publicDocumentItem:
+    properties:
+      filename:
+        type: string
+      id:
+        type: string
+      mime_type:
+        type: string
+      title:
+        type: string
+    type: object
+  handler.publicEEGInfo:
+    properties:
+      billing_period:
+        type: string
+      documents:
+        items:
+          $ref: '#/definitions/handler.publicDocumentItem'
+        type: array
+      id:
+        type: string
+      name:
+        type: string
+      onboarding_contract_text:
+        type: string
+    type: object
+  handler.resendTokenRequest:
+    properties:
+      eeg_id:
+        type: string
+      email:
+        type: string
+    type: object
+  handler.teilnahmefaktorRequest:
+    properties:
+      date_to:
+        description: YYYY-MM-DD (default empty = 9999-12-31)
+        type: string
+      ec_dis_model:
+        description: S or D (default "S")
+        type: string
+      ec_share:
+        type: number
+      energy_direction:
+        description: CONSUMPTION or GENERATION (default "CONSUMPTION")
+        type: string
+      participation_factor:
+        description: 0..100
+        type: number
+      share_type:
+        description: GC, RC_R, RC_L, CC → ECType
+        type: string
+      valid_from:
+        description: YYYY-MM-DD; defaults to tomorrow
+        type: string
+      zaehlpunkt:
+        type: string
+    type: object
+  handler.updateStatusRequest:
+    properties:
+      admin_notes:
+        type: string
+      beitritts_datum:
+        description: YYYY-MM-DD or ""
+        type: string
+      bic:
+        type: string
+      business_role:
+        type: string
+      custom_message:
+        description: optional custom email body paragraph
+        type: string
+      email:
+        type: string
+      iban:
+        type: string
+      member_type:
+        type: string
+      meter_points:
+        items:
+          $ref: '#/definitions/domain.OnboardingMeterPoint'
+        type: array
+      name1:
+        description: Field-update fields (used when Status is "")
+        type: string
+      name2:
+        type: string
+      netzbetreiber_id:
+        description: optional override for conversion email
+        type: string
+      ort:
+        type: string
+      phone:
+        type: string
+      plz:
+        type: string
+      status:
+        type: string
+      strasse:
+        type: string
+      uid_nummer:
+        type: string
+      use_vat:
+        type: boolean
+    type: object
+  handler.updateUserRequest:
+    properties:
+      email:
+        type: string
+      name:
+        type: string
+      password:
+        description: optional — omit to keep existing password
+        type: string
+      role:
+        description: '"admin" or "user"'
+        type: string
+    type: object
+  handler.widerrufRequest:
+    properties:
+      consent_end:
+        description: YYYY-MM-DD; min today, max +30 Austrian working days
+        type: string
+      reason:
+        type: string
+      reason_key:
+        type: integer
+      zaehlpunkt:
+        type: string
+    type: object
+  handler.zaehlerstandsgangRequest:
+    properties:
+      date_from:
+        description: YYYY-MM-DD
+        type: string
+      date_to:
+        description: YYYY-MM-DD
+        type: string
+      zaehlpunkt:
+        type: string
+    type: object
+  repository.MeterPointGap:
+    properties:
+      abgemeldet_am:
+        type: string
+      consent_id:
+        description: NB-assigned ConsentId from ZUSTIMMUNG_ECON; required for CM_REV_SP
+        type: string
+      created_at:
+        type: string
+      eeg_id:
+        type: string
+      energierichtung:
+        type: string
+      gap_alert_sent_at:
+        type: string
+      generation_type:
+        description: PV | Windkraft | Wasserkraft; only for GENERATION meters
+        type: string
+      id:
+        type: string
+      last_reading_at:
+        description: nil = never had readings
+        type: string
+      member_id:
+        type: string
+      member_name:
+        type: string
+      notes:
+        type: string
+      registriert_seit:
+        type: string
+      status:
+        type: string
+      verteilungsmodell:
+        type: string
+      zaehlpunkt:
+        type: string
+      zugeteilte_menge_pct:
+        type: number
+    type: object
+host: localhost:8101
+info:
+  contact:
+    email: support@eeg.at
+    name: eegabrechnung Support
+  description: Österreichische EEG (Energiegemeinschaft) Abrechnungsplattform — REST
+    API
+  license:
+    name: MIT
+  termsOfService: http://swagger.io/terms/
+  title: eegabrechnung API
+  version: "1.0"
+paths:
+  /admin/users:
+    get:
+      description: Returns all users belonging to the caller's organisation. Requires
+        admin role.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.User'
+            type: array
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List all users
+      tags:
+      - Benutzerverwaltung
+    post:
+      consumes:
+      - application/json
+      description: Creates a new user in the caller's organisation. The password is
+        bcrypt-hashed before storage. Role defaults to 'user' if not specified or
+        invalid. Requires admin role.
+      parameters:
+      - description: New user details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.createUserRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.User'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a new user
+      tags:
+      - Benutzerverwaltung
+  /admin/users/{userID}:
+    delete:
+      description: Permanently deletes the given user. The user must belong to the
+        caller's organisation. Self-deletion is not allowed. Requires admin role.
+      parameters:
+      - description: User UUID
+        in: path
+        name: userID
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a user
+      tags:
+      - Benutzerverwaltung
+    get:
+      description: Returns a single user record. The user must belong to the caller's
+        organisation. Requires admin role.
+      parameters:
+      - description: User UUID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.User'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a user by ID
+      tags:
+      - Benutzerverwaltung
+    put:
+      consumes:
+      - application/json
+      description: Updates name, email, and role for the given user. If password is
+        provided, it is re-hashed and stored. The user must belong to the caller's
+        organisation. Requires admin role.
+      parameters:
+      - description: User UUID
+        in: path
+        name: userID
+        required: true
+        type: string
+      - description: Updated user fields
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.updateUserRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.User'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a user
+      tags:
+      - Benutzerverwaltung
+  /admin/users/{userID}/eegs:
+    get:
+      description: Returns the list of EEG UUIDs that the user has been explicitly
+        assigned to. Admins have implicit access to all EEGs. Requires admin role.
+      parameters:
+      - description: User UUID
+        in: path
+        name: userID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Array of EEG UUIDs
+          schema:
+            items:
+              type: string
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get EEG assignments for a user
+      tags:
+      - Benutzerverwaltung
+    put:
+      consumes:
+      - application/json
+      description: Replaces the full set of EEG assignments for the user. Pass an
+        empty array to remove all assignments. Requires admin role.
+      parameters:
+      - description: User UUID
+        in: path
+        name: userID
+        required: true
+        type: string
+      - description: Array of EEG UUIDs to assign
+        in: body
+        name: body
+        required: true
+        schema:
+          items:
+            type: string
+          type: array
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Set EEG assignments for a user
+      tags:
+      - Benutzerverwaltung
+  /auth/login:
+    post:
+      consumes:
+      - application/json
+      description: Validates email/password credentials and returns a signed JWT together
+        with basic user information.
+      parameters:
+      - description: Login credentials
+        in: body
+        name: credentials
+        required: true
+        schema:
+          properties:
+            email:
+              type: string
+            password:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: JWT token and user info
+          schema:
+            properties:
+              token:
+                type: string
+              user:
+                properties:
+                  email:
+                    type: string
+                  id:
+                    type: string
+                  name:
+                    type: string
+                  organization_id:
+                    type: string
+                  role:
+                    type: string
+                type: object
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Invalid credentials
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Authenticate user
+      tags:
+      - Auth
+  /eda/worker-status:
+    get:
+      description: Returns the last-known status of the EDA worker (transport mode,
+        last poll time, last error). Returns an empty status object if the worker
+        has never run.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.EDAWorkerStatus'
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get EDA worker status
+      tags:
+      - EDA
+  /eegs:
+    get:
+      description: Returns all EEGs accessible to the authenticated user. Admins see
+        all EEGs in the organization; other roles see only their assigned EEGs.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of EEGs
+          schema:
+            items:
+              $ref: '#/definitions/domain.EEG'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List EEGs
+      tags:
+      - EEGs
+    post:
+      consumes:
+      - application/json
+      description: Creates a new Energiegemeinschaft (EEG) within the authenticated
+        user's organization. Fields name and netzbetreiber are required.
+      parameters:
+      - description: EEG data (name and netzbetreiber required)
+        in: body
+        name: eeg
+        required: true
+        schema:
+          $ref: '#/definitions/handler.eegRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created EEG
+          schema:
+            $ref: '#/definitions/domain.EEG'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create EEG
+      tags:
+      - EEGs
+  /eegs/{eegID}:
+    delete:
+      description: Permanently deletes an EEG and all its associated data. This action
+        is irreversible.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No content
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete EEG
+      tags:
+      - EEGs
+    get:
+      description: Returns a single EEG by its UUID, scoped to the authenticated user's
+        organization.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: EEG object
+          schema:
+            $ref: '#/definitions/domain.EEG'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get EEG
+      tags:
+      - EEGs
+    put:
+      consumes:
+      - application/json
+      description: Updates settings of an existing EEG. Only fields provided in the
+        body are applied; name and netzbetreiber are kept if omitted.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: EEG update data
+        in: body
+        name: eeg
+        required: true
+        schema:
+          $ref: '#/definitions/handler.eegRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated EEG
+          schema:
+            $ref: '#/definitions/domain.EEG'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update EEG
+      tags:
+      - EEGs
+  /eegs/{eegID}/accounting/export:
+    get:
+      description: Exports invoices for the given date range as an XLSX Buchungsjournal
+        or a DATEV EXTF Buchungsstapel CSV. Cancelled invoices are excluded. Both
+        from and to are required.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Start date (YYYY-MM-DD, inclusive)
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: End date (YYYY-MM-DD, inclusive)
+        in: query
+        name: to
+        required: true
+        type: string
+      - description: 'Export format: xlsx (default) or datev'
+        enum:
+        - xlsx
+        - datev
+        in: query
+        name: format
+        type: string
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      - text/csv
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export accounting data
+      tags:
+      - Buchhaltung
+  /eegs/{eegID}/backup:
+    get:
+      description: Exports a complete JSON snapshot of all EEG data including members,
+        meter points, tariff schedules, billing runs, invoices, participations, and
+        energy readings. The file is returned as a downloadable attachment.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.EEGBackup'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export full EEG data snapshot
+      tags:
+      - System
+  /eegs/{eegID}/billing/run:
+    post:
+      consumes:
+      - application/json
+      description: Startet einen neuen Abrechnungslauf für den angegebenen Zeitraum.
+        Gibt 409 zurück, wenn sich der Zeitraum mit einem bestehenden Lauf überschneidet
+        (außer force=true).
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Abrechnungsparameter
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Ergebnis mit billing_run, invoices_created, invoices, preview
+          schema:
+            type: object
+        "400":
+          description: Ungültige Eingabe
+          schema:
+            type: object
+        "409":
+          description: Zeitraumüberschneidung mit bestehendem Abrechnungslauf
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Abrechnungslauf starten
+      tags:
+      - Abrechnung
+  /eegs/{eegID}/billing/runs:
+    get:
+      description: Gibt alle Abrechnungsläufe einer EEG zurück.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Liste der Abrechnungsläufe
+          schema:
+            items:
+              $ref: '#/definitions/domain.BillingRun'
+            type: array
+        "400":
+          description: Ungültige EEG ID
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Abrechnungsläufe auflisten
+      tags:
+      - Abrechnung
+  /eegs/{eegID}/billing/runs/{runID}:
+    delete:
+      description: Löscht einen Abrechnungslauf im Status 'draft' endgültig, inklusive
+        aller zugehörigen Rechnungen. Nur Entwürfe können gelöscht werden.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Abrechnungslauf-ID (UUID)
+        in: path
+        name: runID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: Erfolgreich gelöscht
+        "400":
+          description: Ungültige ID oder Lauf nicht im Draft-Status
+          schema:
+            type: object
+        "404":
+          description: Abrechnungslauf nicht gefunden
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Abrechnungslauf löschen
+      tags:
+      - Abrechnung
+  /eegs/{eegID}/billing/runs/{runID}/cancel:
+    post:
+      description: 'Storniert einen finalisierten Abrechnungslauf: erzeugt Stornorechnungs-PDFs
+        für alle nicht bezahlten Rechnungen und setzt den Lauf sowie die Rechnungen
+        auf ''cancelled''.'
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Abrechnungslauf-ID (UUID)
+        in: path
+        name: runID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Stornierter Abrechnungslauf
+          schema:
+            type: object
+        "400":
+          description: Ungültige ID
+          schema:
+            type: object
+        "404":
+          description: EEG oder Abrechnungslauf nicht gefunden
+          schema:
+            type: object
+        "409":
+          description: Lauf bereits storniert
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Abrechnungslauf stornieren
+      tags:
+      - Abrechnung
+  /eegs/{eegID}/billing/runs/{runID}/export:
+    get:
+      description: Gibt eine XLSX-Datei mit allen Rechnungsdaten des Abrechnungslaufs
+        zurück (Rechnungsnummer, Mitglied, Zeitraum, kWh, Betrag, Status).
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Abrechnungslauf-ID (UUID)
+        in: path
+        name: runID
+        required: true
+        type: string
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      responses:
+        "200":
+          description: XLSX-Datei
+          schema:
+            type: file
+        "400":
+          description: Ungültige ID
+          schema:
+            type: object
+        "404":
+          description: EEG nicht gefunden
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Abrechnungslauf als XLSX exportieren
+      tags:
+      - Abrechnung
+  /eegs/{eegID}/billing/runs/{runID}/finalize:
+    post:
+      description: Setzt einen Abrechnungslauf im Status 'draft' auf 'finalized'.
+        Finalisierte Läufe sind unveränderlich.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Abrechnungslauf-ID (UUID)
+        in: path
+        name: runID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Aktualisierter Abrechnungslauf
+          schema:
+            type: object
+        "400":
+          description: Ungültige ID oder Lauf bereits finalisiert
+          schema:
+            type: object
+        "404":
+          description: Abrechnungslauf nicht gefunden
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Abrechnungslauf abschließen
+      tags:
+      - Abrechnung
+  /eegs/{eegID}/billing/runs/{runID}/invoices:
+    get:
+      description: Gibt alle Rechnungen zurück, die einem bestimmten Abrechnungslauf
+        zugeordnet sind.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Abrechnungslauf-ID (UUID)
+        in: path
+        name: runID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Liste der Rechnungen
+          schema:
+            items:
+              $ref: '#/definitions/domain.Invoice'
+            type: array
+        "400":
+          description: Ungültige ID
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Rechnungen eines Abrechnungslaufs auflisten
+      tags:
+      - Abrechnung
+  /eegs/{eegID}/billing/runs/{runID}/send-all:
+    post:
+      description: Versendet alle Rechnungen eines Abrechnungslaufs per E-Mail (Route
+        mit runID) oder alle offenen Rechnungen einer EEG (Legacy-Route ohne runID).
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Abrechnungslauf-ID (UUID); nur bei der Lauf-Route
+        in: path
+        name: runID
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Versandergebnis
+          schema:
+            type: object
+        "400":
+          description: Ungültige ID
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Alle Rechnungen versenden
+      tags:
+      - Abrechnung
+  /eegs/{eegID}/billing/runs/{runID}/zip:
+    get:
+      description: Erzeugt ein ZIP-Archiv aller Rechnungs-PDFs eines Abrechnungslaufs
+        und streamt es als Download.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Abrechnungslauf-ID (UUID)
+        in: path
+        name: runID
+        required: true
+        type: string
+      produces:
+      - application/zip
+      responses:
+        "200":
+          description: ZIP-Archiv der PDFs
+          schema:
+            type: file
+        "400":
+          description: Ungültige ID
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Abrechnungslauf als ZIP herunterladen
+      tags:
+      - Abrechnung
+  /eegs/{eegID}/eda/anmeldung:
+    post:
+      consumes:
+      - application/json
+      description: Creates an EC_EINZEL_ANM process to register a single meter point
+        with the energy community (Netzbetreiber). Queues an outbound XML job for
+        the EDA worker.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Anmeldung request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.anmeldungRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.EDAProcess'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Register meter point (EC_EINZEL_ANM)
+      tags:
+      - EDA
+  /eegs/{eegID}/eda/errors:
+    get:
+      description: Returns EDA messages that failed processing and were moved to the
+        dead-letter (eda_errors) table for manual review.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Maximum number of entries to return (default 50, max 500)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.EDAError'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List EDA dead-letter errors
+      tags:
+      - EDA
+  /eegs/{eegID}/eda/messages:
+    get:
+      description: Returns EDA protocol messages (inbound and outbound) for the given
+        EEG, ordered by received/sent time descending. The result is limited to 100
+        entries by default; use the limit and offset query parameters for pagination
+        (max 500 per page).
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Maximum number of messages to return (default 100, max 500)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of messages to skip for pagination (default 0)
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.edaMessagesResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List EDA messages for an EEG
+      tags:
+      - System
+  /eegs/{eegID}/eda/messages/{msgID}/xml:
+    get:
+      description: Returns the raw MaKo XML payload for the specified EDA message
+        as a downloadable attachment (application/xml). The message must belong to
+        the given EEG.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: EDA message UUID
+        in: path
+        name: msgID
+        required: true
+        type: string
+      produces:
+      - application/xml
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Download raw XML for an EDA message
+      tags:
+      - System
+  /eegs/{eegID}/eda/podlist:
+    post:
+      consumes:
+      - application/json
+      description: Sends an ANFORDERUNG_ECP (CPRequest 01.12) to the Netzbetreiber
+        to request the current list of registered meter points (Zählpunktliste) for
+        the energy community. Queues an outbound XML job for the EDA worker.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.EDAProcess'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Request Zählpunktliste (EC_PODLIST)
+      tags:
+      - EDA
+  /eegs/{eegID}/eda/poll-now:
+    post:
+      description: Proxies a poll-now trigger to the EDA worker HTTP server. Requires
+        EDA_WORKER_URL to be configured. Returns 503 if the worker is not configured
+        or unreachable.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: EDA worker not configured or unreachable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Trigger immediate EDA worker poll
+      tags:
+      - EDA
+  /eegs/{eegID}/eda/processes:
+    get:
+      description: Returns all EDA processes (Anmeldung, Abmeldung, Teilnahmefaktor)
+        for an EEG.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.EDAProcess'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List EDA processes
+      tags:
+      - EDA
+  /eegs/{eegID}/eda/teilnahmefaktor:
+    post:
+      consumes:
+      - application/json
+      description: Creates an EC_PRTFACT_CHG process to change the participation factor
+        for a meter point. Restricted to 09:00–17:00 Vienna time; effective from the
+        next calendar day. Only one change per Zählpunkt per day is allowed.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Teilnahmefaktor change request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.teilnahmefaktorRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.EDAProcess'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Duplicate change for today
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Outside allowed time window (09:00–17:00 Vienna)
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Change participation factor (EC_PRTFACT_CHG)
+      tags:
+      - EDA
+  /eegs/{eegID}/eda/widerruf:
+    post:
+      consumes:
+      - application/json
+      description: Sends a CMRevoke 01.10 (AUFHEBUNG_CCMS) to the Netzbetreiber to
+        revoke a previously granted customer consent. Used when a member leaves the
+        EEG.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Widerruf request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.widerrufRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.EDAProcess'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Revoke customer consent (CM_REV_SP)
+      tags:
+      - EDA
+  /eegs/{eegID}/eda/zaehlerstandsgang:
+    post:
+      consumes:
+      - application/json
+      description: Sends an EC_REQ_PT request for historical Zählpunktdaten (meter
+        readings) over a given date range. Queues an outbound XML job for the EDA
+        worker.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Zählerstandsgang request
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.zaehlerstandsgangRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.EDAProcess'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Request historical meter data (EC_REQ_PT)
+      tags:
+      - EDA
+  /eegs/{eegID}/energy/members:
+    get:
+      description: Returns raw energy readings aggregated per member for a date range.
+        Used for CSV/XLSX export of member energy data. Both from and to are required.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Start date (YYYY-MM-DD, inclusive, Vienna time)
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: End date (YYYY-MM-DD, inclusive, Vienna time)
+        in: query
+        name: to
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.MemberStat'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Raw per-member energy export
+      tags:
+      - Berichte
+  /eegs/{eegID}/energy/summary:
+    get:
+      description: Returns EEG-wide aggregated energy readings (consumption, generation,
+        Restbedarf, Resteinspeisung) bucketed by the requested granularity. Date boundaries
+        are interpreted in Vienna local time (Europe/Vienna).
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Start date (YYYY-MM-DD, inclusive, Vienna time)
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: End date (YYYY-MM-DD, inclusive, Vienna time)
+        in: query
+        name: to
+        required: true
+        type: string
+      - description: 'Time bucket size: year, month, day, 15min (default: month)'
+        enum:
+        - year
+        - month
+        - day
+        - 15min
+        in: query
+        name: granularity
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.EnergySummaryRow'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: EEG-wide energy summary
+      tags:
+      - Berichte
+  /eegs/{eegID}/export/stammdaten:
+    get:
+      description: 'Generates and downloads an XLSX workbook with two sheets: Mitglieder
+        (members) and Zählpunkte (meter points) for the given EEG.'
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      responses:
+        "200":
+          description: XLSX file attachment
+          schema:
+            type: file
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export master data as XLSX
+      tags:
+      - EEGs
+  /eegs/{eegID}/gap-alerts:
+    get:
+      description: Returns meter points with gap_alert_sent_at set (i.e. an alert
+        was sent and data is still missing).
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of gap alerts
+          schema:
+            items:
+              $ref: '#/definitions/repository.MeterPointGap'
+            type: array
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List current gap alerts for an EEG
+      tags:
+      - EEGs
+  /eegs/{eegID}/import/energiedaten:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Importiert Energiemesswerte aus einer Energiedaten-XLSX. Mit ?mode=overwrite
+        (Standard) werden bestehende Werte überschrieben; mit ?mode=skip werden Konflikte
+        übersprungen. Messwerte ab dem EDA-Übergangsdatum werden automatisch verworfen.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: 'Konfliktbehandlung: overwrite (Standard) oder skip'
+        enum:
+        - overwrite
+        - skip
+        in: query
+        name: mode
+        type: string
+      - description: XLSX-Datei mit Energiedaten
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Importergebnis (rows_parsed, rows_inserted, skipped_meters,
+            mode)
+          schema:
+            type: object
+        "400":
+          description: Ungültige EEG ID, fehlendes Dateifeld oder Parse-Fehler
+          schema:
+            type: object
+        "404":
+          description: EEG nicht gefunden
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Energiedaten importieren
+      tags:
+      - Energiedaten
+  /eegs/{eegID}/import/energiedaten/preview:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Parst eine Energiedaten-XLSX und vergleicht sie mit den bestehenden
+        DB-Daten. Gibt Statistiken zu neuen, identischen und konfliktierenden Zeilen
+        zurück, ohne etwas zu speichern.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: XLSX-Datei mit Energiedaten
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Vorschau-Statistiken (total_rows, new_rows, identical_rows,
+            conflict_rows, skipped_meters, skipped_transition)
+          schema:
+            type: object
+        "400":
+          description: Ungültige EEG ID, fehlendes Dateifeld oder Parse-Fehler
+          schema:
+            type: object
+        "404":
+          description: EEG nicht gefunden
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Energiedaten-Import vorschau
+      tags:
+      - Energiedaten
+  /eegs/{eegID}/import/stammdaten:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Importiert Mitglieder und Zählpunkte aus einer XLSX-Datei (multipart/form-data,
+        Feld "file"). Vorhandene Datensätze werden per Upsert aktualisiert.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: XLSX-Datei mit Stammdaten
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Anzahl importierter Mitglieder und Zählpunkte
+          schema:
+            type: object
+        "400":
+          description: Ungültige EEG ID, fehlendes Dateifeld oder Parse-Fehler
+          schema:
+            type: object
+        "404":
+          description: EEG nicht gefunden
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Stammdaten importieren
+      tags:
+      - Energiedaten
+  /eegs/{eegID}/invoices:
+    get:
+      description: Gibt alle Rechnungen einer EEG zurück.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Liste der Rechnungen
+          schema:
+            items:
+              $ref: '#/definitions/domain.Invoice'
+            type: array
+        "400":
+          description: Ungültige EEG ID
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Rechnungen auflisten
+      tags:
+      - Abrechnung
+  /eegs/{eegID}/invoices/{invoiceID}/pdf:
+    get:
+      description: Liefert das PDF einer Rechnung als Binärdatei. Mit ?regenerate=true
+        wird das PDF neu generiert.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Rechnungs-ID (UUID)
+        in: path
+        name: invoiceID
+        required: true
+        type: string
+      - description: PDF neu generieren statt aus Datei lesen
+        in: query
+        name: regenerate
+        type: boolean
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: PDF-Datei
+          schema:
+            type: file
+        "400":
+          description: Ungültige ID
+          schema:
+            type: object
+        "404":
+          description: Rechnung oder PDF nicht gefunden
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Rechnungs-PDF abrufen
+      tags:
+      - Abrechnung
+  /eegs/{eegID}/invoices/{invoiceID}/resend:
+    post:
+      description: Versendet eine einzelne Rechnung erneut per E-Mail an die hinterlegte
+        Mitglieds-E-Mail-Adresse.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Rechnungs-ID (UUID)
+        in: path
+        name: invoiceID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Erfolgsmeldung
+          schema:
+            type: object
+        "400":
+          description: Ungültige ID, kein PDF oder keine E-Mail-Adresse
+          schema:
+            type: object
+        "404":
+          description: Rechnung, Mitglied oder EEG nicht gefunden
+          schema:
+            type: object
+        "500":
+          description: Versandfehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Rechnung erneut versenden
+      tags:
+      - Abrechnung
+  /eegs/{eegID}/invoices/{invoiceID}/sepa-return:
+    patch:
+      consumes:
+      - application/json
+      description: Setzt oder löscht eine SEPA-Rücklastschrift für eine Rechnung.
+        Wenn alle Felder leer sind, wird die Rücklastschrift gelöscht.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Rechnungs-ID (UUID)
+        in: path
+        name: invoiceID
+        required: true
+        type: string
+      - description: Rücklastschrift-Daten
+        in: body
+        name: body
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Aktualisierte Rechnung
+          schema:
+            $ref: '#/definitions/domain.Invoice'
+        "400":
+          description: Ungültige Eingabe
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: SEPA-Rücklastschrift erfassen oder entfernen
+      tags:
+      - Abrechnung
+  /eegs/{eegID}/invoices/{invoiceID}/status:
+    patch:
+      consumes:
+      - application/json
+      description: 'Setzt den Status einer Rechnung. Gültige Werte: draft, pending,
+        sent, paid, cancelled.'
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Rechnungs-ID (UUID)
+        in: path
+        name: invoiceID
+        required: true
+        type: string
+      - description: Neuer Status
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Gesetzter Status
+          schema:
+            type: object
+        "400":
+          description: Ungültige ID oder ungültiger Status
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Rechnungsstatus aktualisieren
+      tags:
+      - Abrechnung
+  /eegs/{eegID}/logo:
+    get:
+      description: Serves the stored logo image for an EEG. Returns image/jpeg or
+        image/png depending on the stored file extension.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      produces:
+      - image/jpeg
+      - image/png
+      responses:
+        "200":
+          description: Logo image
+          schema:
+            type: file
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get EEG logo
+      tags:
+      - EEGs
+    post:
+      consumes:
+      - multipart/form-data
+      description: Accepts a JPEG or PNG image (max 4 MB) via multipart/form-data
+        field "logo", stores it on disk and updates the EEG logo.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Logo image (JPEG or PNG, max 4 MB)
+        in: formData
+        name: logo
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Upload status
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upload EEG logo
+      tags:
+      - EEGs
+  /eegs/{eegID}/members:
+    get:
+      description: Returns all members belonging to the given EEG, each with their
+        assigned meter points. Supports optional full-text search (q) and status filter.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Full-text search string (name, email, member number)
+        in: query
+        name: q
+        type: string
+      - description: Filter by member status (ACTIVE or INACTIVE)
+        in: query
+        name: status
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: List of members with meter points
+          schema:
+            items:
+              $ref: '#/definitions/handler.memberWithMeterPoints'
+            type: array
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List members of an EEG
+      tags:
+      - EEGs
+    post:
+      consumes:
+      - application/json
+      description: Creates a new member in the given EEG. Field name1 is required.
+        business_role defaults to "privat". MitgliedsNr is auto-generated if not provided.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Member data (name1 required)
+        in: body
+        name: member
+        required: true
+        schema:
+          $ref: '#/definitions/handler.memberRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created member
+          schema:
+            $ref: '#/definitions/domain.Member'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create member
+      tags:
+      - Mitglieder
+  /eegs/{eegID}/members/{memberID}:
+    delete:
+      description: Permanently removes a member and their data from the EEG. This
+        action is irreversible.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Member UUID
+        in: path
+        name: memberID
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No content
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete member
+      tags:
+      - Mitglieder
+    get:
+      description: Returns a single member with all their assigned meter points.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Member UUID
+        in: path
+        name: memberID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Member with meter points
+          schema:
+            $ref: '#/definitions/handler.memberWithMeterPoints'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get member
+      tags:
+      - Mitglieder
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing member's details. Provided fields overwrite
+        existing values; omitting a field typically retains the current value (except
+        nullable fields which are cleared).
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Member UUID
+        in: path
+        name: memberID
+        required: true
+        type: string
+      - description: Member update data
+        in: body
+        name: member
+        required: true
+        schema:
+          $ref: '#/definitions/handler.memberRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated member
+          schema:
+            $ref: '#/definitions/domain.Member'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update member
+      tags:
+      - Mitglieder
+  /eegs/{eegID}/members/{memberID}/austritt:
+    post:
+      consumes:
+      - application/json
+      description: Sets the member to INACTIVE, stores the Austrittsdatum, and triggers
+        CM_REV_SP for all active meter points (abgemeldet_am IS NULL).
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Member UUID
+        in: path
+        name: memberID
+        required: true
+        type: string
+      - description: Austritt date
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.austrittRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: abmeldungen_erstellt
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Deregister member (Mitglieder-Austritt)
+      tags:
+      - Mitglieder
+  /eegs/{eegID}/members/{memberID}/meter-points:
+    post:
+      consumes:
+      - application/json
+      description: Adds a new meter point (Zählpunkt) to a member. zaehlpunkt and
+        energierichtung are required. verteilungsmodell defaults to DYNAMIC; status
+        defaults to ACTIVATED.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Member UUID
+        in: path
+        name: memberID
+        required: true
+        type: string
+      - description: Meter point data (zaehlpunkt and energierichtung required)
+        in: body
+        name: mp
+        required: true
+        schema:
+          $ref: '#/definitions/handler.meterPointRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created meter point
+          schema:
+            $ref: '#/definitions/domain.MeterPoint'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create meter point
+      tags:
+      - Zählpunkte
+  /eegs/{eegID}/members/{memberID}/sepa-mandat:
+    get:
+      description: Generates a SEPA mandate PDF containing the member's name, address,
+        IBAN, mandate reference, creditor ID, acceptance timestamp, IP address, and
+        the contract text accepted during onboarding.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Member UUID
+        in: path
+        name: memberID
+        required: true
+        type: string
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Download SEPA mandate PDF for a member
+      tags:
+      - Mitglieder
+  /eegs/{eegID}/meter-points/{meterPointID}:
+    delete:
+      description: Permanently removes a meter point. This action is irreversible.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Meter point UUID
+        in: path
+        name: meterPointID
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No content
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete meter point
+      tags:
+      - Zählpunkte
+    get:
+      description: Returns a single meter point by its UUID.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Meter point UUID
+        in: path
+        name: meterPointID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Meter point
+          schema:
+            $ref: '#/definitions/domain.MeterPoint'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get meter point
+      tags:
+      - Zählpunkte
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing meter point's attributes. Provided non-empty
+        fields overwrite existing values. generation_type is cleared when sent as
+        an empty string.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Meter point UUID
+        in: path
+        name: meterPointID
+        required: true
+        type: string
+      - description: Meter point update data
+        in: body
+        name: mp
+        required: true
+        schema:
+          $ref: '#/definitions/handler.meterPointRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated meter point
+          schema:
+            $ref: '#/definitions/domain.MeterPoint'
+        "400":
+          description: Bad request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update meter point
+      tags:
+      - Zählpunkte
+  /eegs/{eegID}/onboarding:
+    get:
+      description: Returns all onboarding requests (pending, approved, rejected, converted)
+        for the given EEG.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.OnboardingRequest'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List onboarding requests for an EEG
+      tags:
+      - Onboarding
+  /eegs/{eegID}/onboarding/{id}:
+    get:
+      description: Returns a single onboarding request by its UUID, scoped to the
+        given EEG.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Onboarding request UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.OnboardingRequest'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a single onboarding request
+      tags:
+      - Onboarding
+    patch:
+      consumes:
+      - application/json
+      description: Updates the status of an onboarding request. When status is 'approved',
+        atomically creates the member, meter points, and EDA Anmeldung processes,
+        then marks the request as 'converted'. When status is 'rejected', records
+        the rejection with optional admin notes.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Onboarding request UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Status update (approved/rejected/pending) with optional admin_notes
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.updateStatusRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.OnboardingRequest'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Already converted
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Approve or reject an onboarding request
+      tags:
+      - Onboarding
+  /eegs/{eegID}/participations:
+    get:
+      description: Returns all Mehrfachteilnahme records (meter point participations)
+        for the given EEG.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.EEGMeterParticipation'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List participations for an EEG
+      tags:
+      - Mehrfachteilnahme
+    post:
+      consumes:
+      - application/json
+      description: Creates a new Mehrfachteilnahme record linking a meter point to
+        the EEG with a given participation factor, share type (GC/RC_R/RC_L/CC), and
+        validity period.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Participation details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.participationRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/domain.EEGMeterParticipation'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a meter point participation
+      tags:
+      - Mehrfachteilnahme
+  /eegs/{eegID}/participations/{id}:
+    delete:
+      description: Permanently deletes a Mehrfachteilnahme record.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Participation UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a meter point participation
+      tags:
+      - Mehrfachteilnahme
+    put:
+      consumes:
+      - application/json
+      description: Updates an existing Mehrfachteilnahme record. All writable fields
+        are replaced.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Participation UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated participation details
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.participationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.EEGMeterParticipation'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a meter point participation
+      tags:
+      - Mehrfachteilnahme
+  /eegs/{eegID}/readings/coverage:
+    get:
+      description: Gibt für jedes Kalendertag des angegebenen Jahres an, ob Messwerte
+        für die EEG vorhanden sind. Nützlich für die Darstellung der Datenverfügbarkeit
+        vor einem Import.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: 'Jahr (Standard: aktuelles Jahr)'
+        in: query
+        name: year
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Abdeckungsdaten (year, days[], optional gruendungsdatum)
+          schema:
+            type: object
+        "400":
+          description: Ungültige EEG ID
+          schema:
+            type: object
+        "404":
+          description: EEG nicht gefunden
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Datenabdeckung abrufen
+      tags:
+      - Energiedaten
+  /eegs/{eegID}/reports/annual:
+    get:
+      description: 'Generates an XLSX annual report with two sheets: member list at
+        the reference date and per-member energy + billing totals for the date range.'
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Member reference date (YYYY-MM-DD) — members active on this date
+          are listed
+        in: query
+        name: date
+        required: true
+        type: string
+      - description: Period start (YYYY-MM-DD) for energy and billing
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Period end (YYYY-MM-DD, inclusive) for energy and billing
+        in: query
+        name: to
+        required: true
+        type: string
+      produces:
+      - application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Annual report (XLSX download)
+      tags:
+      - Berichte
+  /eegs/{eegID}/reports/energy:
+    get:
+      description: Returns aggregated energy and financial data grouped by calendar
+        month for the given year. Each row contains consumption/generation kWh and
+        revenue/payout totals.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: 'Calendar year (default: current year)'
+        in: query
+        name: year
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.MonthlyEnergyRow'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Monthly energy report
+      tags:
+      - Berichte
+  /eegs/{eegID}/reports/members:
+    get:
+      description: Returns aggregated invoice totals and energy volumes per member
+        over an optional date range. Used for the members breakdown report.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Start date (YYYY-MM-DD, inclusive)
+        in: query
+        name: from
+        type: string
+      - description: End date (YYYY-MM-DD, inclusive)
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.MemberStat'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Per-member energy and invoice statistics
+      tags:
+      - Berichte
+  /eegs/{eegID}/restore:
+    post:
+      consumes:
+      - multipart/form-data
+      description: 'Restores all EEG data from a previously exported JSON backup file.
+        The operation runs inside a single database transaction: existing data for
+        the EEG is deleted in FK-safe order, then all records from the backup are
+        re-inserted. The backup file must be uploaded as multipart/form-data with
+        field name ''file''. Only backup version ''1'' is supported.'
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: JSON backup file (produced by the Export endpoint)
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: counts of restored records
+          schema:
+            additionalProperties:
+              type: integer
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Restore EEG data from a backup snapshot
+      tags:
+      - System
+  /eegs/{eegID}/search:
+    get:
+      description: Full-text search across members (name, email, member number), meter
+        points (Zählpunktnummer), and invoices (invoice number). The query string
+        must be at least 2 characters long. Returns empty arrays for each category
+        when no matches are found.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Search query (minimum 2 characters)
+        in: query
+        name: q
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: members, meter_points, invoices arrays
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Search members, meter points and invoices
+      tags:
+      - System
+  /eegs/{eegID}/sepa/camt054:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Importiert eine CAMT.054 Bankbenachrichtigung und erfasst automatisch
+        Rücklastschriften für die betroffenen Rechnungen.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: CAMT.054 XML-Datei
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'Ergebnis: matched, not_found, already_returned'
+          schema:
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: CAMT.054 Rücklastschriften importieren
+      tags:
+      - SEPA
+  /eegs/{eegID}/sepa/pain001:
+    get:
+      description: Generates and returns a pain.001.001.03 SEPA credit-transfer XML
+        for the invoices of the given EEG. Optionally filtered by billing_run_id or
+        legacy period_start/period_end query params. Only invoices with status draft,
+        pending, or sent are included.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Filter by billing run ID (UUID)
+        in: query
+        name: billing_run_id
+        type: string
+      - description: 'Legacy filter: period start date (YYYY-MM-DD)'
+        in: query
+        name: period_start
+        type: string
+      - description: 'Legacy filter: period end date (YYYY-MM-DD)'
+        in: query
+        name: period_end
+        type: string
+      produces:
+      - application/xml
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Download SEPA pain.001 credit-transfer file
+      tags:
+      - SEPA
+  /eegs/{eegID}/sepa/pain008:
+    get:
+      description: Generates and returns a pain.008.001.02 SEPA direct-debit XML for
+        the invoices of the given EEG. Optionally filtered by billing_run_id or legacy
+        period_start/period_end query params. Only invoices with status draft, pending,
+        or sent are included.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Filter by billing run ID (UUID)
+        in: query
+        name: billing_run_id
+        type: string
+      - description: 'Legacy filter: period start date (YYYY-MM-DD)'
+        in: query
+        name: period_start
+        type: string
+      - description: 'Legacy filter: period end date (YYYY-MM-DD)'
+        in: query
+        name: period_end
+        type: string
+      produces:
+      - application/xml
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Download SEPA pain.008 direct-debit file
+      tags:
+      - SEPA
+  /eegs/{eegID}/stats:
+    get:
+      description: Returns aggregate statistics for the EEG such as member counts,
+        meter point counts, and energy totals.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema: {}
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get EEG statistics
+      tags:
+      - System
+  /eegs/{eegID}/tariffs:
+    get:
+      description: Gibt alle Tarifpläne (TariffSchedules) einer EEG zurück.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Liste der Tarifpläne
+          schema:
+            items:
+              $ref: '#/definitions/domain.TariffSchedule'
+            type: array
+        "400":
+          description: Ungültige EEG ID
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Tarifpläne auflisten
+      tags:
+      - Tarifpläne
+    post:
+      consumes:
+      - application/json
+      description: 'Legt einen neuen Tarifplan für eine EEG an. Granularität: annual,
+        monthly, daily, quarter_hour (Standard: monthly).'
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Tarifplan-Daten
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Angelegter Tarifplan
+          schema:
+            $ref: '#/definitions/domain.TariffSchedule'
+        "400":
+          description: Ungültige EEG ID oder fehlender Name
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Tarifplan anlegen
+      tags:
+      - Tarifpläne
+  /eegs/{eegID}/tariffs/{scheduleID}:
+    delete:
+      description: Löscht einen Tarifplan und alle zugehörigen Tarifeinträge endgültig.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Tarifplan-ID (UUID)
+        in: path
+        name: scheduleID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Bestätigung
+          schema:
+            type: object
+        "400":
+          description: Ungültige ID
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Tarifplan löschen
+      tags:
+      - Tarifpläne
+    get:
+      description: Gibt einen einzelnen Tarifplan inklusive aller Tarifeinträge zurück.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Tarifplan-ID (UUID)
+        in: path
+        name: scheduleID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Tarifplan mit Einträgen
+          schema:
+            $ref: '#/definitions/domain.TariffSchedule'
+        "400":
+          description: Ungültige ID
+          schema:
+            type: object
+        "404":
+          description: Tarifplan nicht gefunden
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Tarifplan abrufen
+      tags:
+      - Tarifpläne
+    put:
+      consumes:
+      - application/json
+      description: Aktualisiert Name und Granularität eines bestehenden Tarifplans.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Tarifplan-ID (UUID)
+        in: path
+        name: scheduleID
+        required: true
+        type: string
+      - description: Aktualisierte Tarifplan-Daten
+        in: body
+        name: body
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Aktualisierter Tarifplan
+          schema:
+            $ref: '#/definitions/domain.TariffSchedule'
+        "400":
+          description: Ungültige ID oder Request
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Tarifplan aktualisieren
+      tags:
+      - Tarifpläne
+  /eegs/{eegID}/tariffs/{scheduleID}/activate:
+    delete:
+      description: Deaktiviert den aktiven Tarifplan, ohne ihn zu löschen.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Tarifplan-ID (UUID)
+        in: path
+        name: scheduleID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'is_active: false'
+          schema:
+            type: object
+        "400":
+          description: Ungültige ID
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Tarifplan deaktivieren
+      tags:
+      - Tarifpläne
+    post:
+      description: Aktiviert einen Tarifplan für die EEG. Pro EEG kann nur ein Tarifplan
+        gleichzeitig aktiv sein. Gibt 409 zurück, wenn bereits ein anderer aktiv ist.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Tarifplan-ID (UUID)
+        in: path
+        name: scheduleID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: 'is_active: true'
+          schema:
+            type: object
+        "400":
+          description: Ungültige ID
+          schema:
+            type: object
+        "409":
+          description: Ein anderer Tarifplan ist bereits aktiv
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Tarifplan aktivieren
+      tags:
+      - Tarifpläne
+  /eegs/{eegID}/tariffs/{scheduleID}/entries:
+    put:
+      consumes:
+      - application/json
+      description: Ersetzt alle Tarifeinträge eines Tarifplans vollständig durch die
+        übergebene Liste. Jeder Eintrag enthält einen Gültigkeitszeitraum sowie Energie-
+        und Einspeisepreis in ct/kWh.
+      parameters:
+      - description: EEG ID (UUID)
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Tarifplan-ID (UUID)
+        in: path
+        name: scheduleID
+        required: true
+        type: string
+      - description: Liste der Tarifeinträge
+        in: body
+        name: body
+        required: true
+        schema:
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Anzahl gespeicherter Einträge
+          schema:
+            type: object
+        "400":
+          description: Ungültige ID, Datumsformat oder Request
+          schema:
+            type: object
+        "500":
+          description: Interner Fehler
+          schema:
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Tarifeinträge setzen
+      tags:
+      - Tarifpläne
+  /public/eegs/{eegID}/info:
+    get:
+      description: Returns limited EEG details for display on the public onboarding
+        page (name, billing period, contract text).
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handler.publicEEGInfo'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get public EEG info
+      tags:
+      - Onboarding
+  /public/eegs/{eegID}/onboarding:
+    post:
+      consumes:
+      - application/json
+      description: Creates a new onboarding request (pending status). Sends a magic-token
+        status link to the applicant and notifies EEG administrators. Always requires
+        contract_accepted=true and at least one meter point.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Membership application
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.onboardingSubmitRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Submit membership application
+      tags:
+      - Onboarding
+  /public/eegs/{eegID}/onboarding/verify-email:
+    post:
+      consumes:
+      - application/json
+      description: Creates a short-lived (30 min) email-verification token and sends
+        a confirmation link to the applicant. Always returns HTTP 200 to avoid email
+        enumeration.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Applicant details
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            email:
+              type: string
+            name1:
+              type: string
+            name2:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: boolean
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Initiate email address verification
+      tags:
+      - Onboarding
+  /public/eegs/{eegID}/onboarding/verify/{token}:
+    post:
+      description: Validates the email-verification token and marks it as verified.
+        Returns the verified email address and name fields on success. Returns 400
+        if the token is invalid or expired.
+      parameters:
+      - description: EEG UUID
+        in: path
+        name: eegID
+        required: true
+        type: string
+      - description: Email verification token
+        in: path
+        name: token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid or expired token
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Confirm email verification token
+      tags:
+      - Onboarding
+  /public/onboarding/resend-token:
+    post:
+      consumes:
+      - application/json
+      description: Looks up a pending onboarding request by email + EEG ID, issues
+        a fresh magic token, and resends the status link email. Always returns HTTP
+        200 to avoid email enumeration.
+      parameters:
+      - description: Email and EEG ID
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handler.resendTokenRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Resend onboarding status magic token
+      tags:
+      - Onboarding
+  /public/onboarding/status/{token}:
+    get:
+      description: Returns the onboarding request corresponding to the given magic
+        token. Returns 410 Gone if the token has expired.
+      parameters:
+      - description: Magic token from status email
+        in: path
+        name: token
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/domain.OnboardingRequest'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "410":
+          description: Token expired
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get onboarding request status by magic token
+      tags:
+      - Onboarding
+  /public/portal/exchange:
+    post:
+      consumes:
+      - application/json
+      description: Exchanges a one-time magic link token (from the login email) for
+        a long-lived session token. The session token must be passed as X-Portal-Session
+        header on subsequent portal requests.
+      parameters:
+      - description: One-time magic link token
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            token:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: session_token, member_id, eeg_id
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Link invalid or expired
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Exchange magic link token for a portal session
+      tags:
+      - Mitgliederportal
+  /public/portal/invoices:
+    get:
+      description: Returns all invoices for the authenticated member. Requires a valid
+        X-Portal-Session header.
+      parameters:
+      - description: Portal session token
+        in: header
+        name: X-Portal-Session
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/domain.Invoice'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get member's invoices
+      tags:
+      - Mitgliederportal
+  /public/portal/invoices/{invoiceID}/pdf:
+    get:
+      description: Streams the PDF file for the given invoice. The invoice must belong
+        to the member identified by the X-Portal-Session header. Returns 404 if the
+        PDF has not yet been generated.
+      parameters:
+      - description: Portal session token
+        in: header
+        name: X-Portal-Session
+        required: true
+        type: string
+      - description: Invoice UUID
+        in: path
+        name: invoiceID
+        required: true
+        type: string
+      produces:
+      - application/pdf
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Download invoice PDF
+      tags:
+      - Mitgliederportal
+  /public/portal/me:
+    get:
+      description: Returns the member record and associated EEG details for the portal
+        session identified by the X-Portal-Session header.
+      parameters:
+      - description: Portal session token
+        in: header
+        name: X-Portal-Session
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: member and eeg fields
+          schema:
+            additionalProperties: true
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get authenticated member's profile and EEG info
+      tags:
+      - Mitgliederportal
+  /public/portal/request-link:
+    post:
+      consumes:
+      - application/json
+      description: Looks up the member by email (and optionally eeg_id) and sends
+        a magic login link by email. If the email is associated with multiple EEGs
+        and no eeg_id is given, returns a list of EEG choices for the user to select.
+        Always returns HTTP 200 to avoid email enumeration.
+      parameters:
+      - description: Member email and optional EEG ID
+        in: body
+        name: body
+        required: true
+        schema:
+          properties:
+            eeg_id:
+              type: string
+            email:
+              type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Request a magic login link for the member portal
+      tags:
+      - Mitgliederportal
+security:
+- BearerAuth: []
+securityDefinitions:
+  BearerAuth:
+    description: 'Enter: Bearer {token}'
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

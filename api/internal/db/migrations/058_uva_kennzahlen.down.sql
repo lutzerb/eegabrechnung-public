@@ -1,0 +1,3 @@
+ALTER TABLE ea_uva_perioden
+    DROP COLUMN IF EXISTS kz_044,
+    DROP COLUMN IF EXISTS kz_057;

@@ -1,0 +1,183 @@
+services:
+  eegabrechnung-postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: "${POSTGRES_USER:-eegabrechnung}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-eegabrechnung}"
+      POSTGRES_DB: "${POSTGRES_DB:-eegabrechnung}"
+    volumes:
+      - eegabrechnung_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-eegabrechnung}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  eegabrechnung-api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8101:8080"
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER:-eegabrechnung}:${POSTGRES_PASSWORD:-eegabrechnung}@eegabrechnung-postgres:5432/${POSTGRES_DB:-eegabrechnung}?sslmode=disable"
+      # SECURITY: JWT_SECRET must be a strong random value in production.
+      # Generate with: openssl rand -base64 32
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set}"
+      CREDENTIAL_ENCRYPTION_KEY: "${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY must be set}"
+      PORT: "8080"
+      INVOICE_DIR: "/data/invoices"
+      WEB_BASE_URL: "${WEB_BASE_URL:-http://localhost:3001}"
+      EDA_WORKER_URL: "${EDA_WORKER_URL:-http://eegabrechnung-eda-worker:8081}"
+    volumes:
+      - eegabrechnung_invoice_data:/data/invoices
+      - eegabrechnung_document_data:/data/documents
+    depends_on:
+      eegabrechnung-postgres:
+        condition: service_healthy
+
+  eegabrechnung-eda-worker:
+    restart: unless-stopped
+    build:
+      context: ./api
+      dockerfile: Dockerfile.worker
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER:-eegabrechnung}:${POSTGRES_PASSWORD:-eegabrechnung}@eegabrechnung-postgres:5432/${POSTGRES_DB:-eegabrechnung}?sslmode=disable"
+      CREDENTIAL_ENCRYPTION_KEY: "${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY must be set}"
+      EDA_TRANSPORT: "${EDA_TRANSPORT:-MAIL}"
+      EDA_PONTON_URL: "${EDA_PONTON_URL:-http://ponton-xp:6060/ponton/eda/webservice/outbound}"
+      EDA_POLL_INTERVAL: "${EDA_POLL_INTERVAL:-60s}"
+      EDA_INBOX_DIR: "${EDA_INBOX_DIR:-./test/eda-inbox}"
+      EDA_OUTBOX_DIR: "${EDA_OUTBOX_DIR:-./test/eda-outbox}"
+    depends_on:
+      eegabrechnung-postgres:
+        condition: service_healthy
+    profiles:
+      - eda
+
+  eegabrechnung-web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    environment:
+      NEXTAUTH_URL: "${WEB_BASE_URL:-http://localhost:3001}"
+      # SECURITY: NEXTAUTH_SECRET and JWT_SECRET must match the values set on the API container.
+      NEXTAUTH_SECRET: "${NEXTAUTH_SECRET:?NEXTAUTH_SECRET must be set}"
+      AUTH_SECRET: "${NEXTAUTH_SECRET:?NEXTAUTH_SECRET must be set}"
+      JWT_SECRET: "${JWT_SECRET:?JWT_SECRET must be set}"
+      NEXT_PUBLIC_API_URL: "${NEXT_PUBLIC_API_URL:-http://localhost:8101}"
+      API_INTERNAL_URL: "http://eegabrechnung-api:8080"
+    depends_on:
+      - eegabrechnung-api
+
+  # Mailpit — fake SMTP server for EDA outbound email verification
+  # Activate with: docker compose --profile test up
+  # Note: Mailpit v1.x has SMTP + POP3 only (no IMAP). The worker uses FILE
+  # transport for inbound CPDocument testing; Mailpit verifies outbound SMTP.
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"   # HTTP API + Web UI
+      - "1025:1025"   # SMTP (no auth)
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "true"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "true"
+    profiles:
+      - test
+
+  # EDA worker (FILE transport) for end-to-end CPDocument injection tests.
+  # Writes outbound XML to test/eda-outbox, reads inbound from test/eda-inbox.
+  # SMTP relay to Mailpit so outbound XML also appears there.
+  eegabrechnung-eda-worker-test:
+    build:
+      context: ./api
+      dockerfile: Dockerfile.worker
+    ports:
+      - "8082:8081"   # Worker HTTP API (poll-now endpoint)
+    environment:
+      DATABASE_URL: "postgres://${POSTGRES_USER:-eegabrechnung}:${POSTGRES_PASSWORD:-eegabrechnung}@eegabrechnung-postgres:5432/${POSTGRES_DB:-eegabrechnung}?sslmode=disable"
+      CREDENTIAL_ENCRYPTION_KEY: "${CREDENTIAL_ENCRYPTION_KEY:?CREDENTIAL_ENCRYPTION_KEY must be set}"
+      EDA_TRANSPORT: "FILE"
+      EDA_INBOX_DIR: "/test/eda-inbox"
+      EDA_OUTBOX_DIR: "/test/eda-outbox"
+      EDA_POLL_INTERVAL: "300s"
+    volumes:
+      - ./test/eda-inbox:/test/eda-inbox
+      - ./test/eda-outbox:/test/eda-outbox
+    depends_on:
+      eegabrechnung-postgres:
+        condition: service_healthy
+    profiles:
+      - test
+
+  # Demo-Reset Cron — runs reset-demo.sql nightly at 03:00 Vienna time.
+  # Activate with: docker compose --profile demo up -d
+  eegabrechnung-demo-reset:
+    image: postgres:16-alpine
+    environment:
+      PGPASSWORD: "${POSTGRES_PASSWORD:-eegabrechnung}"
+    volumes:
+      - ./scripts/reset-demo.sql:/reset-demo.sql:ro
+      - ./scripts/demo-energy-data.sql:/demo-energy-data.sql:ro
+    entrypoint: >
+      sh -c 'while true; do
+        now=$(TZ=Europe/Vienna date +"%H:%M");
+        if [ "$$now" = "03:00" ]; then
+          psql -h eegabrechnung-postgres -U ${POSTGRES_USER:-eegabrechnung} -d ${POSTGRES_DB:-eegabrechnung} -f /reset-demo.sql;
+          psql -h eegabrechnung-postgres -U ${POSTGRES_USER:-eegabrechnung} -d ${POSTGRES_DB:-eegabrechnung} -f /demo-energy-data.sql;
+          sleep 60;
+        fi;
+        sleep 30;
+      done'
+    depends_on:
+      eegabrechnung-postgres:
+        condition: service_healthy
+    profiles:
+      - demo
+
+  # Cloudflare Tunnel — exposes the app publicly without opening ports 80/443.
+  # Activate with: docker compose --profile cloudflare up -d
+  # Requires CLOUDFLARE_TUNNEL_TOKEN in .env.
+  # Public hostname is configured in the Cloudflare Zero Trust dashboard:
+  #   onboarding.eegwn.at → http://eegabrechnung-web:3000
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    profiles:
+      - cloudflare
+    environment:
+      TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN}"
+    restart: unless-stopped
+    depends_on:
+      - eegabrechnung-web
+
+  # Caddy reverse proxy — optional, useful for production or TLS termination
+  # Activate with: docker compose --profile caddy up
+  eegabrechnung-caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - eegabrechnung_caddy_data:/data
+      - eegabrechnung_caddy_config:/config
+    environment:
+      EEG_DOMAIN: "${EEG_DOMAIN:-localhost}"
+    depends_on:
+      - eegabrechnung-web
+      - eegabrechnung-api
+    profiles:
+      - caddy
+
+volumes:
+  eegabrechnung_postgres_data:
+  eegabrechnung_invoice_data:
+  eegabrechnung_document_data:
+  eegabrechnung_caddy_data:
+  eegabrechnung_caddy_config:

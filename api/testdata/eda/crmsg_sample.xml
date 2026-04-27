@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Sample ConsumptionRecord (CR_MSG) for testing.
+     Schema: http://www.ebutilities.at/schemata/customerprocesses/consumptionrecord/01p30
+     This represents energy data for one consumer meter point for 2024-01-01 (4 quarter-hour slots shown).
+-->
+<cr:ConsumptionRecord
+    xmlns:cr="http://www.ebutilities.at/schemata/customerprocesses/consumptionrecord/01p30"
+    xmlns:ct="http://www.ebutilities.at/schemata/customerprocesses/common/types/01p20">
+
+  <cr:MarketParticipantDirectory DocumentMode="PROD" SchemaVersion="01.30">
+    <ct:RoutingHeader>
+      <ct:Sender>
+        <ct:MessageAddress AddressType="ECNumber">AT001NB123456789</ct:MessageAddress>
+      </ct:Sender>
+      <ct:Receiver>
+        <ct:MessageAddress AddressType="ECNumber">RC000001</ct:MessageAddress>
+      </ct:Receiver>
+      <ct:DocumentCreationDateTime>2024-01-02T06:00:00+01:00</ct:DocumentCreationDateTime>
+    </ct:RoutingHeader>
+    <ct:Sector>01</ct:Sector>
+    <cr:MessageCode>DATEN_CRMSG</cr:MessageCode>
+  </cr:MarketParticipantDirectory>
+
+  <cr:ProcessDirectory>
+    <ct:MessageId>CR-2024010200001</ct:MessageId>
+    <ct:ConversationId>CR-2024010200001</ct:ConversationId>
+    <ct:ProcessDate>2024-01-02</ct:ProcessDate>
+    <ct:MeteringPoint>AT0030000000000000000000000000001</ct:MeteringPoint>
+    <cr:DeliveryPoint AddressType="ECNumber">RC000001</cr:DeliveryPoint>
+
+    <cr:Energy>
+      <cr:MeteringReason>02</cr:MeteringReason>
+      <cr:MeteringPeriodStart>2024-01-01T00:00:00+01:00</cr:MeteringPeriodStart>
+      <cr:MeteringPeriodEnd>2024-01-02T00:00:00+01:00</cr:MeteringPeriodEnd>
+      <cr:MeteringIntervall>QH</cr:MeteringIntervall>
+      <cr:NumberOfMeteringIntervall>96</cr:NumberOfMeteringIntervall>
+
+      <!-- Gesamtverbrauch (total consumption at meter) -->
+      <cr:EnergyData MeterCode="1-1:1.9.0 G.01" UOM="KWH">
+        <cr:EP>
+          <cr:DTF>2024-01-01T00:00:00+01:00</cr:DTF>
+          <cr:DTT>2024-01-01T00:15:00+01:00</cr:DTT>
+          <cr:BQ>0.250</cr:BQ>
+        </cr:EP>
+        <cr:EP>
+          <cr:DTF>2024-01-01T00:15:00+01:00</cr:DTF>
+          <cr:DTT>2024-01-01T00:30:00+01:00</cr:DTT>
+          <cr:BQ>0.275</cr:BQ>
+        </cr:EP>
+        <cr:EP>
+          <cr:DTF>2024-01-01T00:30:00+01:00</cr:DTF>
+          <cr:DTT>2024-01-01T00:45:00+01:00</cr:DTT>
+          <cr:BQ>0.300</cr:BQ>
+        </cr:EP>
+        <cr:EP>
+          <cr:DTF>2024-01-01T00:45:00+01:00</cr:DTF>
+          <cr:DTT>2024-01-01T01:00:00+01:00</cr:DTT>
+          <cr:BQ>0.225</cr:BQ>
+        </cr:EP>
+      </cr:EnergyData>
+
+      <!-- Zugewiesene Erzeugung aus der EG (community share allocated to this meter) -->
+      <cr:EnergyData MeterCode="1-1:1.9.0 P.01" UOM="KWH">
+        <cr:EP>
+          <cr:DTF>2024-01-01T00:00:00+01:00</cr:DTF>
+          <cr:DTT>2024-01-01T00:15:00+01:00</cr:DTT>
+          <cr:BQ>0.100</cr:BQ>
+        </cr:EP>
+        <cr:EP>
+          <cr:DTF>2024-01-01T00:15:00+01:00</cr:DTF>
+          <cr:DTT>2024-01-01T00:30:00+01:00</cr:DTT>
+          <cr:BQ>0.110</cr:BQ>
+        </cr:EP>
+        <cr:EP>
+          <cr:DTF>2024-01-01T00:30:00+01:00</cr:DTF>
+          <cr:DTT>2024-01-01T00:45:00+01:00</cr:DTT>
+          <cr:BQ>0.120</cr:BQ>
+        </cr:EP>
+        <cr:EP>
+          <cr:DTF>2024-01-01T00:45:00+01:00</cr:DTF>
+          <cr:DTT>2024-01-01T01:00:00+01:00</cr:DTT>
+          <cr:BQ>0.090</cr:BQ>
+        </cr:EP>
+      </cr:EnergyData>
+
+    </cr:Energy>
+  </cr:ProcessDirectory>
+</cr:ConsumptionRecord>

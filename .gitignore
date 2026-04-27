@@ -1,0 +1,61 @@
+# Claude Code / Playwright CLI artifacts
+.playwright-cli/
+
+# Go
+api/bin/
+api/*.exe
+api/*.test
+api/vendor/
+
+# Node
+web/node_modules/
+web/.next/
+web/out/
+web/.env.local
+
+# Env / secrets
+*.env
+.env
+secrets/
+*.pem
+*.key
+*.crt
+
+# Docker volumes
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+web/tsconfig.tsbuildinfo
+web/node_modules/
+web/.next/
+
+# EDA test transport directories (runtime files, not versioned)
+test/eda-inbox/processed/*.xml
+test/eda-outbox/*.xml
+
+# Python test venv and cache
+test/.venv/
+test/__pycache__/
+test/**/__pycache__/
+test/**/*.pyc
+
+
+# Compiled API binaries
+api/server
+api/worker
+
+# Database backups
+*.sql.gz
+
+# EDA credentials / Confluence exports
+*.doc
+
+# Docs build artifacts and temp scripts
+docs/_build_log*.txt
+docs/_cleanup*.mjs
+docs/_cleanup_and_build.py
+docs/_docker_prune.mjs
+docs/_run_build.py

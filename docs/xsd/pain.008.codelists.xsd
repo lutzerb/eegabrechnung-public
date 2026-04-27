@@ -1,0 +1,3111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Edited by Hendrik Muus, PSA, AT -->
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:doc="AT-Documentation" xmlns:xml="http://www.w3.org/XML/1998/namespace" elementFormDefault="qualified">
+	<xs:annotation>
+		<xs:documentation>
+			<doc:text>
+***********************
+This schema cannot be valid by itself, as it restricts data types not defined at this location. It is designed to be included in other schemas and will restrict data types defined there.
+THIS WILL DELIVER REAL SUBSETS
+Any message using this data types will be 100% ISO 20022 compatible.
+
+VERSIONING
+If necessary this schema is amended with additional data types to serve additional message types and/or additions or changes of documentation nodes.
+Any amendment will increase version date.
+Version number is only increased, when changes other than documentation occur. Version number in schema name and schema correlate.
+
+INCLUSION
+Inclusion in varios message types is done by following node:
+<!--  ********************** start replace include node with copy of type definitions of schema to get standalone schema  -->
+<xs:include schemaLocation="pain.008.codelists.xsd"/>
+<!--  ********************** stop replace include node with copy of type definitions of schema to get standalone schema  -->
+If your processing environment does not allow inclusions and/or perform better with standalone schema, a 100% equivalent can be retrieved by
+replacing the include node by a copy of data types defined below. Replace the include node with a copy of type definitions between the snip marks.
+
+***********************
+			</doc:text>
+			<doc:source>
+				<doc:line>PSA Payment Services Austria</doc:line>
+				<doc:line>Edited by Hendrik Muus</doc:line>
+			</doc:source>
+			<doc:useCase>
+				<doc:line xml:lang="de">Definitionen zur Inkludierung in pain.008</doc:line>
+				<doc:line xml:lang="en">Definitions for inclusion in pain.008</doc:line>
+			</doc:useCase>
+			<doc:changeLog>
+				<doc:date on="2023-02-01">
+					<doc:line>update codes from ExternalCodeSets_3Q2022_v2.xlsx</doc:line>
+					<doc:line>not respect retired codes or codes with don't use remark</doc:line>
+					<doc:line>reduce documentation to name and definition</doc:line>
+					<doc:line>insert changelog at top of schema</doc:line>
+					<doc:line>delete unused lists, i.e. only document used lists</doc:line>
+				</doc:date>
+			</doc:changeLog>
+		</xs:documentation>
+	</xs:annotation>
+	<xs:attribute name="pain.008.codelists.xsd_version" fixed="3Q2022 adpt 2023-02-01">
+		<xs:annotation>
+			<xs:documentation xml:lang="de">Versions Nummer dieses Schemas</xs:documentation>
+			<xs:documentation xml:lang="en">Schema version number</xs:documentation>
+		</xs:annotation>
+	</xs:attribute>
+	<xs:attribute name="codelists_source" fixed="ExternalCodeSets_3Q2022_v2.xlsx">
+		<xs:annotation>
+			<xs:documentation xml:lang="de">Quelle der externen Restriktionen</xs:documentation>
+			<xs:documentation xml:lang="en">Source of external restrictions</xs:documentation>
+		</xs:annotation>
+	</xs:attribute>
+	<!-- restricted data types -->
+	<!--  ********************** start snip here for copy/paste into other schema to get standalone schema  -->
+	<!-- start restrictions for pain.008.001.08 taken from ExternalCodeSets_3Q2022_v2.xlsx -->
+	<xs:simpleType name="ISO_ExternalCategoryPurpose1Code">
+		<xs:restriction base="ExternalCategoryPurpose1Code">
+			<xs:annotation>
+				<xs:documentation source="Name" xml:lang="en">ExternalCategoryPurpose1Code</xs:documentation>
+				<xs:documentation source="Definition" xml:lang="en">Specifies the category purpose, as published in an external category purpose code list. External code sets can be downloaded from www.iso20022.org.</xs:documentation>
+			</xs:annotation>
+			<xs:enumeration value="BONU">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BonusPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of a bonus.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CASH">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CashManagementTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a general cash management instruction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CBLK">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CardBulkClearing</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">A service that is settling money for a bulk of card transactions, while referring to a specific transaction file or other information like terminal ID, card acceptor ID or other transaction details.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CCRD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CreditCardPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of credit card.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CIPC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CashInPreCredit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a direct debit for a cash order of notes and/or coins.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CONC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CashOutNotesCoins</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a direct debit for a cash order of notes and/or coins.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CORT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TradeSettlementPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to settlement of a trade, eg a foreign exchange deal or a securities transaction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DCRD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DebitCardPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of debit card.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DIVI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Dividend</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of dividends.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DVPM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DeliverAgainstPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Code used to pre-advise the account servicer of a forthcoming deliver against payment instruction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="EPAY">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Epayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to ePayment.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FCDT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ForeignCurrencyDomesticTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Foreign Currency Transaction that is processed between two domestic financial institutions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FCIN">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">FeeCollectionAndInterest</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to the payment of a fee and interest.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FCOL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">FeeCollection</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">A service that is settling card transaction related fees between two parties.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GOVT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">GovernmentPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment to or from a government department.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GP2P">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PersontoPersonPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">General Person-to-Person Payment. Debtor and Creditor are natural persons.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="HEDG">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Hedging</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to the payment of a hedging operation.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ICCP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">IrrevocableCreditCardPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is reimbursement of credit card payment.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IDCP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">IrrevocableDebitCardPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is reimbursement of debit card payment.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INTC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">IntraCompanyPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is an intra-company payment, ie, a payment between two companies belonging to the same group.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INTE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Interest</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of interest.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LBOX">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LockboxTransactions</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to identify cash handling via Night Safe or Lockbox by bank or vendor on behalf of a physical store.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LOAN">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Loan</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to the transfer of a loan to a borrower.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MP2B">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Commercial</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Mobile P2B Payment</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MP2P">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Consumer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Mobile P2P Payment</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="OTHR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">OtherPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Other payment purpose.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PENS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PensionPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of pension.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RPRE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Represented</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Collection used to re-present previously reversed or returned direct debit transactions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RRCT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ReimbursementReceivedCreditTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a reimbursement for commercial reasons of a correctly received credit transfer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RVPM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ReceiveAgainstPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Code used to pre-advise the account servicer of a forthcoming receive against payment instruction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SALA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SalaryPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of salaries.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SECU">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Securities</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of securities.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SSBE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SocialSecurityBenefit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a social security benefit, ie payment made by a government to support individuals.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SUPP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SupplierPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment to a supplier.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SWEP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CashManagementSweepAccount</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Classification: Cash Management. Transaction relates to a cash management instruction, requesting a sweep of the account of the Debtor above an agreed floor amount, up to a target or zero balance. The purpose is to move the funds from multiple accounts to a single bank account. Funds can move domestically or across border and more than one bank can be used.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TAXS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TaxPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of taxes.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TOPG">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CashManagementTopAccount</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Classification: Cash Management. Transaction relates to a cash management instruction, requesting to top the account of the Creditor above a certain floor amount, up to a target or zero balance. The floor amount, if not pre-agreed by the parties involved, may be specified.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TRAD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Trade</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to the payment of a trade finance transaction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TREA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TreasuryPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to treasury operations. E.g. financial contract settlement.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="VATX">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ValueAddedTaxPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of value added tax.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="VOST">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CrossborderMIPayments</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction to be processed as a domestic payment instruction originated from a foreign bank.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="WHLD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">WithHolding</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of withholding tax.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ZABA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CashManagementZeroBalanceAccount</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction relates to a cash management instruction, requesting to zero balance the account of the Debtor. Zero Balance Accounts empty or fill the balances in accounts at the same bank, in the same country into or out of a main account each day.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="ISO_ExternalLocalInstrument1Code">
+		<xs:restriction base="ExternalLocalInstrument1Code">
+			<xs:annotation>
+				<xs:documentation source="Name" xml:lang="en">ExternalLocalInstrument1Code</xs:documentation>
+				<xs:documentation source="Definition" xml:lang="en">Specifies the external local instrument code in the format of character string with a maximum length of 35 characters. The list of valid codes is an external code list published separately. External code sets can be downloaded from www.iso20022.org.</xs:documentation>
+			</xs:annotation>
+			<xs:enumeration value="04">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PreauthorisedDirectDebitDE</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a direct debit that is pre authorised (Abbuchungsauftrag).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="05">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">NonPreauthorisedDirectDebitDE</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a direct debit that is not pre authorised (Einzugsermächtigung).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="08">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PreauthorisedDirectDebitOrdinaireNormalClearing4Day</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a direct debit that is pre authorised (Avis de Prélèvement).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="19">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BusinessToCustomerDirectDebit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a business-to-customer direct debit (CSB19).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="58">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BusinessToBusinessDirectDebit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a business-to-business direct debit (CSB58).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="60">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RecoveredBillofExchangeorPromissoryNote</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">LCR - Lettre de Change Relevé (Recovered Bill of Exchange) and BOR - Billet à Orde Relevé (Promissory Note)</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="82">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">NonPreauthorisedDirectDebitAT</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a direct debit that is not pre authorised (Einzugsermächtigung).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="83">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PreauthorisedDirectDebitAT</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a direct debit that is pre authorised (Abbuchungsauftrag).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="85">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PreauthorisedDirectDebitAccéléréAcceleratedClearing2DayOrdinaireNormalClearing4Day</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to an urgent direct debit that is pre authorised (Avis de Prélèvement accéléré).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="89">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PreauthorisedDirectDebitVérifiéVerifiedClearing</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to an urgent direct debit that is pre authorised (Avis de Prélèvement vérifié).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ACCEPT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PaymentViaAcceptgiroOwnedByCurrence</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to payments via Acceptgiro owned by Currence.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ADD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AuthenticatedDirectDebit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is authenticated direct debit for domestic use.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ARC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AccountsReceivableCheck</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to accounts receivable check.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ASTI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AncillarySystemTransferInitiation</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Indicates that the payment is sent by an authorized third party on behalf of the participant.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="B2B">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SEPABusinessToBusinessDirectDebit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to SEPA business to business direct debit.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="B2BAMIPM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SEPAB2BDirectDebitAMI</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">SEPA B2B Direct Debit AMI based on a paper mandate</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BACP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BackupPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Indicates that the payment was initiated manually using a GUI (Graphical User Interface).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BPA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BatchPaymentsAruba</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to an Instant Credit Transfer under the rules of the Centrale Bank van Aruba, based on the EPC SCT Inst scheme, with a specific batch time-out delay.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BSE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PaperlessChequeCollection</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to the German Paperless Cheque Collection procedure “Belegloser Scheckeinzug - BSE”</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CARD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CardClearing</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to card clearing.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CCD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CashConcentrationOrDisbursementCorporateCounterparty</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to cash concentration or disbursement corporate counterparty.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CCI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CashConcentrationIntragroup</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to an intra-group bank initiated cash management payment</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CHN">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TruncatedChecks</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to truncated checks. Conversion of physical instrument to electonric form for transmission to the paying bank and where the original paper document does not continue in the clearing process..The original instrument rules are retained throughout the life of the instrument.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CIE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CustomerInitiatedEntry</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">A credit entry initiated by or on behalf of the holder of a consumer account</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CLSCCPERX">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CLSClearedFXForEurex</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to the CLSClearedFX service for Eurex. Usage: The code is mandatory for all pacs.009 payments to this service.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CLSCCPLCH">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CLSClearedFXForLCH</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to the CLSClearedFX service for London Exchange Clearing House. Usage: The code is mandatory for all pacs.009 payments to this service.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="COR1">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SEPADirectDebit1DaySettlement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Optional shorter time cycle (D-1) for SEPA Core Direct Debit</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CORAMIPM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SEPACoreDirectDebitAMI</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">SEPA Core Direct Debit AMI based on a paper mandate</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CORE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SEPADirectDebitCore</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to SEPA direct debit -core.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CPP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CashPerPost</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to cash per post. Transaction to ultimate recipient having no bank account. Primary beneficiary is a postal service provider. Funds are paid out by cash. Additional necessary information for address and delivery options need to be attached.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CR1AMIPM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SEPACoreD1DirectDebitAMI</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Optional shorter time cycle (D-1) for SEPA Core Direct Debit AMI based on a paper mandate</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CTP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CreditTransferPreferred</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Request-to-pay preferred payment via Credit Transfer but Instant Credit Transfer is also possible.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CTX">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CorporateTradeExchange</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to corporate trade exchange.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DDFA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DirectDebitFixedAmount</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">SEPA Fixed Amount Direct Debit</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DDMC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DirectDebitConfirmedElectronicMandate</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a direct debit instruction authorized under a confirmed electronic mandate.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DDMP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DirectDebitPaperMandateWithPaperAuthorization</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a direct debit instruction authorized under a paper based mandate, supported by paper authorization signed by the debtor.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DDMU">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DirectDebitUnconfirmedElectronicMandate</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a direct debit instruction authorized under an unconfirmed electronic mandate requiring confirmation by the debtor.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DDNR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CoreNoRefund</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">SEPA Core Direct Debit with ‘no refund’ option</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DDT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DirectDebits</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to direct debits.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FADAMIPM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SEPAFADirectDebitAMI</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">SEPA Fixed Amount Direct Debit AMI based on a paper mandate</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GST">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TruncatedCreditTransfers</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to truncated credit transfers. Conversion of physical instrument to electonric form for transmission to the paying bank and where the original paper document does not continue in the clearing process..The original instrument rules are retained throughout the life of the instrument. Transaction triggered by specific marked and populated paper slip. Reconciliation reference is secured by check digits supporting secure optical recognition. All other remittance information is truncated prior transmission.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IAT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InternationalACH</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to international ACH.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ICMC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">IncidentManagementCorrection</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to an Incident Management Correction procedure based on the DD infrastructure.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IDEAL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PaymentsViaInternetOwnedByCurrence</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to payments via internet owned by Currence.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IN">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CrossBorderCustomerCreditTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to cross border customer credit transfer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INST">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantCreditTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to an Instant Credit Transfer. Use case example: SEPA Instant Credit Transfer (SCT Inst)</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INSTIDEAL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PaymentsViaInternetOwnedByCurrenceUsingInstantCreditTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to payments via internet owned by Currence which uses an Instant Credit Transfer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INSTNT01">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantCreditTransferNotTimeCritical</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">The transaction is related to a regular Credit Transfer and will be instantly processed under the Dutch AOS on top of the EPC SCT scheme.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INSTNT01IDEAL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PaymentsViaInternetOwnedByCurrenceUsingInstantCreditTransferNotTimeCritical</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to payments via internet owned by Currence which uses a regular Credit Transfer and will be instantly processed under the Dutch AOS on top of the EPC SCT scheme.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INSTTC01">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantCreditTransferTimeCritical</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">The transaction is related to an Instant Credit Transfer under the rules of the Dutch AOS on top of the EPC SCT Inst scheme.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INSTTC01IDEAL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PaymentsViaInternetOwnedByCurrenceUsingInstantCreditTransferTimeCritical</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to payments via internet owned by Currence which uses an Instant Credit Transfer under the rules of the Dutch AOS on top of the EPC SCT Inst scheme.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IPA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantPaymentsAruba</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to an Instant Credit Transfer under the rules of the Centrale Bank van Aruba, based on the EPC SCT Inst scheme.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ISE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ImageBasedChequeCollection</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to the German Image-based Cheque Collection Procedure “Imagegestützter Scheckeinzug - ISE”</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ITP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantCreditTransferPreferred</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Request-to-pay preferred payment via Instant Credit Transfer but Credit Transfer is also possible.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MANP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">MandatedPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Indicates that the payment is sent by responsible Central Bank on behalf of the participant in case of contingency.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MDP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">MultiDayPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Type of New Payments Architecture (NPA) payment. Payments are processed over a three-day cycle and available to customers early in the morning of Day 3.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="NLDO">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DutchDomesticBulkPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a Domestic payment initiated by PAIN.001</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="NLGOV">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DirectDebitInitiatedByTheGovernmentWithSpecialConditions</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to direct debit scheme owned by the NVB.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="NLUP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DutchUrgentPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a Domestic payment initiated by PAIN.001</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ONCL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Overnight</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to overnight clearing.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PERI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PaymentWithERI</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Credit transfer contains Extended Remittance Information (ERI) as defined within the applicable scheme.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="POP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PointOfPurchase</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to point-of-purchase.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="POS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PointOfSale</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to point-of-sale.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PPD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PrearrangedPaymentOrDepositConsumerCounterparty</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to prearranged payment or deposit consumer counterparty.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RCK">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RepresentedCheckEntry</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to re-presented check entry.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RDD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ReturnedDirectDebits</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to returned direct debits.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RIBA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">NonPreauthorisedDirectDebitRIBA</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a non-pre authorised collection (RIBA).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RIDO">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PreauthorisedRevocableDirectDebit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a direct debit that is pre authorised and revocable (RID Ordinario).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RIDV">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PreauthorisedRevocableUrgentDirectDebit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to an urgent direct debit that is pre authorised and revocable (RID Veloce).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RTR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ReturnedCreditTransfers</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to returned credit transfers.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SBTI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SettlementBankTransferInitiation</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Indicates that the payment is submitted to move liquidity to the technical account - dedicated to real-time settlement in an external system (for example ancillary system) . The payment is processed in a separate payment queue besides the normal processing.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SCN">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RevokedTruncatedChecks</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to revoked truncated checks.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SDCL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SameDayClearedPayments</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to New Zealand High Value Clearing System (HVCS) same day clearing payments.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SDD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RevokedDirectDebits</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to revoked direct debits.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SDN">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PaymentsViaStandaardDigitaleNota</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to payments via a ‘Standaard Digitale Nota’ InvoiceAcceptgiro payment.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SGT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RevokedTruncatedCreditTransfers</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to revoked truncated credit transfers.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SRD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RevokedReturnedDirectDebits</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to revoked returned direct debits.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SRT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RevokedReturnedCreditTransfers</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to revoked returned credit transfers</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="STR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RevokedCreditTransfers</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to revoked credit transfers</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TEL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TelephoneInitiatedEntry</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to telephone initiated entry.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TRF">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CreditTransfers</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to credit transfers</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="UDD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">UnauthenticatedDirectDebit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is unauthenticated direct debit for domestic use.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="WEB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InternetInitiatedEntry</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to internet initiated entry.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="ISO_ExternalOrganisationIdentification1Code">
+		<xs:restriction base="ExternalOrganisationIdentification1Code">
+			<xs:annotation>
+				<xs:documentation source="Name" xml:lang="en">ExternalOrganisationIdentification1Code</xs:documentation>
+				<xs:documentation source="Definition" xml:lang="en">Specifies the external organisation identification scheme name code in the format of character string with a maximum length of 4 characters. The list of valid codes is an external code list published separately. External code sets can be downloaded from www.iso20022.org.</xs:documentation>
+			</xs:annotation>
+			<xs:enumeration value="BANK">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BankPartyIdentification</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Unique and unambiguous assignment made by a specific bank or similar financial institution to identify a relationship as defined between the bank and its client.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BDID">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BusinessDomainIdentifier</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Identifier of the business domain in which the organisation is active.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BOID">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BusinessOtherIdentification</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Other identification of the organisation.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CBID">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CentralBankIdentificationNumber</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">A unique identification number assigned by a central bank to identify an organisation.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CHID">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ClearingIdentificationNumber</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">A unique identification number assigned by a clearing house to identify an organisation</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CINC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CertificateOfIncorporationNumber</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">A unique identification number assigned by a designated authority to a certificate of incorporation and used to identify an organisation.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="COID">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CountryIdentificationCode</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Country authority given organisation identification (e.g., corporate registration number)</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CUST">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CustomerNumber</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Number assigned by an issuer to identify a customer. Number assigned by a party to identify a creditor or debtor relationship.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DUNS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DataUniversalNumberingSystem</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">A unique identification number provided by Dun &amp; Bradstreet to identify an organisation.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="EMPL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">EmployerIdentificationNumber</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Number assigned by a registration authority to an employer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GS1G">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">GS1GLNIdentifier</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Global Location Number. A non-significant reference number used to identify legal entities, functional entities, or physical entities according to GS1 numbering scheme rules.The number is used to retrieve detailed information that is linked to it.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SREN">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SIREN</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">The SIREN number is a 9 digit code assigned by INSEE, the French National Institute for Statistics and Economic Studies, to identify an organisation in France.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SRET">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SIRET</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">The SIRET number is a 14 digit code assigned by INSEE, the French National Institute for Statistics and Economic Studies, to identify an organisation unit in France. It consists of the SIREN number, followed by a five digit classification number, to identify the local geographical unit of that entity</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TXID">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TaxIdentificationNumber</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Number assigned by a tax authority to identify an organisation.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="ISO_ExternalPersonIdentification1Code">
+		<xs:restriction base="ExternalPersonIdentification1Code">
+			<xs:annotation>
+				<xs:documentation source="Name" xml:lang="en">ExternalPersonIdentification1Code</xs:documentation>
+				<xs:documentation source="Definition" xml:lang="en">Specifies the external person identification scheme name code in the format of character string with a maximum length of 4 characters. The list of valid codes is an external code list published separately. External code sets can be downloaded from www.iso20022.org.</xs:documentation>
+			</xs:annotation>
+			<xs:enumeration value="ARNU">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AlienRegistrationNumber</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Number assigned by a social security agency to identify a non-resident person.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CCPT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PassportNumber</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Number assigned by an authority to identify the passport number of a person.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CUST">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CustomerIdentificationNumber</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Number assigned by an issuer to identify a customer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DRLC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DriversLicenseNumber</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Number assigned by an authority to identify a driver's license.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="EMPL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">EmployeeIdentificationNumber</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Number assigned by a registration authority to an employee.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="NIDN">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">NationalIdentityNumber</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Number assigned by an authority to identify the national identity number of a person.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="POID">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PersonCommercialIdentification</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Commercial identification of the person.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SOSE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SocialSecurityNumber</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Number assigned by an authority to identify the social security number of a person.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TELE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TelephoneNumber</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Number assigned by a telephone or mobile phone operator to identify a person. A person may have multiple phone numbers.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TXID">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TaxIdentificationNumber</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Number assigned by a tax authority to identify a person.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="ISO_ExternalPurpose1Code">
+		<xs:restriction base="ExternalPurpose1Code">
+			<xs:annotation>
+				<xs:documentation source="Name" xml:lang="en">ExternalPurpose1Code</xs:documentation>
+				<xs:documentation source="Definition" xml:lang="en">Specifies the external purpose code in the format of character string with a maximum length of 4 characters. The list of valid codes is an external code list published separately. External code sets can be downloaded from www.iso20022.org.</xs:documentation>
+			</xs:annotation>
+			<xs:enumeration value="ACCT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AccountManagement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction moves funds between 2 accounts of same account holder at the same bank.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ADCS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AdvisoryDonationCopyrightServices</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payments for donation, sponsorship, advisory, intellectual and other copyright services.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ADMG">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AdministrativeManagement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment associated with administrative management.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ADVA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AdvancePayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is an advance payment.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="AEMP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ActiveEmploymentPolicy</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment concerning active employment policy.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="AGRT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AgriculturalTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to the agricultural domain.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="AIRB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Air</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment for air transport related business.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ALLW">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Allowance</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of allowances.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ALMY">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AlimonyPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of alimony.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="AMEX">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Amex</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Card Settlement-Settlement of AMEX transactions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ANNI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Annuity</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction settles annuity related to credit, insurance, investments, other.n</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ANTS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AnesthesiaServices</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment for anesthesia services.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="AREN">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AccountsReceivablesEntry</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment associated with an Account Receivable Entry</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="AUCO">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AuthenticatedCollections</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Utilities-Settlement of Authenticated Collections transactions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="B112">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TrailerFeePayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">US mutual fund trailer fee (12b-1) payment</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BBSC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BabyBonusScheme</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment made as incentive to encourage parents to have more children</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BCDM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BearerChequeDomestic</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of a domestic bearer cheque.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BCFG">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BearerChequeForeign</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of a foreign bearer cheque.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BECH">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ChildBenefit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment made to assist parent/guardian to maintain child.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BENE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">UnemploymentDisabilityBenefit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment to a person who is unemployed/disabled.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BEXP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BusinessExpenses</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of business expenses.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BFWD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BondForward</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to any securities traded out beyond 3 days which include treasury notes, JGBs and Gilts.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BKDF">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BankLoanDelayedDrawFunding</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Delayed draw funding. Certain issuers may utilize delayed draw loans whereby the lender is committed to fund cash within a specified period once a call is made by the issuer. The lender receives a fee for entering into such a commitment</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BKFE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BankLoanFees</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Bank loan fees. Cash activity related to specific bank loan fees, including (a) agent / assignment fees; (b) amendment fees; (c) commitment fees; (d) consent fees; (e) cost of carry fees; (f) delayed compensation fees; (g) facility fees; (h) fronting fees; (i) funding fees; (j) letter of credit assignment fees</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BKFM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BankLoanFundingMemo</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Bank loan funding memo. Net cash movement for the loan contract final notification when sent separately from the loan contract final notification instruction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BKIP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BankLoanAccruedInterestPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Accrued interest payments. Specific to bank loans.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BKPP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BankLoanPrincipalPaydown</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Principal paydowns. Specific to bank loans</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BLDM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BuildingMaintenance</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment associated with building maintenance.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BNET">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BondForwardNetting</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Bond Forward pair-off cash net movement</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BOCE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BackOfficeConversionEntry</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment associated with a Back Office Conversion Entry</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BOND">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Bonds</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Securities Lending-Settlement of Bond transaction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BONU">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BonusPayment.</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to payment of a bonus.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BR12">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TrailerFeeRebate</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">US mutual fund trailer fee (12b-1) rebate payment</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="BUSB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Bus</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment for bus transport related business.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CABD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CorporateActions-Bonds</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Securities Lending-Settlement of Corporate Actions: Bonds transactions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CAEQ">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CorporateActions-Equities</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Securities Lending-Settlement of Corporate Actions: Equities transactions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CAFI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CustodianManagementFeeInhouse</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of custodian account management fee where custodian bank and current account servicing bank coincide</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CASH">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CashManagementTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a general cash management instruction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CBCR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CreditCard</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Card Settlement-Settlement of Credit Card transactions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CBFF">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CapitalBuilding</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to capital building fringe fortune, ie capital building in general</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CBFR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CapitalBuildingRetirement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to capital building fringe fortune for retirement</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CBLK">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CardBulkClearing</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">A Service that is settling money for a bulk of card transactions, while referring to a specific transaction file or other information like terminal ID, card acceptor ID or other transaction details.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CBTV">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CableTVBill</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of cable TV bill.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CCHD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CashCompensationHelplessnessDisability</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payments made by Government institute related to cash compensation, helplessness, disability. These payments are made by the Government institution as a social benefit in addition to regularly paid salary or pension.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CCIR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CrossCurrencyIRS</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash Collateral related to a Cross Currency Interest Rate Swap, indicating the exchange of fixed interest payments in one currency for those in another.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CCPC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CCPClearedInitialMargin</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash Collateral associated with an ISDA or Central Clearing Agreement that is covering the initial margin requirements for OTC trades clearing through a CCP.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CCPM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CCPClearedVariationMargin</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash Collateral associated with an ISDA or Central Clearing Agreement that is covering the variation margin requirements for OTC trades clearing through a CCP.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CCRD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CreditCardPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of credit card account.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CCSM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CCPClearedInitialMarginSegregatedCash</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">CCP Segregated initial margin: Initial margin on OTC Derivatives cleared through a CCP that requires segregation</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CDBL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CreditCardBill</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of credit card bill.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CDCB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CardPaymentWithCashBack</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Purchase of Goods and Services with additional Cash disbursement at the POI (Cashback)</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CDCD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CashDisbursementCashSettlement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">ATM Cash Withdrawal in an unattended or Cash Advance in an attended environment (POI or bank counter)</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CDCS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CashDisbursementWithSurcharging</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">ATM Cash Withdrawal in an unattended or Cash Advance in an attended environment (POI or bank counter) with surcharging.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CDDP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CardDeferredPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">A combined service which enables the card acceptor to perform an authorisation for a temporary amount and a completion for the final amount within a limited time frame. Deferred Payment is only available in the unattended environment. Examples where this service is widely used are unattended petrol pumps and phone booths</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CDEP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CreditDefaultEventPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment related to a credit default event</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CDOC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">OriginalCredit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">A service which allows the card acceptor to effect a credit to a cardholder' account. Unlike a Merchant Refund, an Original Credit is not preceded by a card payment. This service is used for example for crediting winnings from gaming.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CDQC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">QuasiCash</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Purchase of Goods which are equivalent to cash like coupons in casinos.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CFDI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CapitalFallingDueInhouse</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of capital falling due where custodian bank and current account servicing bank coincide</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CFEE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CancellationFee</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of cancellation fee.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CGDD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CardGeneratedDirectDebit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a direct debit where the mandate was generated by using data from a payment card at the point of sale.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CHAR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CharityPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment for charity reasons.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CLPR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CarLoanPrincipalRepayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment of car loan principal payment.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CMDT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CommodityTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is payment of commodities.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="COLL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CollectionPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a collection of funds initiated via a credit transfer or direct debit.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="COMC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CommercialPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of commercial credit or debit. (formerly CommercialCredit)</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="COMM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Commission</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is payment of commission.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="COMP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CompensationPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to the payment of a compensation relating to interest loss/value date adjustment and can include fees.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="COMT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ConsumerThirdPartyConsolidatedPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment used by a third party who can collect funds to pay on behalf of consumers, ie credit counseling or bill payment companies.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CORT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TradeSettlementPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to settlement of a trade, e.g. a foreign exchange deal or a securities transaction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="COST">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Costs</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to payment of costs.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CPEN">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CashPenalties</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash penalties related to securities transaction, including CSDR Settlement Discipline Regime.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CPKC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CarparkCharges</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to carpark charges.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CPYR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Copyright</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is payment of copyright.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CRDS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CreditDefaultSwap</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to trading of credit default swap.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CRPR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CrossProduct</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to a combination of various types of trades.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CRSP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CreditSupport</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to cash lending/borrowing; letter of Credit; signing of master agreement.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CRTL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CreditLine</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to opening of a credit line before trading.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CSDB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CashDisbursementCashManagement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to cash disbursement.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CSLP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">CompanySocialLoanPaymentToBank</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment by a company to a bank for financing social loans to employees.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="CVCF">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ConvalescentCareFacility</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment for convalescence care facility services.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DBCR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DebitCard</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Card Settlement-Settlement of Debit Card transactions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DBTC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DebitCollectionPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Collection of funds initiated via a debit transfer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DCRD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DebitCardPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a debit card payment.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DEPT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Deposit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is releted to a payment of deposit.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DERI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Derivatives</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a derivatives transaction</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DICL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Diners</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Card Settlement-Settlement of Diners transactions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DIVD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Dividend</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is payment of dividends.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DMEQ">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DurableMedicaleEquipment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment is for use of durable medical equipment.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DNTS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DentalServices</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment for dental services.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DSMT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PrintedOrderDisbursement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of a disbursement due to a specific type of printed order for a payment of a specified sum, issued by a bank or a post office (Zahlungsanweisung zur Verrechnung)</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="DVPM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DeliverAgainstPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Code used to pre-advise the account servicer of a forthcoming deliver against payment instruction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ECPG">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">GuaranteedEPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">E-Commerce payment with payment guarantee of the issuing bank.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ECPR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">EPaymentReturn</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">E-Commerce payment return.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ECPU">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">NonGuaranteedEPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">E-Commerce payment without payment guarantee of the issuing bank.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="EDUC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Education</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of study/tuition fees.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="EFTC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LowValueCredit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Utilities-Settlement of Low value Credit transactions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="EFTD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LowValueDebit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Utilities-Settlement of Low value Debit transactions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ELEC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ElectricityBill</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of electricity bill.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ENRG">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Energies</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a utility operation.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="EPAY">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Epayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to ePayment.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="EQPT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">EquityOption</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to trading of equity option (Also known as stock options).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="EQTS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Equities</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Securities Lending-Settlement of Equities transactions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="EQUS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">EquitySwap</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to equity swap trades where the return of an equity is exchanged for either a fixed or a floating rate of interest.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ESTX">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">EstateTax</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of estate tax.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ETUP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">EPurseTopUp</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a Service that is first reserving money from a card account and then is loading an e-purse application by this amount.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="EXPT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ExoticOption</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to trading of an exotic option for example a non-standard option.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="EXTD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ExchangeTradedDerivatives</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to trading of exchanged traded derivatives in general (Opposite to Over the Counter (OTC)).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FACT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">FactorUpdateRelatedPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment related to a factor update</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FAND">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">FinancialAidInCaseOfNaturalDisaster</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Financial aid by State authorities for abolition of consequences of natural disasters.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FCOL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">FeeCollection</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">A Service that is settling card transaction related fees between two parties.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FCPM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LatePaymentOfFeesAndCharges</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment for late fees &amp; charges. E.g Credit card charges</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FEES">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PaymentOfFees</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment of fees/charges.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FERB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Ferry</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment for ferry related business.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FIXI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">FixedIncome</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to a fixed income instrument</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FLCR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">FleetCard</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Card Settlement-Settlement of Fleet transactions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FNET">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">FuturesNettingPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash associated with a netting of futures payments. Refer to CCPM codeword for netting of initial and variation margin through a CCP</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FORW">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ForwardForeignExchange</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">FX trades with a value date in the future.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FREX">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ForeignExchange</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a foreign exchange operation.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FUTR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Futures</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash related to futures trading activity.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FWBC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ForwardBrokerOwnedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral payment against a Master Forward Agreement (MFA) where the cash is held in a segregated account and is not available for use by the client. Includes any instruments with a forward settling date such TBAs, repurchase agreements and bond forwards</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FWCC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ForwardClientOwnedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral payment against a Master Forward Agreement (MFA) where the cash is owned and may be used by the client when returned. Includes any instruments with a forward settling date such TBAs, repurchase agreements and bond forwards</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FWLV">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ForeignWorkerLevy</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of Foreign Worker Levy</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FWSB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ForwardBrokerOwnedCashCollateralSegregated</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Any cash payment related to the collateral for a Master Agreement forward, which is segregated, and not available for use by the client. Example master agreement forwards include TBA, repo and Bond Forwards.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FWSC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ForwardClientOwnedSegregatedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Any cash payment related to the collateral for a Master agreement forward, which is owned by the client and is available for use by the client when it is returned to them from the segregated account. Example master agreement forwards include TBA, repo and Bond Forwards.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="FXNT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ForeignExchangeRelatedNetting</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">FX netting if cash is moved by separate wire instead of within the closing FX instruction</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GAFA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">GovernmentFamilyAllowance</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Salary and Benefits-Allowance from government to support family.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GAHO">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">GovernmentHousingAllowance</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Salary and Benefits-Allowance from government to individuals to support payments of housing.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GAMB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">GamblingOrWageringPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">General-Payments towards a purchase or winnings received from gambling, betting or other wagering activities.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GASB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">GasBill</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of gas bill.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GDDS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PurchaseSaleOfGoods</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to purchase and sale of goods.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GDSV">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PurchaseSaleOfGoodsAndServices</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to purchase and sale of goods and services.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GFRP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">GuaranteeFundRightsPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Compensation to unemployed persons during insolvency procedures.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GIFT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Gift</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment with no commercial or statutory purpose.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GOVI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">GovernmentInsurance</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of government insurance.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GOVT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">GovernmentPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment to or from a government department.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GSCB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PurchaseSaleOfGoodsAndServicesWithCashBack</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to purchase and sale of goods and services with cash back.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GSTX">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">GoodsServicesTax</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of Goods &amp; Services Tax</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GVEA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AustrianGovernmentEmployeesCategoryA</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is payment to category A Austrian government employees.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GVEB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AustrianGovernmentEmployeesCategoryB</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is payment to category B Austrian government employees.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GVEC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AustrianGovernmentEmployeesCategoryC</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is payment to category C Austrian government employees.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GVED">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AustrianGovernmentEmployeesCategoryD</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is payment to category D Austrian government employees.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="GWLT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">GovermentWarLegislationTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment to victims of war violence and to disabled soldiers.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="HEDG">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Hedging</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a hedging operation.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="HLRP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PropertyLoanRepayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of property loan.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="HLST">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PropertyLoanSettlement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to the settlement of a property loan.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="HLTC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">HomeHealthCare</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment for home health care services.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="HLTI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">HealthInsurance</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment of health insurance.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="HREC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">HousingRelatedContribution</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a contribution by an employer to the housing expenditures (purchase, construction, renovation) of the employees within a tax free fringe benefit system</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="HSPC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">HospitalCare</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment for hospital care services.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="HSTX">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">HousingTax</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of housing tax.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ICCP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">IrrevocableCreditCardPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is reimbursement of credit card payment.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ICRF">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">IntermediateCareFacility</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment for intermediate care facility services.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IDCP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">IrrevocableDebitCardPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is reimbursement of debit card payment.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IHRP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstalmentHirePurchaseAgreement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is payment for an installment/hire-purchase agreement.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INPC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InsurancePremiumCar</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment of car insurance premium.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INPR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InsurancePremiumRefund</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to an insurance premium refund.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INSC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PaymentOfInsuranceClaim</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to the payment of an insurance claim.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INSM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Installment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of an installment.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INSU">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InsurancePremium</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is payment of an insurance premium.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INTC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">IntraCompanyPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is an intra-company payment, ie, a payment between two companies belonging to the same group.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INTE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Interest</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is payment of interest.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INTP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">IntraPartyPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment between two accounts belonging to the same party (intra-party payment), where party is a natural person (identified by a private ID, not organisation ID).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INTX">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">IncomeTax</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of income tax.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INVS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InvestmentAndSecurities</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is for the payment of mutual funds, investment products and shares</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IPAY">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantPayments</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction in which the amount is available to the payee immediately.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IPCA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantPaymentsCancellation</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction in which the Return of the amount is fully returned.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IPDO">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantPaymentsForDonations</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction in which the amount is available to the payee immediately, done for donations, with sending the address data of the payer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IPEA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantPaymentsInECommerceWithoutAddressData</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction in which the amount is available to the payee immediately, done in E-commerce, without sending the address data of the payer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IPEC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantPaymentsInECommerceWithAddressData</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction in which the amount is available to the payee immediately, done in E-commerce, with sending the address data of the payer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IPEW">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantPaymentsInECommerce</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction in which the amount is available to the payee immediately, done in E-commerce.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IPPS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantPaymentsAtPOS</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction in which the amount is available to the payee immediately, done at POS.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IPRT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantPaymentsReturn</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction in which the Return of the amount is fully or partial returned.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IPU2">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantPaymentsUnattendedVendingMachineWith2FA</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is made via an unattending vending machine by using 2-factor-authentification.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IPUW">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantPaymentsUnattendedVendingMachineWithout2FA</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is made via an unattending vending machine by without using 2-factor-authentification.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="IVPT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InvoicePayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment for invoices.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LBIN">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LendingBuyInNetting</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Net payment related to a buy-in. When an investment manager is bought in on a sell trade that fails due to a failed securities lending recall, the IM may seize the underlying collateral to pay for the buy-in. Any difference between the value of the collateral and the sell proceeds would be paid or received under this code</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LBRI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LaborInsurance</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment of labor insurance.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LCOL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LendingCashCollateralFreeMovement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Free movement of cash collateral. Cash collateral paid by the borrower is done separately from the delivery of the shares at loan opening or return of collateral done separately from return of the loaned security. Note: common when the currency of the security is different the currency of the cash collateral.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LFEE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LendingFees</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Fee payments, other than rebates, for securities lending. Includes (a) exclusive fees; (b) transaction fees; (c) custodian fees; (d) minimum balance fees</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LICF">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LicenseFee</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is payment of a license fee.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LIFI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LifeInsurance</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment of life insurance.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LIMA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LiquidityManagement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Bank initiated account transfer to support zero target balance management, pooling or sweeping.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LMEQ">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LendingEquityMarkedToMarketCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral payments resulting from the marked-to-market of a portfolio of loaned equity securities</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LMFI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LendingFixedIncomeMarkedToMarketCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral payments resulting from the marked-to-market of a portfolio of loaned fixed income securities</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LMRK">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LendingUnspecifiedTypeOfMarkedToMarketCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral payments resulting from the marked-to-market of a portfolio of loaned securities where the instrument types are not specified</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LOAN">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Loan</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to transfer of loan to borrower.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LOAR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LoanRepayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to repayment of loan to lender.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LOTT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LotteryPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">General-Payment towards a purchase or winnings received from lottery activities.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LREB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LendingRebatePayments</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Securities lending rebate payments</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LREV">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LendingRevenuePayments</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Revenue payments made by the lending agent to the client</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LSFL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LendingClaimPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payments made by a borrower to a lending agent to satisfy claims made by the investment manager related to sell fails from late loan recall deliveries</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="LTCF">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">LongTermCareFacility</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment for long-term care facility services.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MAFC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">MedicalAidFundContribution</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is contribution to medical aid fund.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MARF">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">MedicalAidRefund</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a medical aid refund.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MARG">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DailyMarginOnListedDerivatives</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Daily margin on listed derivatives – not segregated as collateral associated with an FCM agreement. Examples include listed futures and options margin payments; premiums for listed options not covered in the MT54X message</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MBSB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">MBSBrokerOwnedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">MBS Broker Owned Segregated (40Act/Dodd Frank) Cash Collateral - Any cash payment related to the collateral for a Mortgage Back Security, which is segregated, and not available for use by the client.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MBSC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">MBSClientOwnedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">MBS Client Owned Cash Segregated (40Act/Dodd Frank) Cash Collateral - Any cash payment related to the collateral for a Mortgage Back Security, which is owned by the client and is available for use by the client when it is returned to them from the segregated account</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MCDM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">MultiCurrenyChequeDomestic</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of a domestic multi-currency cheque</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MCFG">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">MultiCurrenyChequeForeign</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of a foreign multi-currency cheque</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MDCS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">MedicalServices</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment for medical care services.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MGCC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">FuturesInitialMargin</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Initial futures margin. Where such payment is owned by the client and is available for use by them on return</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MGSC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">FuturesInitialMarginClientOwnedSegregatedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Margin Client Owned Segregated Cash Collateral - Any cash payment related to the collateral for initial futures margin, which is owned by the client and is available for use by the client when it is returned to them from the segregated account.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MOMA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">MoneyMarket</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Securities Lending-ettlement of Money Market PCH.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MP2B">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">MobileP2BPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">A service which enables a user to use an app on its mobile to pay a merchant or other business payees by initiating a payment message. Within this context, the account information or an alias of the payee might be transported through different channels to the app, for example QR Code, NFC, Bluetooth, other Networks.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MP2P">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">MobileP2PPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">A service which enables a user to use an app on its mobile to initiate moving funds from his/her bank account to another person’s bank account while not using the account number but an alias information like an MSISDN as account addressing information in his/her app.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MSVC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">MultipleServiceTypes</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment for multiple service types.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="MTUP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">MobileTopUp</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">A Service that is first reserving money from a card account and then is loading a prepaid mobile phone amount by this amount.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="NETT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Netting</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a netting operation.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="NITX">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">NetIncomeTax</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of net income tax.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="NOWS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">NotOtherwiseSpecified</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment for type of services not specified elsewhere.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="NWCH">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">NetworkCharge</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of network charges.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="NWCM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">NetworkCommunication</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of network communication.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="OCCC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ClientOwnedOCCPledgedCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Client owned collateral identified as eligible for OCC pledging</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="OCDM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">OrderChequeDomestic</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of a domestic order cheque</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="OCFG">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">OrderChequeForeign</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of a foreign order cheque</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="OFEE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">OpeningFee</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of opening fee.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="OPBC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">OTCOptionBrokerOwnedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral payment for OTC options associated with an FCM agreement. Where such payment is segregated and not available for use by the client</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="OPCC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">OTCOptionClientOwnedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral payment for OTC options associated with an FCM agreement. Where such payment is not segregated and is available for use by the client upon return</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="OPSB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">OTCOptionBrokerOwnedSegregatedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Option Broker Owned Segregated Cash Collateral - Any cash payment related to the collateral for an OTC option, which is segregated, and not available for use by the client.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="OPSC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">OTCOptionClientOwnedCashSegregatedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Option Client Owned Cash Segregated Cash Collateral - Any cash payment related to the collateral for an OTC option, which is owned by the client and is available for use by the client when it is returned to them from the segregated account</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="OPTN">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">FXOption</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to trading of option on Foreign Exchange.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="OTCD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">OTCDerivatives</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to Over-the-counter (OTC) Derivatives in general for example contracts which are traded and privately negotiated.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="OTHR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Other</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Other payment purpose.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="OTLC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">OtherTelecomRelatedBill</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of other telecom related bill.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PADD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PreauthorizedDebit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a pre-authorized debit origination</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PAYR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Payroll</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to the payment of payroll.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PCOM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PropertyCompletionPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Final payment to complete the purchase of a property.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PDEP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PropertyDeposit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment of the deposit required towards purchase of a property.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PEFC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PensionFundContribution</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is contribution to pension fund.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PENO">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PaymentBasedOnEnforcementOrder</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment based on enforcement orders except those arising from judicial alimony decrees.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PENS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PensionPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of pension.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PHON">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TelephoneBill</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of telephone bill.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PLDS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PropertyLoanDisbursement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment of funds from a lender as part of the issuance of a property loan.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PLRF">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PropertyLoanRefinancing</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transfer or extension of a property financing arrangement to a new deal or loan provider, without change of ownership of property.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="POPE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PointOfPurchaseEntry</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment associated with a Point of Purchase Entry.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PPTI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PropertyInsurance</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment of property insurance.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PRCP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PricePayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of a price.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PRME">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PreciousMetal</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a precious metal operation.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PTSP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PaymentTerms</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to payment terms specifications</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PTXP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PropertyTax</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of property tax.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RAPI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RapidPaymentInstruction</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Instant Payments-Settlement of Rapid Payment Instruction (RPI) transactions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RCKE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RepresentedCheckEntry</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment associated with a re-presented check entry</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RCPT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ReceiptPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of receipt.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RDTX">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RoadTax</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of road tax.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="REBT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Rebate</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of a rebate.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="REFU">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Refund</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of a refund.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RELG">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RentalLeaseGeneral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is for general rental/lease.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RENT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Rent</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of rent.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="REOD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">AccountOverdraftRepayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is for account overdraft repayment</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="REPO">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RepurchaseAgreement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to a repurchase agreement transaction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RHBS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RehabilitationSupport</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Benefit for the duration of occupational rehabilitation.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RIMB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ReimbursementOfAPreviousErroneousTransaction</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a reimbursement of a previous erroneous transaction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RINP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RecurringInstallmentPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of a recurring installment made at regular intervals.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RLWY">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Railway</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment for railway transport related business.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="ROYA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Royalties</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of royalties.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RPBC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BilateralRepoBrokerOwnedCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Bi-lateral repo broker owned collateral associated with a repo master agreement – GMRA or MRA Master Repo Agreements</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RPCC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RepoClientOwnedCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Repo client owned collateral associated with a repo master agreement – GMRA or MRA Master Repo Agreements</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RPNT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BilateralRepoInternetNetting</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Bi-lateral repo interest net/bulk payment at rollover/pair-off or other closing scenarios where applicable</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RPSB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BilateralRepoBrokerOwnedSegregatedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Bi-lateral repo broker owned segregated cash collateral associated with a repo master agreement</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RPSC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BilateralRepoClientOwnedSegregatedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Repo client owned segregated collateral associated with a repo master agreement</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RRBN">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RoundRobin</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash payment resulting from a Round Robin</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RRCT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ReimbursementReceivedCreditTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a reimbursement for commercial reasons of a correctly received credit transfer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RRTP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RelatedRequestToPay</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a Request to Pay.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RVPM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ReceiveAgainstPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Code used to pre-advise the account servicer of a forthcoming receive against payment instruction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="RVPO">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ReverseRepurchaseAgreement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to a reverse repurchase agreement transaction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SALA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SalaryPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of salaries.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SASW">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ATM</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Card Settlement-Settlement of ATM transactions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SAVG">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Savings</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transfer to savings/retirement account.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SBSC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SecuritiesBuySellSellBuyBack</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to a Securities Buy Sell Sell Buy Back</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SCIE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SingleCurrencyIRSExotic</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to Exotic single currency interest rate swap.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SCIR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SingleCurrencyIRS</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to Single Currency Interest Rate Swap.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SCRP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SecuritiesCrossProducts</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to Combination of securities-related exposure types.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SCVE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PurchaseSaleOfServices</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to purchase and sale of services.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SECU">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Securities</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of securities.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SEPI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SecuritiesPurchaseInhouse</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of a purchase of securities where custodian bank and current account servicing bank coincide</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SERV">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ServiceCharges</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to service charges charged by a service provider.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SHBC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BrokerOwnedCollateralShortSale</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Short Sale broker owned collateral associated with a prime broker agreement</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SHCC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ClientOwnedCollateralShortSale</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Short Sale client owned collateral associated with a prime brokerage agreement</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SHSL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ShortSell</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash Collateral related to a Short Sell</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SLEB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SecuritiesLendingAndBorrowing</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to Securities lending and borrowing.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SLOA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SecuredLoan</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to a Secured loan.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SLPI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">PaymentSlipInstruction</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is payment of a well formatted payment slip.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SPLT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SplitPayments</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Split payments. To be used when cash and security movements for a security trade settlement are instructed separately.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SPSP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SalaryPensionSumPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Salary or pension payment for more months in one amount or a delayed payment of salaries or pensions.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SSBE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SocialSecurityBenefit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a social security benefit, ie payment made by a government to support individuals.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="STDY">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Study</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of study/tuition costs.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SUBS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Subscription</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of information or entertainment services either in printed or electronic form.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SUPP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SupplierPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment to a supplier.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SWBC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SwapBrokerOwnedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral payment for swaps associated with an ISDA agreement. . Where such payment is segregated and not available for use by the client. Includes any cash collateral payments made under the terms of a CSA agreement for instruments such as swaps and FX forwards.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SWCC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SwapClientOwnedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral payment for swaps associated with an ISDA agreement. Where such payment is not segregated and is available for use by the client upon return. Includes any cash collateral payments made under the terms of a CSA agreement for instruments such as swaps and FX forwards.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SWFP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SwapContractFinalPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Final payments for a swap contract</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SWPP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SwapContractPartialPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Partial payment for a swap contract</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SWPT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Swaption</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to an option on interest rate swap.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SWRS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SwapContractResetPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Reset payment for a swap contract</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SWSB">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SwapsBrokerOwnedSegregatedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Swaps Broker Owned Segregated Cash Collateral - Any cash payment related to the collateral for Swap margin , which is segregated, and not available for use by the client. This includes any collateral identified in a CSA agreement such as Swap or FX Forward collateral.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SWSC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SwapsClientOwnedSegregatedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Swaps Client Owned Segregated Cash Collateral - Any cash payment related to the collateral for Swap margin, which is owned by the client and is available for use by the client when returned from the segregated account. This includes any collateral identified in a CSA agreement such as Swap or FX Forward collateral.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SWUF">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SwapContractUpfrontPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Upfront payment for a swap contract</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TAXR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TaxRefund</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the refund of a tax payment or obligation.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TAXS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TaxPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of taxes.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TBAN">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TBAPairOffNetting</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">TBA pair-off cash wire net movement</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TBAS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ToBeAnnounced</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to a To Be Announced (TBA)</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TBBC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TBABrokerOwnedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral payment (segregated) for TBA securities associated with a TBA Master Agreement. Where such payment is segregated and not available for use by the client.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TBCC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TBAClientOwnedCashCollateral</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral payment (for use by client)for TBA securities associated with a TBA Master Agreement. Where such payment is not segregated and is available for use by the client upon return.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TBIL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TelecommunicationsBill</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of telecommunications related bill.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TCSC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TownCouncilServiceCharges</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment associated with charges levied by a town council.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TELI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TelephoneInitiatedTransaction</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment initiated via telephone.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TLRF">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">NonUSMutualFundTrailerFeePayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Any non-US mutual fund trailer fee (retrocession) payment (use ISIN to determine onshore versus offshore designation)</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TLRR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">NonUSMutualFundTrailerFeeRebatePayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Any non-US mutual fund trailer fee (retrocession) rebate payment (use ISIN to determine onshore versus offshore designation)</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TMPG">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TMPGClaimPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash payment resulting from a TMPG Claim</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TPRI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TriPartyRepoInterest</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Tri-Party Repo related interest</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TPRP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TriPartyRepoNetting</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Tri-party Repo related net gain/loss cash movement</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TRAD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Commercial</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a trade services operation.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TRCP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TreasuryCrossProduct</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Cash collateral related to a combination of treasury-related exposure types.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TREA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TreasuryPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to treasury operations.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TRFD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TrustFund</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of a trust fund.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TRNC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TruncatedPaymentSlip</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is payment of a beneficiary prefilled payment slip where beneficiary to payer information is truncated.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TRPT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">RoadPricing</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is for the payment to top-up pre-paid card and electronic road pricing for the purpose of transportation</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="TRVC">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TravellerCheque</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of a travellers cheque</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="UBIL">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">Utilities</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is for the payment to common utility provider that provide gas, water and/or electricity.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="UNIT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">UnitTrustPurchase</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is purchase of Unit Trust</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="VATX">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ValueAddedTaxPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is the payment of value added tax.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="VIEW">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">VisionCare</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is a payment for vision care services.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="WEBI">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InternetInitiatedTransaction</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment initiated via internet.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="WHLD">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">WithHolding</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of withholding tax.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="WTER">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">WaterBill</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is related to a payment of water bill.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="ISO_ExternalServiceLevel1Code">
+		<xs:restriction base="ExternalServiceLevel1Code">
+			<xs:annotation>
+				<xs:documentation source="Name" xml:lang="en">ExternalServiceLevel1Code</xs:documentation>
+				<xs:documentation source="Definition" xml:lang="en">Specifies the external service level code in the format of character string with a maximum length of 4 characters. The list of valid codes is an external code list published separately. External code sets can be downloaded from www.iso20022.org.</xs:documentation>
+			</xs:annotation>
+			<xs:enumeration value="BKTR">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">BookTransaction</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment through internal book transfer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="G001">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TrackedCustomerCreditTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Tracked Customer Credit Transfer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="G002">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TrackedStopAndRecall</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Tracked Stop and Recall</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="G003">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TrackedOutboundCorporateTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Tracked Outbound Corporate Transfer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="G004">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TrackedFinancialInstitutionTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Tracked Financial Institution Transfer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="G005">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TrackedInstantCustomerCreditTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Tracked Instant Customer Credit Transfer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="G006">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TrackedCaseManagement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Specifies the service conditions applicable to a tracked exceptions and investigations case.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="G007">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TrackedInboundCustomerCreditTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Specifies the service level for a tracked inbound customer credit transfer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="G009">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">TrackedLowValueCrossBorderCustomerCreditTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Specifies the service level for a tracked low-value cross-border customer credit transfer.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="INST">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">InstantCreditTransferOrInstantDirectDebit</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Used for payment initiation to identify that a Payment or Direct Debit initiation must be executed as an instant or real-time payment instrument.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="NPCA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">NordicPaymentsCouncilAreaTransfer</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payments must be executed following the NPC Area Payment scheme.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="NUGP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">NonurgentPriorityPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment must be executed as a non-urgent transaction with priority settlement.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="NURG">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">NonurgentPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment must be executed as a non-urgent transaction, which is typically identified as an ACH or low value transaction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="PRPT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">EBAPriorityService</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction must be processed according to the EBA Priority Service.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SDVA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SameDayValue</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment must be executed with same day value to the creditor.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SEPA">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">SingleEuroPaymentsArea</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment must be executed following the Single Euro Payments Area scheme.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SRTP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ServiceRequestToPay</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Request to Pay (RTP) transaction refers to an RTP scheme (such as for example the SEPA Request to Pay (SRTP) scheme).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SVAT">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">ScheckVerarbeitungAustria</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Scheck Verarbeitung Austria (Cheque Processing).</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="SVDE">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">DomesticChequeClearingAndSettlement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment execution following the cheque agreement and traveller cheque agreement of the German Banking Industry Committee (Die Deutsche Kreditwirtschaft - DK) and Deutsche Bundesbank – Scheck Verrechnung Deutschland</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="URGP">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">UrgentPayment</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment must be executed as an urgent transaction cleared through a real-time gross settlement system, which is typically identified as a wire or high value transaction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="URNS">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">UrgentPaymentNetSettlement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Payment must be executed as an urgent transaction cleared through a real-time net settlement system, which is typically identified as a wire or high value transaction.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+			<xs:enumeration value="WFSM">
+				<xs:annotation>
+					<xs:documentation source="Name" xml:lang="en">WaitForSettlement</xs:documentation>
+					<xs:documentation source="Definition" xml:lang="en">Transaction is to be treated as an advice and only applied to the account of the creditor or next agent after settlement of the cover has been confirmed.</xs:documentation>
+				</xs:annotation>
+			</xs:enumeration>
+		</xs:restriction>
+	</xs:simpleType>
+	<!-- end restrictions for pain.008.001.08 taken from ExternalCodeSets_3Q2022_v2.xlsx -->
+	<!-- start AT restrictions for pain.008.001.08 -->
+	<xs:simpleType name="AT_ExternalLocalInstrument1Code">
+		<xs:restriction base="ISO_ExternalLocalInstrument1Code">
+			<xs:enumeration value="B2B"/>
+			<xs:enumeration value="CORE"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="AT_ExternalOrganisationIdentification1Code_InitgPty">
+		<xs:restriction base="ISO_ExternalOrganisationIdentification1Code">
+			<xs:enumeration value="BANK"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="AT_ExternalServiceLevel1Code">
+		<xs:restriction base="ISO_ExternalServiceLevel1Code">
+			<xs:enumeration value="SEPA"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<!-- end AT restrictions for pain.008.001.08 -->
+	<!--  ********************** stop snip here for copy/paste into other schema to get standalone schema  -->
+</xs:schema>
