@@ -15,10 +15,12 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
     steps:
-      - name: Checkout
+      - name: Checkout private repo
         uses: actions/checkout@v4
+        with:
+          path: private
 
-      - name: Push squashed snapshot to public repo
+      - name: Sync as a new release commit on the public repo
         env:
           DEPLOY_KEY_B64: ${{ secrets.PUBLIC_REPO_DEPLOY_KEY }}
         run: |
@@ -27,12 +29,17 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           export GIT_SSH_COMMAND="ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no"
 
+          git clone git@github.com:lutzerb/eegabrechnung-public.git public
+          cd public
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
 
-          git checkout --orphan public-release
-          git add -A
-          git commit -m "Release $(date +'%Y-%m-%d')"
+          rsync -a --delete --exclude '.git' ../private/ ./
 
-          git remote add public git@github.com:lutzerb/eegabrechnung-public.git
-          git push public public-release:main --force
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to publish"
+            exit 0
+          fi
+          git commit -m "Release $(date +'%Y-%m-%d')"
+          git push origin HEAD:main
