@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/lutzerb/eegabrechnung/internal/domain"
+	"github.com/lutzerb/eegabrechnung/internal/mailutil"
 )
 
 // SMTPConfig holds SMTP connection settings.
@@ -120,9 +121,7 @@ func buildMIMEMessage(from, to, subject, plainBody, attachmentName string, pdfDa
 
 	buf.Reset()
 	var header bytes.Buffer
-	header.WriteString("From: " + from + "\r\n")
-	header.WriteString("To: " + to + "\r\n")
-	header.WriteString("Subject: " + subject + "\r\n")
+	header.WriteString(mailutil.Headers(from, to, subject))
 	header.WriteString("MIME-Version: 1.0\r\n")
 	header.WriteString("Content-Type: multipart/mixed; boundary=\"" + boundary + "\"\r\n")
 	header.WriteString("\r\n")

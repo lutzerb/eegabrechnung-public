@@ -17,6 +17,7 @@ import (
 	"github.com/lutzerb/eegabrechnung/internal/domain"
 	edaxml "github.com/lutzerb/eegabrechnung/internal/eda/xml"
 	"github.com/lutzerb/eegabrechnung/internal/invoice"
+	"github.com/lutzerb/eegabrechnung/internal/mailutil"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
 )
 
@@ -185,9 +186,7 @@ Ihr EEG-Team
 --
 Dieser Link läuft in 30 Minuten ab.`, fullName, link)
 
-	msg := []byte("From: " + eeg.SMTPFrom + "\r\n" +
-		"To: " + toEmail + "\r\n" +
-		"Subject: " + subject + "\r\n" +
+	msg := []byte(mailutil.Headers(eeg.SMTPFrom, toEmail, subject) +
 		"Content-Type: text/plain; charset=UTF-8\r\n" +
 		"\r\n" +
 		body)
@@ -704,9 +703,7 @@ Das bisherige Mandat wurde archiviert. Falls Sie diese Änderung nicht selbst vo
 Mit freundlichen Grüßen
 Ihr EEG-Team`, fullName, newIBAN)
 
-	memberMsg := []byte("From: " + eeg.SMTPFrom + "\r\n" +
-		"To: " + member.Email + "\r\n" +
-		"Subject: " + memberSubject + "\r\n" +
+	memberMsg := []byte(mailutil.Headers(eeg.SMTPFrom, member.Email, memberSubject) +
 		"Content-Type: text/plain; charset=UTF-8\r\n" +
 		"\r\n" +
 		memberBody)
@@ -729,9 +726,7 @@ Neue IBAN: %s
 Das bisherige Mandat wurde archiviert und ist über die Mandats-Historie auf der Mitgliederseite einsehbar.`,
 		fullName, member.MitgliedsNr, orDash(oldIBAN), newIBAN)
 
-	adminMsg := []byte("From: " + eeg.SMTPFrom + "\r\n" +
-		"To: " + eeg.SMTPFrom + "\r\n" +
-		"Subject: " + adminSubject + "\r\n" +
+	adminMsg := []byte(mailutil.Headers(eeg.SMTPFrom, eeg.SMTPFrom, adminSubject) +
 		"Content-Type: text/plain; charset=UTF-8\r\n" +
 		"\r\n" +
 		adminBody)

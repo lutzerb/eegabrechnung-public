@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lutzerb/eegabrechnung/internal/eda/types"
 	edaxml "github.com/lutzerb/eegabrechnung/internal/eda/xml"
+	"github.com/lutzerb/eegabrechnung/internal/mailutil"
 )
 
 // MailConfig holds IMAP and SMTP configuration.
@@ -543,9 +544,9 @@ func buildAckXML(originalMsgID, from, to string) string {
 func buildMIMEMessage(from, to, subject, xmlBody string) []byte {
 	boundary := "edaboundary-" + uuid.NewString()
 	var buf bytes.Buffer
-	buf.WriteString("From: " + from + "\r\n")
-	buf.WriteString("To: " + to + "\r\n")
-	buf.WriteString("Subject: " + subject + "\r\n")
+	buf.WriteString("From: " + mailutil.SanitizeHeaderValue(from) + "\r\n")
+	buf.WriteString("To: " + mailutil.SanitizeHeaderValue(to) + "\r\n")
+	buf.WriteString("Subject: " + mailutil.SanitizeHeaderValue(subject) + "\r\n")
 	buf.WriteString("Date: " + time.Now().UTC().Format(time.RFC1123Z) + "\r\n")
 	buf.WriteString("MIME-Version: 1.0\r\n")
 	buf.WriteString("Content-Type: multipart/mixed; boundary=\"" + boundary + "\"\r\n")

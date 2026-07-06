@@ -20,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
 	"github.com/lutzerb/eegabrechnung/internal/invoice"
+	"github.com/lutzerb/eegabrechnung/internal/mailutil"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
 )
 
@@ -296,9 +297,7 @@ func (h *MemberEmailHandler) sendHTMLEmail(ctx context.Context, smtpCfg invoice.
 
 	// Write headers before the multipart body
 	var headerBuf bytes.Buffer
-	headerBuf.WriteString("From: " + from + "\r\n")
-	headerBuf.WriteString("To: " + toEmail + "\r\n")
-	headerBuf.WriteString("Subject: " + subject + "\r\n")
+	headerBuf.WriteString(mailutil.Headers(from, toEmail, subject))
 	headerBuf.WriteString("MIME-Version: 1.0\r\n")
 	headerBuf.WriteString("Content-Type: multipart/mixed; boundary=\"" + mpWriter.Boundary() + "\"\r\n")
 	headerBuf.WriteString("\r\n")

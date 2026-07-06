@@ -13,10 +13,32 @@ import (
 
 type TariffHandler struct {
 	tariffRepo *repository.TariffRepository
+	eegRepo    *repository.EEGRepository
 }
 
-func NewTariffHandler(tariffRepo *repository.TariffRepository) *TariffHandler {
-	return &TariffHandler{tariffRepo: tariffRepo}
+func NewTariffHandler(tariffRepo *repository.TariffRepository, eegRepo *repository.EEGRepository) *TariffHandler {
+	return &TariffHandler{tariffRepo: tariffRepo, eegRepo: eegRepo}
+}
+
+// verifyScheduleOwnership loads the schedule and confirms it belongs to eegID and to the
+// route's member scope (memberID == nil → EEG-wide schedule; memberID set → that member's
+// Individualtarif). Returns false — after writing a 404 — for a missing or foreign-scoped
+// schedule, so a schedule UUID from another tenant can't be read or mutated.
+func (h *TariffHandler) verifyScheduleOwnership(w http.ResponseWriter, r *http.Request, scheduleID, eegID uuid.UUID, memberID *uuid.UUID) bool {
+	s, err := h.tariffRepo.GetWithEntries(r.Context(), scheduleID)
+	if err != nil || s == nil || s.EegID != eegID {
+		jsonError(w, "schedule not found", http.StatusNotFound)
+		return false
+	}
+	switch {
+	case memberID == nil && s.MemberID != nil:
+		jsonError(w, "schedule not found", http.StatusNotFound)
+		return false
+	case memberID != nil && (s.MemberID == nil || *s.MemberID != *memberID):
+		jsonError(w, "schedule not found", http.StatusNotFound)
+		return false
+	}
+	return true
 }
 
 // optionalMemberID reads the "memberID" chi URL param when the route is nested under a member
@@ -57,11 +79,11 @@ type tariffOverrides struct {
 //	@Security		BearerAuth
 //	@Router			/eegs/{eegID}/tariffs [get]
 func (h *TariffHandler) ListSchedules(w http.ResponseWriter, r *http.Request) {
-	eegID, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
+	eegID := eeg.ID
 	memberID, err := optionalMemberID(r)
 	if err != nil {
 		jsonError(w, "invalid member ID", http.StatusBadRequest)
@@ -98,11 +120,11 @@ func (h *TariffHandler) ListSchedules(w http.ResponseWriter, r *http.Request) {
 //	@Security		BearerAuth
 //	@Router			/eegs/{eegID}/tariffs [post]
 func (h *TariffHandler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
-	eegID, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
+	eegID := eeg.ID
 	memberID, err := optionalMemberID(r)
 	if err != nil {
 		jsonError(w, "invalid member ID", http.StatusBadRequest)
@@ -160,17 +182,25 @@ func (h *TariffHandler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
 //	@Security		BearerAuth
 //	@Router			/eegs/{eegID}/tariffs/{scheduleID} [get]
 func (h *TariffHandler) GetSchedule(w http.ResponseWriter, r *http.Request) {
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
+		return
+	}
+	memberID, err := optionalMemberID(r)
+	if err != nil {
+		jsonError(w, "invalid member ID", http.StatusBadRequest)
+		return
+	}
 	scheduleID, err := uuid.Parse(chi.URLParam(r, "scheduleID"))
 	if err != nil {
 		jsonError(w, "invalid schedule ID", http.StatusBadRequest)
 		return
 	}
-	s, err := h.tariffRepo.GetWithEntries(r.Context(), scheduleID)
-	if err != nil {
-		jsonError(w, "failed to get schedule", http.StatusInternalServerError)
+	if !h.verifyScheduleOwnership(w, r, scheduleID, eeg.ID, memberID) {
 		return
 	}
-	if s == nil {
+	s, err := h.tariffRepo.GetWithEntries(r.Context(), scheduleID)
+	if err != nil || s == nil {
 		jsonError(w, "schedule not found", http.StatusNotFound)
 		return
 	}
@@ -193,9 +223,21 @@ func (h *TariffHandler) GetSchedule(w http.ResponseWriter, r *http.Request) {
 //	@Security		BearerAuth
 //	@Router			/eegs/{eegID}/tariffs/{scheduleID} [put]
 func (h *TariffHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
+		return
+	}
+	memberID, err := optionalMemberID(r)
+	if err != nil {
+		jsonError(w, "invalid member ID", http.StatusBadRequest)
+		return
+	}
 	scheduleID, err := uuid.Parse(chi.URLParam(r, "scheduleID"))
 	if err != nil {
 		jsonError(w, "invalid schedule ID", http.StatusBadRequest)
+		return
+	}
+	if !h.verifyScheduleOwnership(w, r, scheduleID, eeg.ID, memberID) {
 		return
 	}
 	var req struct {
@@ -238,9 +280,21 @@ func (h *TariffHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
 //	@Security		BearerAuth
 //	@Router			/eegs/{eegID}/tariffs/{scheduleID} [delete]
 func (h *TariffHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
+		return
+	}
+	memberID, err := optionalMemberID(r)
+	if err != nil {
+		jsonError(w, "invalid member ID", http.StatusBadRequest)
+		return
+	}
 	scheduleID, err := uuid.Parse(chi.URLParam(r, "scheduleID"))
 	if err != nil {
 		jsonError(w, "invalid schedule ID", http.StatusBadRequest)
+		return
+	}
+	if !h.verifyScheduleOwnership(w, r, scheduleID, eeg.ID, memberID) {
 		return
 	}
 	if err := h.tariffRepo.Delete(r.Context(), scheduleID); err != nil {
@@ -264,11 +318,11 @@ func (h *TariffHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
 //	@Security		BearerAuth
 //	@Router			/eegs/{eegID}/tariffs/{scheduleID}/activate [post]
 func (h *TariffHandler) ActivateSchedule(w http.ResponseWriter, r *http.Request) {
-	eegID, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
+	eegID := eeg.ID
 	scheduleID, err := uuid.Parse(chi.URLParam(r, "scheduleID"))
 	if err != nil {
 		jsonError(w, "invalid schedule ID", http.StatusBadRequest)
@@ -277,6 +331,9 @@ func (h *TariffHandler) ActivateSchedule(w http.ResponseWriter, r *http.Request)
 	memberID, err := optionalMemberID(r)
 	if err != nil {
 		jsonError(w, "invalid member ID", http.StatusBadRequest)
+		return
+	}
+	if !h.verifyScheduleOwnership(w, r, scheduleID, eegID, memberID) {
 		return
 	}
 	if err := h.tariffRepo.Activate(r.Context(), scheduleID, eegID, memberID); err != nil {
@@ -300,9 +357,21 @@ func (h *TariffHandler) ActivateSchedule(w http.ResponseWriter, r *http.Request)
 //	@Security		BearerAuth
 //	@Router			/eegs/{eegID}/tariffs/{scheduleID}/activate [delete]
 func (h *TariffHandler) DeactivateSchedule(w http.ResponseWriter, r *http.Request) {
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
+		return
+	}
+	memberID, err := optionalMemberID(r)
+	if err != nil {
+		jsonError(w, "invalid member ID", http.StatusBadRequest)
+		return
+	}
 	scheduleID, err := uuid.Parse(chi.URLParam(r, "scheduleID"))
 	if err != nil {
 		jsonError(w, "invalid schedule ID", http.StatusBadRequest)
+		return
+	}
+	if !h.verifyScheduleOwnership(w, r, scheduleID, eeg.ID, memberID) {
 		return
 	}
 	if err := h.tariffRepo.Deactivate(r.Context(), scheduleID); err != nil {
@@ -328,9 +397,21 @@ func (h *TariffHandler) DeactivateSchedule(w http.ResponseWriter, r *http.Reques
 //	@Security		BearerAuth
 //	@Router			/eegs/{eegID}/tariffs/{scheduleID}/entries [put]
 func (h *TariffHandler) SetEntries(w http.ResponseWriter, r *http.Request) {
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
+		return
+	}
+	memberID, err := optionalMemberID(r)
+	if err != nil {
+		jsonError(w, "invalid member ID", http.StatusBadRequest)
+		return
+	}
 	scheduleID, err := uuid.Parse(chi.URLParam(r, "scheduleID"))
 	if err != nil {
 		jsonError(w, "invalid schedule ID", http.StatusBadRequest)
+		return
+	}
+	if !h.verifyScheduleOwnership(w, r, scheduleID, eeg.ID, memberID) {
 		return
 	}
 	var req []struct {

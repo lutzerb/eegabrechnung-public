@@ -97,11 +97,11 @@ func parseDateField(s string) (*time.Time, error) {
 // @Router      /eegs/{eegID}/members [post]
 // CreateMember handles POST /eegs/{eegID}/members
 func (h *MemberHandler) CreateMember(w http.ResponseWriter, r *http.Request) {
-	eegID, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
+	eegID := eeg.ID
 
 	var req memberRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -146,13 +146,13 @@ func (h *MemberHandler) CreateMember(w http.ResponseWriter, r *http.Request) {
 	m := &domain.Member{
 		EegID:          eegID,
 		MitgliedsNr:    req.MitgliedsNr,
-		Name1:          req.Name1,
-		Name2:          req.Name2,
-		Email:          req.Email,
+		Name1:          cleanText(req.Name1),
+		Name2:          cleanText(req.Name2),
+		Email:          cleanText(req.Email),
 		IBAN:           req.IBAN,
-		Strasse:        req.Strasse,
-		Plz:            req.Plz,
-		Ort:            req.Ort,
+		Strasse:        cleanText(req.Strasse),
+		Plz:            cleanText(req.Plz),
+		Ort:            cleanText(req.Ort),
 		BusinessRole:   req.BusinessRole,
 		UidNummer:      req.UidNummer,
 		UseVat:         req.UseVat,
@@ -185,9 +185,8 @@ func (h *MemberHandler) CreateMember(w http.ResponseWriter, r *http.Request) {
 // @Router      /eegs/{eegID}/members/{memberID} [get]
 // GetMember handles GET /eegs/{eegID}/members/{memberID}
 func (h *MemberHandler) GetMember(w http.ResponseWriter, r *http.Request) {
-	_, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
 	memberID, err := uuid.Parse(chi.URLParam(r, "memberID"))
@@ -197,7 +196,7 @@ func (h *MemberHandler) GetMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	m, err := h.memberRepo.GetByID(r.Context(), memberID)
-	if err != nil {
+	if err != nil || m.EegID != eeg.ID {
 		jsonError(w, "member not found", http.StatusNotFound)
 		return
 	}
@@ -238,9 +237,8 @@ func (h *MemberHandler) GetMember(w http.ResponseWriter, r *http.Request) {
 // @Router      /eegs/{eegID}/members/{memberID} [put]
 // UpdateMember handles PUT /eegs/{eegID}/members/{memberID}
 func (h *MemberHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
-	_, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
 	memberID, err := uuid.Parse(chi.URLParam(r, "memberID"))
@@ -250,7 +248,7 @@ func (h *MemberHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	existing, err := h.memberRepo.GetByID(r.Context(), memberID)
-	if err != nil {
+	if err != nil || existing.EegID != eeg.ID {
 		jsonError(w, "member not found", http.StatusNotFound)
 		return
 	}
@@ -273,14 +271,14 @@ func (h *MemberHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.Name1 != "" {
-		existing.Name1 = req.Name1
+		existing.Name1 = cleanText(req.Name1)
 	}
-	existing.Name2 = req.Name2
-	existing.Email = req.Email
+	existing.Name2 = cleanText(req.Name2)
+	existing.Email = cleanText(req.Email)
 	existing.IBAN = req.IBAN
-	existing.Strasse = req.Strasse
-	existing.Plz = req.Plz
-	existing.Ort = req.Ort
+	existing.Strasse = cleanText(req.Strasse)
+	existing.Plz = cleanText(req.Plz)
+	existing.Ort = cleanText(req.Ort)
 	if req.BusinessRole != "" {
 		existing.BusinessRole = req.BusinessRole
 	}
@@ -339,14 +337,19 @@ func (h *MemberHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 // @Router      /eegs/{eegID}/members/{memberID} [delete]
 // DeleteMember handles DELETE /eegs/{eegID}/members/{memberID}
 func (h *MemberHandler) DeleteMember(w http.ResponseWriter, r *http.Request) {
-	_, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
 	memberID, err := uuid.Parse(chi.URLParam(r, "memberID"))
 	if err != nil {
 		jsonError(w, "invalid member ID", http.StatusBadRequest)
+		return
+	}
+
+	existing, err := h.memberRepo.GetByID(r.Context(), memberID)
+	if err != nil || existing.EegID != eeg.ID {
+		jsonError(w, "member not found", http.StatusNotFound)
 		return
 	}
 

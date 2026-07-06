@@ -144,6 +144,10 @@ func (h *EDAHandler) Anmeldung(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, fmt.Sprintf("Zählpunkt %s passt nicht zum konfigurierten Netzbetreiber %s (Präfix: %s)", req.Zaehlpunkt, eeg.EdaNetzbetreiberID, req.Zaehlpunkt[:8]), http.StatusBadRequest)
 		return
 	}
+	if req.ParticipationFactor <= 0 || req.ParticipationFactor > 100 {
+		jsonError(w, "participation_factor must be between 0 and 100", http.StatusBadRequest)
+		return
+	}
 
 	viennaLoc, _ := time.LoadLocation("Europe/Vienna")
 	tomorrowVienna := time.Now().In(viennaLoc).AddDate(0, 0, 1)
@@ -224,9 +228,7 @@ func (h *EDAHandler) Anmeldung(w http.ResponseWriter, r *http.Request) {
 	if !validFrom.IsZero() {
 		proc.ValidFrom = &validFrom
 	}
-	if req.ParticipationFactor > 0 {
-		proc.ParticipationFactor = &req.ParticipationFactor
-	}
+	proc.ParticipationFactor = &req.ParticipationFactor
 	if err := h.edaProcRepo.Create(r.Context(), proc); err != nil {
 		jsonError(w, "failed to create EDA process record", http.StatusInternalServerError)
 		return

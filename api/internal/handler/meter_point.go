@@ -14,11 +14,12 @@ import (
 type MeterPointHandler struct {
 	meterPointRepo *repository.MeterPointRepository
 	memberRepo     *repository.MemberRepository
+	eegRepo        *repository.EEGRepository
 	edaProcRepo    *repository.EDAProcessRepository
 }
 
-func NewMeterPointHandler(meterPointRepo *repository.MeterPointRepository, memberRepo *repository.MemberRepository, edaProcRepo *repository.EDAProcessRepository) *MeterPointHandler {
-	return &MeterPointHandler{meterPointRepo: meterPointRepo, memberRepo: memberRepo, edaProcRepo: edaProcRepo}
+func NewMeterPointHandler(meterPointRepo *repository.MeterPointRepository, memberRepo *repository.MemberRepository, eegRepo *repository.EEGRepository, edaProcRepo *repository.EDAProcessRepository) *MeterPointHandler {
+	return &MeterPointHandler{meterPointRepo: meterPointRepo, memberRepo: memberRepo, eegRepo: eegRepo, edaProcRepo: edaProcRepo}
 }
 
 type meterPointRequest struct {
@@ -50,14 +51,21 @@ type meterPointRequest struct {
 // @Router      /eegs/{eegID}/members/{memberID}/meter-points [post]
 // CreateMeterPoint handles POST /eegs/{eegID}/members/{memberID}/meter-points
 func (h *MeterPointHandler) CreateMeterPoint(w http.ResponseWriter, r *http.Request) {
-	eegID, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
+	eegID := eeg.ID
 	memberID, err := uuid.Parse(chi.URLParam(r, "memberID"))
 	if err != nil {
 		jsonError(w, "invalid member ID", http.StatusBadRequest)
+		return
+	}
+
+	// Ensure the target member actually belongs to this EEG before attaching a meter point.
+	member, err := h.memberRepo.GetByID(r.Context(), memberID)
+	if err != nil || member.EegID != eegID {
+		jsonError(w, "member not found", http.StatusNotFound)
 		return
 	}
 
@@ -126,9 +134,8 @@ func (h *MeterPointHandler) CreateMeterPoint(w http.ResponseWriter, r *http.Requ
 // @Router      /eegs/{eegID}/meter-points/{meterPointID} [get]
 // GetMeterPoint handles GET /eegs/{eegID}/meter-points/{meterPointID}
 func (h *MeterPointHandler) GetMeterPoint(w http.ResponseWriter, r *http.Request) {
-	_, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
 	meterPointID, err := uuid.Parse(chi.URLParam(r, "meterPointID"))
@@ -138,7 +145,7 @@ func (h *MeterPointHandler) GetMeterPoint(w http.ResponseWriter, r *http.Request
 	}
 
 	mp, err := h.meterPointRepo.GetByID(r.Context(), meterPointID)
-	if err != nil {
+	if err != nil || mp.EegID != eeg.ID {
 		jsonError(w, "meter point not found", http.StatusNotFound)
 		return
 	}
@@ -163,9 +170,8 @@ func (h *MeterPointHandler) GetMeterPoint(w http.ResponseWriter, r *http.Request
 // @Router      /eegs/{eegID}/meter-points/{meterPointID} [put]
 // UpdateMeterPoint handles PUT /eegs/{eegID}/meter-points/{meterPointID}
 func (h *MeterPointHandler) UpdateMeterPoint(w http.ResponseWriter, r *http.Request) {
-	_, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
 	meterPointID, err := uuid.Parse(chi.URLParam(r, "meterPointID"))
@@ -175,7 +181,7 @@ func (h *MeterPointHandler) UpdateMeterPoint(w http.ResponseWriter, r *http.Requ
 	}
 
 	existing, err := h.meterPointRepo.GetByID(r.Context(), meterPointID)
-	if err != nil {
+	if err != nil || existing.EegID != eeg.ID {
 		jsonError(w, "meter point not found", http.StatusNotFound)
 		return
 	}
@@ -259,9 +265,8 @@ type meterPointHistoryResponse struct {
 // @Router      /eegs/{eegID}/meter-points/{meterPointID}/history [get]
 // GetMeterPointHistory handles GET /eegs/{eegID}/meter-points/{meterPointID}/history
 func (h *MeterPointHandler) GetMeterPointHistory(w http.ResponseWriter, r *http.Request) {
-	_, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
 	meterPointID, err := uuid.Parse(chi.URLParam(r, "meterPointID"))
@@ -271,7 +276,7 @@ func (h *MeterPointHandler) GetMeterPointHistory(w http.ResponseWriter, r *http.
 	}
 
 	mp, err := h.meterPointRepo.GetByID(r.Context(), meterPointID)
-	if err != nil {
+	if err != nil || mp.EegID != eeg.ID {
 		jsonError(w, "meter point not found", http.StatusNotFound)
 		return
 	}
@@ -303,14 +308,19 @@ func (h *MeterPointHandler) GetMeterPointHistory(w http.ResponseWriter, r *http.
 // @Router      /eegs/{eegID}/meter-points/{meterPointID} [delete]
 // DeleteMeterPoint handles DELETE /eegs/{eegID}/meter-points/{meterPointID}
 func (h *MeterPointHandler) DeleteMeterPoint(w http.ResponseWriter, r *http.Request) {
-	_, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
 	meterPointID, err := uuid.Parse(chi.URLParam(r, "meterPointID"))
 	if err != nil {
 		jsonError(w, "invalid meter point ID", http.StatusBadRequest)
+		return
+	}
+
+	existing, err := h.meterPointRepo.GetByID(r.Context(), meterPointID)
+	if err != nil || existing.EegID != eeg.ID {
+		jsonError(w, "meter point not found", http.StatusNotFound)
 		return
 	}
 

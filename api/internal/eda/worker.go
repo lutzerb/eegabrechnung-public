@@ -18,6 +18,7 @@ import (
 	"github.com/lutzerb/eegabrechnung/internal/eda/types"
 	edaxml "github.com/lutzerb/eegabrechnung/internal/eda/xml"
 	invoicepkg "github.com/lutzerb/eegabrechnung/internal/invoice"
+	"github.com/lutzerb/eegabrechnung/internal/mailutil"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
 )
 
@@ -1778,9 +1779,7 @@ func (w *Worker) sendEDAErrorNotification(ctx context.Context, proc *domain.EDAP
 </html>`, eeg.Name, proc.ProcessType, proc.Zaehlpunkt, proc.Status, errDetails, proc.ID)
 
 	var msgBuilder strings.Builder
-	msgBuilder.WriteString("From: " + eeg.SMTPFrom + "\r\n")
-	msgBuilder.WriteString("To: " + eeg.SMTPFrom + "\r\n")
-	msgBuilder.WriteString("Subject: " + subject + "\r\n")
+	msgBuilder.WriteString(mailutil.Headers(eeg.SMTPFrom, eeg.SMTPFrom, subject))
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
 	msgBuilder.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msgBuilder.WriteString("\r\n")
@@ -1862,9 +1861,7 @@ func (w *Worker) notifyDirectionMismatch(ctx context.Context, mp *domain.MeterPo
 	}(), mp.Energierichtung, detectedDirection)
 
 	var msgBuilder strings.Builder
-	msgBuilder.WriteString("From: " + eeg.SMTPFrom + "\r\n")
-	msgBuilder.WriteString("To: " + eeg.SMTPFrom + "\r\n")
-	msgBuilder.WriteString("Subject: " + subject + "\r\n")
+	msgBuilder.WriteString(mailutil.Headers(eeg.SMTPFrom, eeg.SMTPFrom, subject))
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
 	msgBuilder.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msgBuilder.WriteString("\r\n")
@@ -1948,9 +1945,7 @@ func (w *Worker) sendSmartmeterInfoEmail(ctx context.Context, proc *domain.EDAPr
 </html>`, memberName, proc.Zaehlpunkt, eeg.Name, portalSection, eeg.Name)
 
 	var msgBuilder strings.Builder
-	msgBuilder.WriteString("From: " + eeg.SMTPFrom + "\r\n")
-	msgBuilder.WriteString("To: " + member.Email + "\r\n")
-	msgBuilder.WriteString("Subject: " + subject + "\r\n")
+	msgBuilder.WriteString(mailutil.Headers(eeg.SMTPFrom, member.Email, subject))
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
 	msgBuilder.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msgBuilder.WriteString("\r\n")
@@ -2050,9 +2045,7 @@ func (w *Worker) sendAnmeldungConfirmationEmail(ctx context.Context, meterPointI
 </html>`, member.Name1, zaehlpunkt, eeg.Name, dateLine, portalSection)
 
 	var msgBuilder strings.Builder
-	msgBuilder.WriteString("From: " + eeg.SMTPFrom + "\r\n")
-	msgBuilder.WriteString("To: " + member.Email + "\r\n")
-	msgBuilder.WriteString("Subject: " + subject + "\r\n")
+	msgBuilder.WriteString(mailutil.Headers(eeg.SMTPFrom, member.Email, subject))
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
 	msgBuilder.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msgBuilder.WriteString("\r\n")

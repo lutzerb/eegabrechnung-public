@@ -6,13 +6,23 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lutzerb/eegabrechnung/internal/auth"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
+	"github.com/lutzerb/eegabrechnung/internal/mailutil"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
 )
+
+// cleanText trims surrounding whitespace and strips CR/LF and other control
+// characters. Use it on user-supplied free text (names, addresses, email) at the
+// point it is persisted, so it can never smuggle extra lines into an email header
+// downstream. This backs up the sanitisation done in mailutil at header build time.
+func cleanText(s string) string {
+	return mailutil.SanitizeHeaderValue(strings.TrimSpace(s))
+}
 
 func jsonOK(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")

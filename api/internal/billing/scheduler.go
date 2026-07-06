@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
 	"github.com/lutzerb/eegabrechnung/internal/invoice"
+	"github.com/lutzerb/eegabrechnung/internal/mailutil"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
 )
 
@@ -243,9 +244,7 @@ func (s *Scheduler) sendErrorEmail(ctx context.Context, eeg *domain.EEG, from, t
 
 func (s *Scheduler) sendHTMLEmail(ctx context.Context, eeg *domain.EEG, emailType, subject, htmlBody string) {
 	var msg strings.Builder
-	msg.WriteString("From: " + eeg.SMTPFrom + "\r\n")
-	msg.WriteString("To: " + eeg.SMTPFrom + "\r\n")
-	msg.WriteString("Subject: " + subject + "\r\n")
+	msg.WriteString(mailutil.Headers(eeg.SMTPFrom, eeg.SMTPFrom, subject))
 	msg.WriteString("MIME-Version: 1.0\r\n")
 	msg.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msg.WriteString("\r\n")

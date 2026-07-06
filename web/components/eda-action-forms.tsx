@@ -122,7 +122,7 @@ function AnmeldungOnlineForm({
 }) {
   const [zaehlpunkt, setZaehlpunkt] = useState("");
   const [validFrom, setValidFrom] = useState("");
-  const [factor, setFactor] = useState("");
+  const [factor, setFactor] = useState("100");
   const [energyDirection, setEnergyDirection] = useState("CONSUMPTION");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,7 +143,7 @@ function AnmeldungOnlineForm({
         zaehlpunkt,
         valid_from: validFrom || undefined,
         energy_direction: energyDirection,
-        participation_factor: factor ? parseFloat(factor) : undefined,
+        participation_factor: parseFloat(factor),
       };
       const res = await fetch(`/api/eegs/${eegId}/eda/anmeldung-online`, {
         method: "POST",
@@ -157,7 +157,7 @@ function AnmeldungOnlineForm({
       setSuccess(true);
       setZaehlpunkt("");
       setValidFrom("");
-      setFactor("");
+      setFactor("100");
       onSuccess();
     } catch (err: unknown) {
       setError((err as Error).message);
@@ -228,15 +228,16 @@ function AnmeldungOnlineForm({
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1.5">Teilnahmefaktor (%)</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">Teilnahmefaktor (%) *</label>
           <input
             type="number"
             step="0.01"
-            min="0"
+            min="0.01"
             max="100"
             value={factor}
             onChange={(e) => setFactor(e.target.value)}
             placeholder="100"
+            required
             disabled={disabled || loading}
             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:bg-slate-50"
           />
@@ -245,7 +246,7 @@ function AnmeldungOnlineForm({
 
       <button
         type="submit"
-        disabled={disabled || loading || !zaehlpunkt}
+        disabled={disabled || loading || !zaehlpunkt || !factor}
         className="px-5 py-2.5 bg-indigo-700 text-white text-sm font-medium rounded-lg hover:bg-indigo-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {loading ? "Wird gesendet…" : "Online-Anmeldung senden"}

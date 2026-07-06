@@ -102,14 +102,14 @@ func main() {
 	importHandler := handler.NewImportHandler(eegRepo, memberRepo, meterPointRepo, readingRepo)
 	billingHandler := handler.NewBillingHandler(billingSvc, invoiceRepo, billingRunRepo, memberRepo, eegRepo, emailLogRepo)
 	memberHandler := handler.NewMemberHandler(memberRepo, meterPointRepo, eegRepo, edaProcessRepo, jobRepo, participationRepo)
-	meterPointHandler := handler.NewMeterPointHandler(meterPointRepo, memberRepo, edaProcessRepo)
+	meterPointHandler := handler.NewMeterPointHandler(meterPointRepo, memberRepo, eegRepo, edaProcessRepo)
 	statsHandler := handler.NewStatsHandler(eegRepo, edaMessageRepo)
 	authHandler := handler.NewAuthHandler(userRepo, jwtSecret)
 	oemagHandler := handler.NewOemagHandler(eegRepo)
 	sepaHandler := handler.NewSEPAHandler(eegRepo, memberRepo, invoiceRepo)
 	reportHandler := handler.NewReportHandler(reportRepo, eegRepo)
 	userHandler := handler.NewUserHandler(userRepo, eegRepo)
-	tariffHandler := handler.NewTariffHandler(tariffRepo)
+	tariffHandler := handler.NewTariffHandler(tariffRepo, eegRepo)
 	edaWorkerURL := getEnv("EDA_WORKER_URL", "http://eda-worker:8081")
 	edaHandler := handler.NewEDAHandler(eegRepo, meterPointRepo, edaProcessRepo, jobRepo, edaErrorRepo, workerStatusRepo, edaWorkerURL)
 	forecastURL := getEnv("FORECAST_SERVICE_URL", "http://forecast-service:8200")
@@ -143,7 +143,7 @@ func main() {
 	eegDocumentHandler := handler.NewEEGDocumentHandler(eegDocumentRepo, portalRepo, eegRepo)
 
 	eaRepo := repository.NewEARepository(pool)
-	eaHandler := handler.NewEAHandler(eaRepo, invoiceDir)
+	eaHandler := handler.NewEAHandler(eaRepo, eegRepo, invoiceDir)
 
 	// Router
 	r := chi.NewRouter()

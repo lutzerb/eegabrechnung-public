@@ -21,18 +21,44 @@ import (
 
 type EAHandler struct {
 	eaRepo     *repository.EARepository
+	eegRepo    *repository.EEGRepository
 	invoiceDir string // base dir for beleg storage (reuses invoice dir)
 }
 
-func NewEAHandler(eaRepo *repository.EARepository, invoiceDir string) *EAHandler {
-	return &EAHandler{eaRepo: eaRepo, invoiceDir: invoiceDir}
+func NewEAHandler(eaRepo *repository.EARepository, eegRepo *repository.EEGRepository, invoiceDir string) *EAHandler {
+	return &EAHandler{eaRepo: eaRepo, eegRepo: eegRepo, invoiceDir: invoiceDir}
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
+// parseEegID parses the {eegID} path param AND verifies the caller is allowed to
+// access that EEG (same org for admins, an explicit assignment for regular users).
+// Returns false — without leaking whether the EEG exists — when the ID is malformed
+// or the caller has no access. Every EA handler funnels through here, so this single
+// check enforces tenant isolation across the whole accounting surface.
 func (h *EAHandler) parseEegID(r *http.Request) (uuid.UUID, bool) {
 	id, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	return id, err == nil
+	if err != nil {
+		return uuid.Nil, false
+	}
+	claims := auth.ClaimsFromContext(r.Context())
+	if claims == nil {
+		return uuid.Nil, false
+	}
+	if claims.Role == "admin" {
+		if _, err := h.eegRepo.GetByID(r.Context(), id, claims.OrganizationID); err != nil {
+			return uuid.Nil, false
+		}
+		return id, true
+	}
+	userID, err := uuid.Parse(claims.Subject)
+	if err != nil {
+		return uuid.Nil, false
+	}
+	if _, err := h.eegRepo.GetByIDForUser(r.Context(), id, userID); err != nil {
+		return uuid.Nil, false
+	}
+	return id, true
 }
 
 func (h *EAHandler) ensureSeeded(w http.ResponseWriter, r *http.Request, eegID uuid.UUID) bool {

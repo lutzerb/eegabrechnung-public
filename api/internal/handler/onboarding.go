@@ -18,6 +18,7 @@ import (
 	"github.com/lutzerb/eegabrechnung/internal/domain"
 	"github.com/lutzerb/eegabrechnung/internal/invoice"
 	edaxml "github.com/lutzerb/eegabrechnung/internal/eda/xml"
+	"github.com/lutzerb/eegabrechnung/internal/mailutil"
 	"github.com/lutzerb/eegabrechnung/internal/netzbetreiber"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
 )
@@ -248,13 +249,13 @@ func (h *OnboardingHandler) SubmitOnboarding(w http.ResponseWriter, r *http.Requ
 	req := &domain.OnboardingRequest{
 		EegID:              eegID,
 		Status:             "pending",
-		Name1:              strings.TrimSpace(body.Name1),
-		Name2:              strings.TrimSpace(body.Name2),
-		Email:              strings.TrimSpace(body.Email),
-		Phone:              strings.TrimSpace(body.Phone),
-		Strasse:            strings.TrimSpace(body.Strasse),
-		PLZ:                strings.TrimSpace(body.PLZ),
-		Ort:                strings.TrimSpace(body.Ort),
+		Name1:              cleanText(body.Name1),
+		Name2:              cleanText(body.Name2),
+		Email:              cleanText(body.Email),
+		Phone:              cleanText(body.Phone),
+		Strasse:            cleanText(body.Strasse),
+		PLZ:                cleanText(body.PLZ),
+		Ort:                cleanText(body.Ort),
 		IBAN:               strings.TrimSpace(body.IBAN),
 		BIC:                strings.TrimSpace(body.BIC),
 		MemberType:         memberType,
@@ -429,11 +430,11 @@ func (h *OnboardingHandler) ResendToken(w http.ResponseWriter, r *http.Request) 
 //	@Security		BearerAuth
 //	@Router			/eegs/{eegID}/onboarding [get]
 func (h *OnboardingHandler) ListOnboarding(w http.ResponseWriter, r *http.Request) {
-	eegID, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
+	eegID := eeg.ID
 
 	reqs, err := h.onboardingRepo.ListByEEG(r.Context(), eegID)
 	if err != nil {
@@ -494,11 +495,11 @@ type updateStatusRequest struct {
 //	@Security		BearerAuth
 //	@Router			/eegs/{eegID}/onboarding/{id} [patch]
 func (h *OnboardingHandler) UpdateOnboardingStatus(w http.ResponseWriter, r *http.Request) {
-	eegID, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
+	eegID := eeg.ID
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		jsonError(w, "invalid request ID", http.StatusBadRequest)
@@ -513,6 +514,13 @@ func (h *OnboardingHandler) UpdateOnboardingStatus(w http.ResponseWriter, r *htt
 
 	ctx := r.Context()
 
+	// Confirm the onboarding request belongs to the EEG in the URL (which the caller has
+	// already been authorized for) before any branch reads or mutates it.
+	if existing, err := h.onboardingRepo.GetByID(ctx, id); err != nil || existing == nil || existing.EegID != eegID {
+		jsonError(w, "onboarding request not found", http.StatusNotFound)
+		return
+	}
+
 	// Field-only update (no status change): when Status is empty.
 	if body.Status == "" {
 		req, err := h.onboardingRepo.GetByID(ctx, id)
@@ -524,13 +532,13 @@ func (h *OnboardingHandler) UpdateOnboardingStatus(w http.ResponseWriter, r *htt
 			jsonError(w, "cannot edit a converted or active onboarding request", http.StatusConflict)
 			return
 		}
-		req.Name1 = strings.TrimSpace(body.Name1)
-		req.Name2 = strings.TrimSpace(body.Name2)
-		req.Email = strings.TrimSpace(body.Email)
-		req.Phone = strings.TrimSpace(body.Phone)
-		req.Strasse = strings.TrimSpace(body.Strasse)
-		req.PLZ = strings.TrimSpace(body.PLZ)
-		req.Ort = strings.TrimSpace(body.Ort)
+		req.Name1 = cleanText(body.Name1)
+		req.Name2 = cleanText(body.Name2)
+		req.Email = cleanText(body.Email)
+		req.Phone = cleanText(body.Phone)
+		req.Strasse = cleanText(body.Strasse)
+		req.PLZ = cleanText(body.PLZ)
+		req.Ort = cleanText(body.Ort)
 		req.IBAN = strings.TrimSpace(body.IBAN)
 		req.BIC = strings.TrimSpace(body.BIC)
 		if body.MemberType != "" {
@@ -880,11 +888,11 @@ func (h *OnboardingHandler) UpdateOnboardingStatus(w http.ResponseWriter, r *htt
 //	@Security		BearerAuth
 //	@Router			/eegs/{eegID}/onboarding/{id} [get]
 func (h *OnboardingHandler) GetOnboardingByID(w http.ResponseWriter, r *http.Request) {
-	eegID, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
+	eegID := eeg.ID
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		jsonError(w, "invalid request ID", http.StatusBadRequest)
@@ -900,11 +908,11 @@ func (h *OnboardingHandler) GetOnboardingByID(w http.ResponseWriter, r *http.Req
 
 // DeleteOnboarding handles DELETE /eegs/{eegID}/onboarding/{id}
 func (h *OnboardingHandler) DeleteOnboarding(w http.ResponseWriter, r *http.Request) {
-	eegID, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
+	eegID := eeg.ID
 	id, err := uuid.Parse(chi.URLParam(r, "id"))
 	if err != nil {
 		jsonError(w, "invalid request ID", http.StatusBadRequest)
@@ -999,8 +1007,8 @@ func (h *OnboardingHandler) sendAdminNotificationEmail(ctx context.Context, eegI
 		)
 		var msg strings.Builder
 		msg.WriteString("From: " + smtpCfg.From + "\r\n")
-		msg.WriteString("To: " + rcpt.email + "\r\n")
-		msg.WriteString("Subject: " + subject + "\r\n")
+		msg.WriteString("To: " + mailutil.SanitizeHeaderValue(rcpt.email) + "\r\n")
+		msg.WriteString("Subject: " + mailutil.EncodeSubject(subject) + "\r\n")
 		msg.WriteString("MIME-Version: 1.0\r\n")
 		msg.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 		msg.WriteString("\r\n")
@@ -1180,8 +1188,8 @@ func (h *OnboardingHandler) sendEmailVerificationLink(eegID uuid.UUID, toEmail, 
 
 	var msgBuilder strings.Builder
 	msgBuilder.WriteString("From: " + smtpCfg.From + "\r\n")
-	msgBuilder.WriteString("To: " + toEmail + "\r\n")
-	msgBuilder.WriteString("Subject: " + subject + "\r\n")
+	msgBuilder.WriteString("To: " + mailutil.SanitizeHeaderValue(toEmail) + "\r\n")
+	msgBuilder.WriteString("Subject: " + mailutil.EncodeSubject(subject) + "\r\n")
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
 	msgBuilder.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msgBuilder.WriteString("\r\n")
@@ -1256,8 +1264,8 @@ func (h *OnboardingHandler) sendMagicTokenEmail(req *domain.OnboardingRequest, e
 	// Build simple MIME message
 	var msgBuilder strings.Builder
 	msgBuilder.WriteString("From: " + smtpCfg.From + "\r\n")
-	msgBuilder.WriteString("To: " + req.Email + "\r\n")
-	msgBuilder.WriteString("Subject: " + subject + "\r\n")
+	msgBuilder.WriteString("To: " + mailutil.SanitizeHeaderValue(req.Email) + "\r\n")
+	msgBuilder.WriteString("Subject: " + mailutil.EncodeSubject(subject) + "\r\n")
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
 	msgBuilder.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msgBuilder.WriteString("\r\n")
@@ -1334,8 +1342,8 @@ func (h *OnboardingHandler) sendConversionEmail(req *domain.OnboardingRequest, e
 	smtpCfg2 := invoice.SMTPConfig{Host: eeg2.SMTPHost, From: eeg2.SMTPFrom, Username: eeg2.SMTPUser, Password: eeg2.SMTPPassword}
 	var msgBuilder strings.Builder
 	msgBuilder.WriteString("From: " + smtpCfg2.From + "\r\n")
-	msgBuilder.WriteString("To: " + req.Email + "\r\n")
-	msgBuilder.WriteString("Subject: " + subject + "\r\n")
+	msgBuilder.WriteString("To: " + mailutil.SanitizeHeaderValue(req.Email) + "\r\n")
+	msgBuilder.WriteString("Subject: " + mailutil.EncodeSubject(subject) + "\r\n")
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
 	msgBuilder.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msgBuilder.WriteString("\r\n")
@@ -1490,9 +1498,9 @@ func (h *OnboardingHandler) sendReminderEmail(req *domain.OnboardingRequest, eeg
 
 	var msgBuilder strings.Builder
 	msgBuilder.WriteString("From: " + smtpCfg.From + "\r\n")
-	msgBuilder.WriteString("To: " + req.Email + "\r\n")
+	msgBuilder.WriteString("To: " + mailutil.SanitizeHeaderValue(req.Email) + "\r\n")
 	msgBuilder.WriteString(ccHeader)
-	msgBuilder.WriteString("Subject: " + subject + "\r\n")
+	msgBuilder.WriteString("Subject: " + mailutil.EncodeSubject(subject) + "\r\n")
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
 	msgBuilder.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msgBuilder.WriteString("\r\n")
@@ -1567,9 +1575,9 @@ func (h *OnboardingHandler) sendAbandonedFormEmail(a repository.AbandonedEmailVe
 
 	var msgBuilder strings.Builder
 	msgBuilder.WriteString("From: " + adminEmail + "\r\n")
-	msgBuilder.WriteString("To: " + a.Email + "\r\n")
+	msgBuilder.WriteString("To: " + mailutil.SanitizeHeaderValue(a.Email) + "\r\n")
 	msgBuilder.WriteString(ccHeader)
-	msgBuilder.WriteString("Subject: " + subject + "\r\n")
+	msgBuilder.WriteString("Subject: " + mailutil.EncodeSubject(subject) + "\r\n")
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
 	msgBuilder.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msgBuilder.WriteString("\r\n")
@@ -1629,11 +1637,11 @@ type manualOnboardingRequest struct {
 // a confirmation email with their data, AGB, and SEPA details and must click a link to confirm.
 // Once confirmed the request transitions to 'pending' and appears in the normal admin queue.
 func (h *OnboardingHandler) CreateManualOnboarding(w http.ResponseWriter, r *http.Request) {
-	eegID, err := uuid.Parse(chi.URLParam(r, "eegID"))
-	if err != nil {
-		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
 		return
 	}
+	eegID := eeg.ID
 
 	var body manualOnboardingRequest
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -1723,13 +1731,13 @@ func (h *OnboardingHandler) CreateManualOnboarding(w http.ResponseWriter, r *htt
 	req := &domain.OnboardingRequest{
 		EegID:          eegID,
 		Status:         "admin_created",
-		Name1:          strings.TrimSpace(body.Name1),
-		Name2:          strings.TrimSpace(body.Name2),
-		Email:          strings.TrimSpace(body.Email),
-		Phone:          strings.TrimSpace(body.Phone),
-		Strasse:        strings.TrimSpace(body.Strasse),
-		PLZ:            strings.TrimSpace(body.PLZ),
-		Ort:            strings.TrimSpace(body.Ort),
+		Name1:          cleanText(body.Name1),
+		Name2:          cleanText(body.Name2),
+		Email:          cleanText(body.Email),
+		Phone:          cleanText(body.Phone),
+		Strasse:        cleanText(body.Strasse),
+		PLZ:            cleanText(body.PLZ),
+		Ort:            cleanText(body.Ort),
 		IBAN:           strings.TrimSpace(body.IBAN),
 		BIC:            strings.TrimSpace(body.BIC),
 		MemberType:     memberType,
@@ -1952,8 +1960,8 @@ func (h *OnboardingHandler) sendManualConfirmationEmail(req *domain.OnboardingRe
 
 	var msgBuilder strings.Builder
 	msgBuilder.WriteString("From: " + smtpCfg.From + "\r\n")
-	msgBuilder.WriteString("To: " + req.Email + "\r\n")
-	msgBuilder.WriteString("Subject: " + subject + "\r\n")
+	msgBuilder.WriteString("To: " + mailutil.SanitizeHeaderValue(req.Email) + "\r\n")
+	msgBuilder.WriteString("Subject: " + mailutil.EncodeSubject(subject) + "\r\n")
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
 	msgBuilder.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msgBuilder.WriteString("\r\n")
