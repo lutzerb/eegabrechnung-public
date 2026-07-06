@@ -1,0 +1,1 @@
+ALTER TABLE invoices DROP COLUMN IF EXISTS paid_at;

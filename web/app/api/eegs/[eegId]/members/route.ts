@@ -1,0 +1,23 @@
+import { auth } from "@/lib/auth";
+import { NextResponse } from "next/server";
+
+const API = process.env.API_INTERNAL_URL || "http://localhost:8080";
+
+export async function GET(
+  request: Request,
+  context: { params: Promise<{ eegId: string }> }
+) {
+  const params = await context.params;
+  const session = await auth();
+  if (!session?.accessToken)
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const incoming = new URL(request.url);
+  const upstream = new URL(`${API}/api/v1/eegs/${params.eegId}/members`);
+  for (const [key, value] of incoming.searchParams.entries()) {
+    upstream.searchParams.set(key, value);
+  }
+  const res = await fetch(upstream.toString(), {
+    headers: { Authorization: `Bearer ${session.accessToken}` },
+  });
+  return NextResponse.json(await res.json(), { status: res.status });
+}

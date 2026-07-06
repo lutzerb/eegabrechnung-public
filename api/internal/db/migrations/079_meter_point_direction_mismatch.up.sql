@@ -1,0 +1,1 @@
+ALTER TABLE meter_points ADD COLUMN direction_mismatch_notified_at TIMESTAMPTZ;

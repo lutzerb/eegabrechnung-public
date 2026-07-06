@@ -1,0 +1,1 @@
+ALTER TABLE ea_konten DROP COLUMN IF EXISTS k1_kz;

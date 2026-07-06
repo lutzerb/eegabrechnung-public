@@ -1,0 +1,4 @@
+ALTER TABLE eegs
+  DROP COLUMN IF EXISTS iban,
+  DROP COLUMN IF EXISTS bic,
+  DROP COLUMN IF EXISTS sepa_creditor_id;

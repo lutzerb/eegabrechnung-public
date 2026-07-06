@@ -1,0 +1,2 @@
+ALTER TABLE eegs
+  ADD COLUMN IF NOT EXISTS eda_dis_model text NOT NULL DEFAULT 'D';

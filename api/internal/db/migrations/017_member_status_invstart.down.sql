@@ -1,0 +1,2 @@
+ALTER TABLE members DROP COLUMN IF EXISTS status;
+ALTER TABLE eegs DROP COLUMN IF EXISTS invoice_number_start;

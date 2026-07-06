@@ -1,0 +1,20 @@
+# EEG Abrechnung — Caddy reverse proxy config
+# Usage: set EEG_DOMAIN to your public hostname, e.g. eeg.example.at
+# Default: localhost (for local dev)
+
+{$EEG_DOMAIN:localhost} {
+    # Serve the Next.js frontend
+    handle /* {
+        reverse_proxy eegabrechnung-web:3000
+    }
+
+    # Proxy API calls to the Go backend
+    handle /api/* {
+        reverse_proxy eegabrechnung-api:8080
+    }
+
+    # EDA inbound webhook (Ponton XP pushes here)
+    handle /eda/inbound {
+        reverse_proxy eegabrechnung-eda-worker:8081
+    }
+}

@@ -1,0 +1,2 @@
+ALTER TABLE eegs
+  ADD COLUMN IF NOT EXISTS gemeinschaft_typ text NOT NULL DEFAULT 'EEG';

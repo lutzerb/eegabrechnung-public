@@ -1,0 +1,310 @@
+/* eegabrechnung — Handbuch PDF Style */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+:root {
+  --green: #16a34a;
+  --green-light: #dcfce7;
+  --blue: #2563eb;
+  --blue-light: #dbeafe;
+  --gray-100: #f3f4f6;
+  --gray-200: #e5e7eb;
+  --gray-600: #4b5563;
+  --gray-800: #1f2937;
+  --gray-900: #111827;
+  --orange: #ea580c;
+  --red: #dc2626;
+}
+
+/* ── Page layout ── */
+@page {
+  size: A4;
+  margin: 25mm 20mm 25mm 25mm;
+
+  @top-right {
+    content: "eegabrechnung — Handbuch";
+    font-size: 9pt;
+    color: var(--gray-600);
+    font-family: Inter, sans-serif;
+  }
+
+  @bottom-center {
+    content: counter(page);
+    font-size: 9pt;
+    color: var(--gray-600);
+    font-family: Inter, sans-serif;
+  }
+}
+
+@page :first {
+  @top-right { content: ""; }
+  @bottom-center { content: ""; }
+}
+
+/* ── Base typography ── */
+body {
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.65;
+  color: var(--gray-900);
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+
+/* ── Headings ── */
+h1 {
+  font-size: 22pt;
+  font-weight: 700;
+  color: var(--green);
+  border-bottom: 3px solid var(--green);
+  padding-bottom: 8px;
+  margin-top: 0;
+  margin-bottom: 24px;
+  page-break-before: always;
+}
+
+h1:first-of-type {
+  page-break-before: avoid;
+}
+
+h2 {
+  font-size: 14pt;
+  font-weight: 600;
+  color: var(--gray-800);
+  border-left: 4px solid var(--green);
+  padding-left: 10px;
+  margin-top: 28px;
+  margin-bottom: 12px;
+}
+
+h3 {
+  font-size: 11pt;
+  font-weight: 600;
+  color: var(--gray-800);
+  margin-top: 20px;
+  margin-bottom: 8px;
+}
+
+h4 {
+  font-size: 10.5pt;
+  font-weight: 600;
+  color: var(--gray-600);
+  margin-top: 16px;
+  margin-bottom: 6px;
+}
+
+/* ── Cover page ── */
+.cover {
+  text-align: center;
+  padding: 80px 0 60px;
+  page-break-after: always;
+}
+
+.cover h1 {
+  font-size: 32pt;
+  border: none;
+  color: var(--green);
+  margin-bottom: 8px;
+  page-break-before: avoid;
+}
+
+.cover .subtitle {
+  font-size: 14pt;
+  color: var(--gray-600);
+  margin-bottom: 60px;
+}
+
+.cover .meta {
+  font-size: 10pt;
+  color: var(--gray-600);
+  line-height: 2;
+}
+
+/* ── Table of contents ── */
+.toc h1 {
+  page-break-before: avoid;
+}
+
+.toc ul {
+  list-style: none;
+  padding: 0;
+}
+
+.toc li {
+  padding: 3px 0;
+  border-bottom: 1px dotted var(--gray-200);
+  display: flex;
+  justify-content: space-between;
+}
+
+.toc li a {
+  color: var(--gray-800);
+  text-decoration: none;
+}
+
+.toc li.chapter {
+  font-weight: 600;
+  margin-top: 8px;
+}
+
+.toc li.section {
+  padding-left: 20px;
+  font-size: 9.5pt;
+  color: var(--gray-600);
+}
+
+/* ── Code ── */
+code {
+  font-family: "JetBrains Mono", "Fira Code", "Cascadia Code", monospace;
+  font-size: 9pt;
+  background: var(--gray-100);
+  border: 1px solid var(--gray-200);
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: var(--orange);
+}
+
+pre {
+  background: var(--gray-900);
+  color: #e5e7eb;
+  padding: 14px 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+  font-size: 8.5pt;
+  line-height: 1.55;
+  page-break-inside: avoid;
+  margin: 12px 0;
+}
+
+pre code {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+/* ── Tables ── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0;
+  font-size: 9.5pt;
+  page-break-inside: avoid;
+}
+
+thead tr {
+  background: var(--green);
+  color: white;
+}
+
+th {
+  padding: 7px 10px;
+  text-align: left;
+  font-weight: 600;
+  font-size: 9pt;
+}
+
+td {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--gray-200);
+  vertical-align: top;
+}
+
+tbody tr:nth-child(even) {
+  background: var(--gray-100);
+}
+
+/* ── Callout boxes ── */
+blockquote {
+  border-left: 4px solid var(--blue);
+  background: var(--blue-light);
+  margin: 14px 0;
+  padding: 10px 14px;
+  border-radius: 0 6px 6px 0;
+  font-size: 9.5pt;
+}
+
+blockquote p { margin: 0; }
+
+/* Tip / Warning boxes via custom HTML */
+.tip {
+  border-left: 4px solid var(--green);
+  background: var(--green-light);
+  padding: 10px 14px;
+  border-radius: 0 6px 6px 0;
+  margin: 14px 0;
+  font-size: 9.5pt;
+}
+
+.warning {
+  border-left: 4px solid var(--orange);
+  background: #fff7ed;
+  padding: 10px 14px;
+  border-radius: 0 6px 6px 0;
+  margin: 14px 0;
+  font-size: 9.5pt;
+}
+
+.danger {
+  border-left: 4px solid var(--red);
+  background: #fef2f2;
+  padding: 10px 14px;
+  border-radius: 0 6px 6px 0;
+  margin: 14px 0;
+  font-size: 9.5pt;
+}
+
+/* ── Images / Screenshots ── */
+img {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--gray-200);
+  border-radius: 6px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.10);
+  display: block;
+  margin: 12px auto;
+}
+
+img.full { width: 100%; }
+img.half { width: 60%; }
+
+figcaption {
+  text-align: center;
+  font-size: 8.5pt;
+  color: var(--gray-600);
+  margin-top: 4px;
+  font-style: italic;
+}
+
+/* ── Lists ── */
+ul, ol {
+  padding-left: 22px;
+  margin: 8px 0;
+}
+
+li {
+  margin-bottom: 3px;
+}
+
+/* ── Horizontal rule ── */
+hr {
+  border: none;
+  border-top: 1px solid var(--gray-200);
+  margin: 24px 0;
+}
+
+/* ── Status badges ── */
+.badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 10px;
+  font-size: 8.5pt;
+  font-weight: 600;
+}
+
+.badge-green { background: var(--green-light); color: var(--green); }
+.badge-blue  { background: var(--blue-light);  color: var(--blue);  }
+.badge-gray  { background: var(--gray-100);    color: var(--gray-600); }
+.badge-red   { background: #fef2f2;            color: var(--red);   }
+.badge-orange{ background: #fff7ed;            color: var(--orange); }

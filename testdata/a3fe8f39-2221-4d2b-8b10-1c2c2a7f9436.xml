@@ -1,0 +1,26 @@
+<cp:CPRequest xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:cp="http://www.ebutilities.at/schemata/customerprocesses/cprequest/01p12" xmlns:ct="http://www.ebutilities.at/schemata/customerprocesses/common/types/01p20" xsi:schemaLocation="http://www.ebutilities.at/schemata/customerprocesses/cprequest/01p12 http://www.ebutilities.at/schemata/customerprocesses/cprequest/01p12/CPRequest_01p12.xsd">
+  <cp:MarketParticipantDirectory DocumentMode="PROD" Duplicate="false" SchemaVersion="01.12">
+    <ct:RoutingHeader>
+      <ct:Sender AddressType="ECNumber">
+        <ct:MessageAddress>RC105970</ct:MessageAddress>
+      </ct:Sender>
+      <ct:Receiver AddressType="ECNumber">
+        <ct:MessageAddress>AT002000</ct:MessageAddress>
+      </ct:Receiver>
+      <ct:DocumentCreationDateTime>2026-03-25T03:00:47</ct:DocumentCreationDateTime>
+    </ct:RoutingHeader>
+    <ct:Sector>01</ct:Sector>
+    <cp:MessageCode>ANFORDERUNG_ECP</cp:MessageCode>
+  </cp:MarketParticipantDirectory>
+  <cp:ProcessDirectory>
+    <ct:MessageId>RC105970202603250300479210000000001</ct:MessageId>
+    <ct:ConversationId>RC105970202603250300479210000000001</ct:ConversationId>
+    <ct:ProcessDate>2026-03-25</ct:ProcessDate>
+    <ct:MeteringPoint>AT00200000000RC105970000000001289</ct:MeteringPoint>
+    <cp:Extension>
+      <cp:DateTimeFrom>2022-01-01T00:00:00+01:00</cp:DateTimeFrom>
+      <cp:DateTimeTo>2026-03-24T00:00:00+01:00</cp:DateTimeTo>
+      <cp:AssumptionOfCosts>false</cp:AssumptionOfCosts>
+    </cp:Extension>
+  </cp:ProcessDirectory>
+</cp:CPRequest>
