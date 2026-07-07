@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -370,6 +371,8 @@ func (h *SEPAHandler) ImportBillingCAMT053(w http.ResponseWriter, r *http.Reques
 	matched := 0
 	notFound := 0
 	alreadyPaid := 0
+	directionMismatch := 0
+	amountMismatch := 0
 
 	for _, tx := range txMatches {
 		// Normalize: EndToEndIds in pain.001/008 are UUIDs without dashes.
@@ -395,6 +398,35 @@ func (h *SEPAHandler) ImportBillingCAMT053(w http.ResponseWriter, r *http.Reques
 			alreadyPaid++
 			continue
 		}
+
+		// Direction check: a Rücklastschrift (bounced direct debit) carries the same
+		// EndToEndId as the original collection but the opposite direction. Without
+		// this check, importing the statement containing the return would mark the
+		// invoice paid by the very booking that took the money back.
+		// Regular invoices are collected via direct debit → money comes IN (CRDT);
+		// credit notes / negative saldi are paid out via credit transfer → OUT (DBIT).
+		expectedDir := "CRDT"
+		if inv.TotalAmount < 0 || inv.DocumentType == "credit_note" {
+			expectedDir = "DBIT"
+		}
+		if tx.cdtDbtInd != "" && tx.cdtDbtInd != expectedDir {
+			directionMismatch++
+			continue
+		}
+
+		// Amount check (when the statement carries a per-transaction amount):
+		// a partial payment must not mark the invoice fully paid.
+		if tx.amount > 0 {
+			expectedAmount := inv.TotalAmount
+			if expectedAmount < 0 {
+				expectedAmount = -expectedAmount
+			}
+			if diff := tx.amount - expectedAmount; diff > 0.01 || diff < -0.01 {
+				amountMismatch++
+				continue
+			}
+		}
+
 		if setErr := h.invoiceRepo.SetPaid(r.Context(), invoiceID, tx.bookingDate); setErr != nil {
 			continue
 		}
@@ -402,27 +434,36 @@ func (h *SEPAHandler) ImportBillingCAMT053(w http.ResponseWriter, r *http.Reques
 	}
 
 	jsonOK(w, map[string]int{
-		"matched":     matched,
-		"not_found":   notFound,
-		"already_paid": alreadyPaid,
+		"matched":            matched,
+		"not_found":          notFound,
+		"already_paid":       alreadyPaid,
+		"direction_mismatch": directionMismatch,
+		"amount_mismatch":    amountMismatch,
 	})
 }
 
 type camt053TxMatch struct {
 	endToEndID  string
 	bookingDate time.Time
+	cdtDbtInd   string  // "CRDT" / "DBIT"; "" when the statement omits it
+	amount      float64 // per-transaction amount; 0 when not determinable
 }
 
-// extractCAMT053EndToEndIds extracts all TxDtls EndToEndIds with their parent Ntry booking date.
+// extractCAMT053EndToEndIds extracts all TxDtls EndToEndIds with their parent Ntry
+// booking date, the credit/debit indicator and (where determinable) the amount.
 // Returns nil on parse error so callers can distinguish "no matches" from "bad file".
 func extractCAMT053EndToEndIds(data []byte) []camt053TxMatch {
 	type txDtls struct {
 		Refs struct {
 			EndToEndId string `xml:"EndToEndId"`
 		} `xml:"Refs"`
+		Amt       string `xml:"Amt"`
+		CdtDbtInd string `xml:"CdtDbtInd"`
 	}
 	type entry struct {
-		BookgDt struct {
+		Amt       string `xml:"Amt"`
+		CdtDbtInd string `xml:"CdtDbtInd"`
+		BookgDt   struct {
 			Dt string `xml:"Dt"`
 		} `xml:"BookgDt"`
 		NtryDtls struct {
@@ -444,6 +485,14 @@ func extractCAMT053EndToEndIds(data []byte) []camt053TxMatch {
 		return nil
 	}
 
+	parseAmt := func(s string) float64 {
+		f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
+		if err != nil || f < 0 {
+			return 0
+		}
+		return f
+	}
+
 	var result []camt053TxMatch
 	for _, stmt := range doc.BkToCstmrStmt.Stmt {
 		for _, e := range stmt.Ntry {
@@ -453,9 +502,26 @@ func extractCAMT053EndToEndIds(data []byte) []camt053TxMatch {
 			}
 			for _, td := range e.NtryDtls.TxDtls {
 				id := strings.TrimSpace(td.Refs.EndToEndId)
-				if id != "" {
-					result = append(result, camt053TxMatch{endToEndID: id, bookingDate: bookingDate})
+				if id == "" {
+					continue
 				}
+				dir := strings.TrimSpace(td.CdtDbtInd)
+				if dir == "" {
+					dir = strings.TrimSpace(e.CdtDbtInd)
+				}
+				// Amount: prefer the per-transaction value. The Ntry amount is only a
+				// valid fallback when the entry holds exactly one transaction — for
+				// batch collections (Sammler) it is the batch total, not the invoice.
+				amt := parseAmt(td.Amt)
+				if amt == 0 && len(e.NtryDtls.TxDtls) == 1 {
+					amt = parseAmt(e.Amt)
+				}
+				result = append(result, camt053TxMatch{
+					endToEndID:  id,
+					bookingDate: bookingDate,
+					cdtDbtInd:   dir,
+					amount:      amt,
+				})
 			}
 		}
 	}

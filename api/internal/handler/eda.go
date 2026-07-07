@@ -250,7 +250,7 @@ type teilnahmefaktorRequest struct {
 	Zaehlpunkt          string   `json:"zaehlpunkt"`
 	ParticipationFactor float64  `json:"participation_factor"` // 0..100
 	ShareType           string   `json:"share_type"`           // GC, RC_R, RC_L, CC → ECType
-	ECDisModel          string   `json:"ec_dis_model"`         // S or D (default "S")
+	ECDisModel          string   `json:"ec_dis_model"`         // deprecated/ignored — the EEG-wide eda_dis_model setting is used
 	DateTo              string   `json:"date_to"`              // YYYY-MM-DD (default empty = 9999-12-31)
 	EnergyDirection     string   `json:"energy_direction"`     // CONSUMPTION or GENERATION (default "CONSUMPTION")
 	ECShare             *float64 `json:"ec_share,omitempty"`
@@ -351,10 +351,13 @@ func (h *EDAHandler) TeilnahmefaktorAendern(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	// Apply defaults for optional fields.
-	ecDisModel := req.ECDisModel
+	// ECDisModel is declared once for the whole community (eegs.eda_dis_model,
+	// migration 081) — always take it from the EEG settings. The request field
+	// is deliberately ignored so different UI paths cannot report contradicting
+	// Verteilungsmodelle to the Netzbetreiber.
+	ecDisModel := eeg.EdaDisModel
 	if ecDisModel == "" {
-		ecDisModel = "S"
+		ecDisModel = "D"
 	}
 	energyDirection := req.EnergyDirection
 	if energyDirection == "" {

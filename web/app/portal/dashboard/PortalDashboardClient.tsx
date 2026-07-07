@@ -124,6 +124,11 @@ export default function PortalDashboardClient({ member, eeg, invoices, documents
   const [ibanError, setIbanError] = useState<string | null>(null);
   const [ibanSuccess, setIbanSuccess] = useState<string | null>(null);
   const [ibanSubmitting, setIbanSubmitting] = useState(false);
+  const [editingEmail, setEditingEmail] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
+  const [emailSubmitting, setEmailSubmitting] = useState(false);
   const [changingFactor, setChangingFactor] = useState<string | null>(null);
   const [newFactor, setNewFactor] = useState<string>("");
   const [factorError, setFactorError] = useState<string | null>(null);
@@ -312,6 +317,33 @@ export default function PortalDashboardClient({ member, eeg, invoices, documents
       setIbanError("Netzwerkfehler. Bitte versuchen Sie es erneut.");
     } finally {
       setIbanSubmitting(false);
+    }
+  }
+
+  async function handleChangeEmail() {
+    setEmailSubmitting(true);
+    setEmailError(null);
+    setEmailSuccess(null);
+    try {
+      const res = await fetch("/api/portal/email-change", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newEmail.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setEmailError((data as { error?: string }).error || "Fehler beim Ändern der E-Mail-Adresse.");
+      } else {
+        setEmailSuccess(
+          `Bestätigungslink wurde an ${(data as { new_email?: string }).new_email || newEmail.trim()} gesendet. Bitte prüfen Sie Ihr Postfach und bestätigen Sie den Link, damit die Änderung wirksam wird.`
+        );
+        setEditingEmail(false);
+        setNewEmail("");
+      }
+    } catch {
+      setEmailError("Netzwerkfehler. Bitte versuchen Sie es erneut.");
+    } finally {
+      setEmailSubmitting(false);
     }
   }
 
@@ -663,6 +695,57 @@ export default function PortalDashboardClient({ member, eeg, invoices, documents
                 {ibanSuccess}
               </div>
             )}
+            {emailSuccess && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                {emailSuccess}
+              </div>
+            )}
+
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <p className="font-medium text-slate-900 text-sm mb-1">E-Mail-Adresse</p>
+              <p className="text-xs text-slate-500 mb-4">
+                Aktuelle E-Mail: <span className="font-mono">{member.email}</span>
+              </p>
+
+              {!editingEmail ? (
+                <button
+                  onClick={() => { setEditingEmail(true); setNewEmail(""); setEmailError(null); setEmailSuccess(null); }}
+                  className="px-3 py-1.5 text-xs font-medium bg-slate-100 text-slate-700 rounded-md hover:bg-slate-200 transition-colors"
+                >
+                  E-Mail-Adresse ändern
+                </button>
+              ) : (
+                <div className="pt-1 border-t border-slate-100">
+                  <p className="text-xs text-slate-500 mb-2 mt-3">Neue E-Mail-Adresse:</p>
+                  <input
+                    type="email"
+                    value={newEmail}
+                    onChange={e => setNewEmail(e.target.value)}
+                    placeholder="neue@adresse.at"
+                    className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="mt-2 text-xs text-slate-400">
+                    Wir senden einen Bestätigungslink an die neue Adresse. Erst nach Bestätigung wird die Änderung wirksam.
+                  </p>
+                  <div className="flex items-center gap-2 mt-3">
+                    <button
+                      onClick={handleChangeEmail}
+                      disabled={emailSubmitting || !newEmail.trim()}
+                      className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    >
+                      {emailSubmitting ? "Wird gesendet…" : "Bestätigungslink senden"}
+                    </button>
+                    <button
+                      onClick={() => { setEditingEmail(false); setEmailError(null); }}
+                      className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700"
+                    >
+                      Abbrechen
+                    </button>
+                  </div>
+                  {emailError && <p className="mt-2 text-xs text-red-600">{emailError}</p>}
+                </div>
+              )}
+            </div>
 
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <p className="font-medium text-slate-900 text-sm mb-1">SEPA-Lastschriftmandat / IBAN</p>

@@ -31,8 +31,10 @@ func InvoiceSubject(inv *domain.Invoice, eeg *domain.EEG) string {
 		inv.PeriodStart.Format("02.01.2006")+" – "+inv.PeriodEnd.Format("02.01.2006"))
 }
 
-// BuildInvoiceMessage builds the MIME email bytes for an invoice.
-func BuildInvoiceMessage(from, toEmail string, inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, pdfData []byte) ([]byte, error) {
+// BuildInvoiceMessage builds the MIME email bytes for an invoice. webBaseURL
+// (e.g. "https://eegabrechnung.example.com") is used to point the member at
+// their self-service portal; pass "" to omit that hint.
+func BuildInvoiceMessage(from, toEmail string, inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, pdfData []byte, webBaseURL string) ([]byte, error) {
 	isCredit := inv.DocumentType == "credit_note"
 	docLabel := "Rechnung"
 	if isCredit {
@@ -41,13 +43,13 @@ func BuildInvoiceMessage(from, toEmail string, inv *domain.Invoice, eeg *domain.
 	subject := InvoiceSubject(inv, eeg)
 	periodRange := inv.PeriodStart.Format("02.01.2006") + " – " + inv.PeriodEnd.Format("02.01.2006")
 	attachmentName := fmt.Sprintf("%s_%s.pdf", docLabel, shortID(inv.ID.String()))
-	body := buildPlainBody(inv, eeg, member, periodRange, isCredit)
+	body := buildPlainBody(inv, eeg, member, periodRange, isCredit, webBaseURL)
 	return buildMIMEMessage(from, toEmail, subject, body, attachmentName, pdfData)
 }
 
 // SendInvoice sends the invoice PDF to the member's email address and logs the attempt.
-func SendInvoice(ctx context.Context, logger EmailLogger, cfg SMTPConfig, member *domain.Member, eeg *domain.EEG, inv *domain.Invoice, pdfData []byte) error {
-	msgBytes, err := BuildInvoiceMessage(cfg.From, member.Email, inv, eeg, member, pdfData)
+func SendInvoice(ctx context.Context, logger EmailLogger, cfg SMTPConfig, member *domain.Member, eeg *domain.EEG, inv *domain.Invoice, pdfData []byte, webBaseURL string) error {
+	msgBytes, err := BuildInvoiceMessage(cfg.From, member.Email, inv, eeg, member, pdfData, webBaseURL)
 	if err != nil {
 		return fmt.Errorf("build mime message: %w", err)
 	}
@@ -56,7 +58,7 @@ func SendInvoice(ctx context.Context, logger EmailLogger, cfg SMTPConfig, member
 	return SendLogged(ctx, logger, cfg, eeg.ID, "invoice", member.Email, InvoiceSubject(inv, eeg), &memID, &invID, msgBytes)
 }
 
-func buildPlainBody(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, periodRange string, isCredit bool) string {
+func buildPlainBody(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, periodRange string, isCredit bool, webBaseURL string) string {
 	fullName := strings.TrimSpace(member.Name1 + " " + member.Name2)
 	docLabel := "Rechnung"
 	if isCredit {
@@ -107,6 +109,9 @@ func buildPlainBody(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member,
 	}
 
 	sb.WriteString("Die Details entnehmen Sie bitte dem beigefügten PDF.\n\n")
+	if webBaseURL != "" {
+		sb.WriteString(fmt.Sprintf("Im Mitgliederportal (%s/portal) können Sie jederzeit Ihre Energiedaten und bisherigen Rechnungen einsehen.\n\n", webBaseURL))
+	}
 	sb.WriteString("Mit freundlichen Grüßen\n")
 	sb.WriteString(eeg.Name + "\n")
 	sb.WriteString("\n-- \nErstellt von eegabrechnung\n")

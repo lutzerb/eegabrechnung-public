@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/mail"
 	"os"
 	"strings"
 	"time"
@@ -675,6 +676,115 @@ func (h *MemberPortalHandler) ChangeSepaMandate(w http.ResponseWriter, r *http.R
 	jsonOK(w, map[string]string{"iban": newIBAN, "signed_at": signedAt.Format(time.RFC3339)})
 }
 
+// RequestEmailChange handles POST /api/v1/public/portal/email-change
+// Body: {"email": "new@example.com"}
+// Sends a verification link to the NEW address; the change is only applied once the
+// member clicks that link (ConfirmEmailChange). The old email is not touched or archived
+// until then, so a mistyped address can never lock the member out.
+func (h *MemberPortalHandler) RequestEmailChange(w http.ResponseWriter, r *http.Request) {
+	memberID, eegID, ok := h.portalAuth(r)
+	if !ok {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		Email string `json:"email"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	addr, err := mail.ParseAddress(strings.TrimSpace(req.Email))
+	if err != nil {
+		jsonError(w, "Bitte geben Sie eine gültige E-Mail-Adresse ein.", http.StatusBadRequest)
+		return
+	}
+	newEmail := addr.Address
+
+	member, err := h.memberRepo.GetByID(r.Context(), memberID)
+	if err != nil {
+		jsonError(w, "member not found", http.StatusNotFound)
+		return
+	}
+	if strings.EqualFold(newEmail, member.Email) {
+		jsonError(w, "Das ist bereits Ihre aktuelle E-Mail-Adresse.", http.StatusBadRequest)
+		return
+	}
+	exists, err := h.memberRepo.ExistsByEmailInEEG(r.Context(), eegID, newEmail)
+	if err != nil {
+		jsonError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if exists {
+		jsonError(w, "Diese E-Mail-Adresse wird bereits verwendet.", http.StatusConflict)
+		return
+	}
+
+	token, err := h.portalRepo.CreateEmailChangeVerification(r.Context(), memberID, eegID, newEmail)
+	if err != nil {
+		slog.Error("failed to create email change verification", "error", err, "member_id", memberID)
+		jsonError(w, "failed to start email change", http.StatusInternalServerError)
+		return
+	}
+
+	if eeg, err := h.eegRepo.GetByIDInternal(r.Context(), eegID); err == nil && eeg != nil && !eeg.IsDemo {
+		confirmLink := fmt.Sprintf("%s/portal/email-change/confirm?token=%s", h.webBaseURL, token)
+		go h.sendEmailChangeVerificationLink(eegID, newEmail, member, confirmLink)
+	}
+
+	jsonOK(w, map[string]string{"new_email": newEmail})
+}
+
+// ConfirmEmailChange handles POST /api/v1/public/portal/email-change/confirm/{token}
+// Public — no portal session required, since the member may click the link on a
+// different device than the one they requested the change from. Idempotent: confirming
+// an already-verified token returns success again instead of erroring.
+func (h *MemberPortalHandler) ConfirmEmailChange(w http.ResponseWriter, r *http.Request) {
+	token := chi.URLParam(r, "token")
+	if token == "" {
+		jsonError(w, "Link ungültig oder abgelaufen.", http.StatusBadRequest)
+		return
+	}
+
+	v, err := h.portalRepo.FindEmailChangeVerificationByToken(r.Context(), token)
+	if err != nil {
+		jsonError(w, "Link ungültig oder abgelaufen.", http.StatusBadRequest)
+		return
+	}
+	if time.Now().After(v.ExpiresAt) {
+		jsonError(w, "Link ungültig oder abgelaufen.", http.StatusBadRequest)
+		return
+	}
+	if v.VerifiedAt != nil {
+		jsonOK(w, map[string]any{"ok": true, "email": v.NewEmail})
+		return
+	}
+
+	exists, err := h.memberRepo.ExistsByEmailInEEG(r.Context(), v.EegID, v.NewEmail)
+	if err != nil {
+		jsonError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	if exists {
+		jsonError(w, "Diese E-Mail-Adresse wird bereits verwendet.", http.StatusConflict)
+		return
+	}
+
+	oldEmail, err := h.portalRepo.ConfirmEmailChange(r.Context(), v)
+	if err != nil {
+		slog.Error("failed to confirm email change", "error", err, "member_id", v.MemberID)
+		jsonError(w, "Link ungültig oder abgelaufen.", http.StatusBadRequest)
+		return
+	}
+
+	if member, err := h.memberRepo.GetByID(r.Context(), v.MemberID); err == nil && member != nil {
+		go h.sendEmailChangedNotifications(v.EegID, member, oldEmail)
+	}
+
+	jsonOK(w, map[string]any{"ok": true, "email": v.NewEmail})
+}
+
 // sendMandateChangedEmail notifies the member that their SEPA mandate was updated, and
 // separately informs the EEG admin (eeg.SMTPFrom) so an IBAN change doesn't go unnoticed —
 // same "admin gets a copy" convention used elsewhere for EDA notifications.
@@ -741,4 +851,115 @@ func orDash(s string) string {
 		return "—"
 	}
 	return s
+}
+
+// sendEmailChangeVerificationLink sends the confirmation link to the NEW address only.
+// The change is not applied to members.email until this link is clicked.
+func (h *MemberPortalHandler) sendEmailChangeVerificationLink(eegID uuid.UUID, newEmail string, member *domain.Member, confirmLink string) {
+	eeg, err := h.eegRepo.GetByIDInternal(context.Background(), eegID)
+	if err != nil || eeg == nil || eeg.SMTPHost == "" || eeg.IsDemo {
+		return
+	}
+	cfg := invoice.SMTPConfig{Host: eeg.SMTPHost, From: eeg.SMTPFrom, Username: eeg.SMTPUser, Password: eeg.SMTPPassword}
+
+	fullName := strings.TrimSpace(member.Name1 + " " + member.Name2)
+	if fullName == "" {
+		fullName = "Mitglied"
+	}
+
+	subject := "Bitte bestätigen Sie Ihre neue E-Mail-Adresse"
+	body := fmt.Sprintf(`Sehr geehrte/r %s,
+
+Sie haben über Ihr Mitglieder-Portal beantragt, Ihre E-Mail-Adresse auf diese Adresse zu ändern.
+
+Bitte bestätigen Sie die Änderung über folgenden Link:
+
+%s
+
+Der Link ist 30 Minuten gültig. Erst nach Bestätigung wird die neue Adresse übernommen.
+
+Falls Sie diese Änderung nicht selbst veranlasst haben, ignorieren Sie diese E-Mail einfach — es wird nichts geändert.
+
+Mit freundlichen Grüßen
+Ihr EEG-Team`, fullName, confirmLink)
+
+	msg := []byte(mailutil.Headers(eeg.SMTPFrom, newEmail, subject) +
+		"Content-Type: text/plain; charset=UTF-8\r\n" +
+		"\r\n" +
+		body)
+
+	if err := invoice.SendLogged(context.Background(), h.emailLogRepo, cfg, eeg.ID, "portal_email_change_verify", newEmail, subject, &member.ID, nil, msg); err != nil {
+		slog.Error("sendEmailChangeVerificationLink: failed to send", "error", err, "to", newEmail)
+	}
+}
+
+// sendEmailChangedNotifications fires after the new email has been applied: confirms to
+// the new address, sends a security notice to the OLD address (in case of account
+// takeover), and informs the admin — same "admin gets a copy" convention used for IBAN
+// changes.
+func (h *MemberPortalHandler) sendEmailChangedNotifications(eegID uuid.UUID, member *domain.Member, oldEmail string) {
+	eeg, err := h.eegRepo.GetByIDInternal(context.Background(), eegID)
+	if err != nil || eeg == nil || eeg.SMTPHost == "" || eeg.IsDemo {
+		return
+	}
+	cfg := invoice.SMTPConfig{Host: eeg.SMTPHost, From: eeg.SMTPFrom, Username: eeg.SMTPUser, Password: eeg.SMTPPassword}
+
+	fullName := strings.TrimSpace(member.Name1 + " " + member.Name2)
+	if fullName == "" {
+		fullName = "Mitglied"
+	}
+
+	// --- Confirmation to the NEW address ---
+	newSubject := "Ihre E-Mail-Adresse wurde geändert"
+	newBody := fmt.Sprintf(`Sehr geehrte/r %s,
+
+Ihre E-Mail-Adresse für das Mitglieder-Portal wurde erfolgreich auf diese Adresse geändert.
+
+Mit freundlichen Grüßen
+Ihr EEG-Team`, fullName)
+	newMsg := []byte(mailutil.Headers(eeg.SMTPFrom, member.Email, newSubject) +
+		"Content-Type: text/plain; charset=UTF-8\r\n" +
+		"\r\n" +
+		newBody)
+	if err := invoice.SendLogged(context.Background(), h.emailLogRepo, cfg, eeg.ID, "portal_email_change_done", member.Email, newSubject, &member.ID, nil, newMsg); err != nil {
+		slog.Error("sendEmailChangedNotifications: failed to send to new address", "error", err, "to", member.Email)
+	}
+
+	// --- Security notice to the OLD address ---
+	if oldEmail != "" && !strings.EqualFold(oldEmail, member.Email) {
+		oldSubject := "Ihre E-Mail-Adresse wurde geändert"
+		oldBody := fmt.Sprintf(`Sehr geehrte/r %s,
+
+die für Ihr Mitglieder-Portal hinterlegte E-Mail-Adresse wurde soeben von dieser Adresse auf %s geändert.
+
+Falls Sie diese Änderung nicht selbst vorgenommen haben, kontaktieren Sie uns bitte umgehend, damit wir Ihr Konto absichern können.
+
+Mit freundlichen Grüßen
+Ihr EEG-Team`, fullName, member.Email)
+		oldMsg := []byte(mailutil.Headers(eeg.SMTPFrom, oldEmail, oldSubject) +
+			"Content-Type: text/plain; charset=UTF-8\r\n" +
+			"\r\n" +
+			oldBody)
+		if err := invoice.SendLogged(context.Background(), h.emailLogRepo, cfg, eeg.ID, "portal_email_change_security", oldEmail, oldSubject, &member.ID, nil, oldMsg); err != nil {
+			slog.Error("sendEmailChangedNotifications: failed to send to old address", "error", err, "to", oldEmail)
+		}
+	}
+
+	// --- Admin copy (info only) ---
+	if eeg.SMTPFrom == "" || strings.EqualFold(eeg.SMTPFrom, member.Email) {
+		return
+	}
+	adminSubject := fmt.Sprintf("E-Mail-Änderung: %s hat seine E-Mail-Adresse geändert", fullName)
+	adminBody := fmt.Sprintf(`Info: Ein Mitglied hat über das Mitglieder-Portal seine E-Mail-Adresse geändert.
+
+Mitglied: %s (Nr. %s)
+Bisherige E-Mail: %s
+Neue E-Mail: %s`, fullName, member.MitgliedsNr, orDash(oldEmail), member.Email)
+	adminMsg := []byte(mailutil.Headers(eeg.SMTPFrom, eeg.SMTPFrom, adminSubject) +
+		"Content-Type: text/plain; charset=UTF-8\r\n" +
+		"\r\n" +
+		adminBody)
+	if err := invoice.SendLogged(context.Background(), h.emailLogRepo, cfg, eeg.ID, "portal_email_change_admin", eeg.SMTPFrom, adminSubject, &member.ID, nil, adminMsg); err != nil {
+		slog.Error("sendEmailChangedNotifications: failed to send to admin", "error", err, "to", eeg.SMTPFrom)
+	}
 }

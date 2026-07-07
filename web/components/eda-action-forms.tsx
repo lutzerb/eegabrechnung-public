@@ -35,10 +35,9 @@ interface Props {
   eegId: string;
   edaConfigured: boolean;
   netzbetreiberId: string;
-  edaDisModel: string;
 }
 
-export function EDAActionForms({ eegId, edaConfigured, netzbetreiberId, edaDisModel }: Props) {
+export function EDAActionForms({ eegId, edaConfigured, netzbetreiberId }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("anmeldung-online");
   const router = useRouter();
 
@@ -91,7 +90,7 @@ export function EDAActionForms({ eegId, edaConfigured, netzbetreiberId, edaDisMo
           <AnmeldungOnlineForm eegId={eegId} disabled={!edaConfigured} netzbetreiberId={netzbetreiberId} onSuccess={() => router.refresh()} />
         )}
         {activeTab === "teilnahmefaktor" && (
-          <TeilnahmefaktorForm eegId={eegId} disabled={!edaConfigured} netzbetreiberId={netzbetreiberId} edaDisModel={edaDisModel} onSuccess={() => router.refresh()} />
+          <TeilnahmefaktorForm eegId={eegId} disabled={!edaConfigured} netzbetreiberId={netzbetreiberId} onSuccess={() => router.refresh()} />
         )}
         {activeTab === "zaehlerstandsgang" && (
           <ZaehlerstandsgangForm eegId={eegId} disabled={!edaConfigured} netzbetreiberId={netzbetreiberId} onSuccess={() => router.refresh()} />
@@ -259,13 +258,11 @@ function TeilnahmefaktorForm({
   eegId,
   disabled,
   netzbetreiberId,
-  edaDisModel,
   onSuccess,
 }: {
   eegId: string;
   disabled: boolean;
   netzbetreiberId: string;
-  edaDisModel: string;
   onSuccess: () => void;
 }) {
   const [zaehlpunkt, setZaehlpunkt] = useState("");
@@ -293,7 +290,6 @@ function TeilnahmefaktorForm({
           zaehlpunkt,
           participation_factor: parseFloat(factor),
           share_type: "GC",
-          ec_dis_model: edaDisModel,
           valid_from: validFrom || undefined,
         }),
       });

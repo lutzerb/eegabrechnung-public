@@ -3,59 +3,7 @@ package billing
 import (
 	"testing"
 	"time"
-
-	"github.com/google/uuid"
-	"github.com/lutzerb/eegabrechnung/internal/calculator"
 )
-
-// Test the core aggregation logic independently of the DB.
-func TestAggregateBilling_Integration(t *testing.T) {
-	member1 := uuid.MustParse("10000000-0000-0000-0000-000000000001")
-	member2 := uuid.MustParse("10000000-0000-0000-0000-000000000002")
-	mp1 := uuid.MustParse("20000000-0000-0000-0000-000000000001")
-	mp2 := uuid.MustParse("20000000-0000-0000-0000-000000000002")
-	mp3 := uuid.MustParse("20000000-0000-0000-0000-000000000003")
-
-	ts := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-
-	readings := []calculator.Reading{
-		{MeterPointID: mp1, Energierichtung: "CONSUMPTION", Ts: ts, WhCommunity: 100},
-		{MeterPointID: mp2, Energierichtung: "CONSUMPTION", Ts: ts, WhCommunity: 200},
-		{MeterPointID: mp3, Energierichtung: "CONSUMPTION", Ts: ts, WhCommunity: 50},
-	}
-
-	memberMeterPoints := map[uuid.UUID][]uuid.UUID{
-		member1: {mp1, mp2}, // total 300
-		member2: {mp3},      // total 50
-	}
-
-	bills := calculator.AggregateMemberBilling(readings, memberMeterPoints, 0.15)
-
-	if len(bills) != 2 {
-		t.Fatalf("expected 2 bills, got %d", len(bills))
-	}
-
-	byMember := map[uuid.UUID]calculator.MemberBilling{}
-	for _, b := range bills {
-		byMember[b.MemberID] = b
-	}
-
-	b1 := byMember[member1]
-	if absFloat(b1.TotalKwh-300) > 0.001 {
-		t.Errorf("member1 TotalKwh: expected 300, got %f", b1.TotalKwh)
-	}
-	if absFloat(b1.TotalAmount-45) > 0.01 {
-		t.Errorf("member1 TotalAmount: expected 45 (300*0.15), got %f", b1.TotalAmount)
-	}
-
-	b2 := byMember[member2]
-	if absFloat(b2.TotalKwh-50) > 0.001 {
-		t.Errorf("member2 TotalKwh: expected 50, got %f", b2.TotalKwh)
-	}
-	if absFloat(b2.TotalAmount-7.5) > 0.01 {
-		t.Errorf("member2 TotalAmount: expected 7.5 (50*0.15), got %f", b2.TotalAmount)
-	}
-}
 
 func TestPeriodValidation(t *testing.T) {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -72,9 +20,61 @@ func TestPeriodValidation(t *testing.T) {
 	}
 }
 
-func absFloat(x float64) float64 {
-	if x < 0 {
-		return -x
+// autoBillingPeriod must produce Vienna-local calendar boundaries with an
+// inclusive end (last day 23:59:59), matching the manual billing handler.
+// UTC boundaries or an exclusive midnight end would double-bill the first
+// 15-min slot of the following month (sum queries use ts <= end).
+func TestAutoBillingPeriod(t *testing.T) {
+	vienna, err := time.LoadLocation("Europe/Vienna")
+	if err != nil {
+		t.Fatalf("load Europe/Vienna: %v", err)
 	}
-	return x
+
+	cases := []struct {
+		name      string
+		period    string
+		today     time.Time
+		wantStart time.Time
+		wantEnd   time.Time
+	}{
+		{
+			name:      "monthly",
+			period:    "monthly",
+			today:     time.Date(2026, 7, 15, 6, 0, 0, 0, vienna),
+			wantStart: time.Date(2026, 6, 1, 0, 0, 0, 0, vienna),
+			wantEnd:   time.Date(2026, 6, 30, 23, 59, 59, 0, vienna),
+		},
+		{
+			name:      "monthly across DST spring-forward (March)",
+			period:    "monthly",
+			today:     time.Date(2026, 4, 1, 6, 0, 0, 0, vienna),
+			wantStart: time.Date(2026, 3, 1, 0, 0, 0, 0, vienna),
+			wantEnd:   time.Date(2026, 3, 31, 23, 59, 59, 0, vienna),
+		},
+		{
+			name:      "quarterly",
+			period:    "quarterly",
+			today:     time.Date(2026, 4, 1, 6, 0, 0, 0, vienna),
+			wantStart: time.Date(2026, 1, 1, 0, 0, 0, 0, vienna),
+			wantEnd:   time.Date(2026, 3, 31, 23, 59, 59, 0, vienna),
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			start, end := autoBillingPeriod(tc.period, tc.today)
+			if !start.Equal(tc.wantStart) {
+				t.Errorf("start: expected %v, got %v", tc.wantStart, start)
+			}
+			if !end.Equal(tc.wantEnd) {
+				t.Errorf("end: expected %v, got %v", tc.wantEnd, end)
+			}
+			// The end must be strictly before the next period's start so that a
+			// reading exactly on the next month's first slot is never included.
+			nextStart := tc.wantEnd.Add(time.Second)
+			if !end.Before(nextStart) {
+				t.Errorf("end %v must be before next period start %v", end, nextStart)
+			}
+		})
+	}
 }

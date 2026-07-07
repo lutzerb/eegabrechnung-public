@@ -85,6 +85,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
       invoice_post_text: (formData.get("invoice_post_text") as string) || "",
       invoice_footer_text: (formData.get("invoice_footer_text") as string) || "",
       invoice_payment_notice_mode: (formData.get("invoice_payment_notice_mode") as string) || "sepa_lastschrift",
+      fee_billing_mode: (formData.get("fee_billing_mode") as string) || "per_month",
       generate_credit_notes: formData.get("generate_credit_notes") === "on",
       credit_note_number_prefix: (formData.get("credit_note_number_prefix") as string) || "GS",
       credit_note_number_digits: parseInt(formData.get("credit_note_number_digits") as string) || 5,
@@ -127,6 +128,8 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
       // Gap alert
       gap_alert_enabled: formData.get("gap_alert_enabled") === "on",
       gap_alert_threshold_days: parseInt(formData.get("gap_alert_threshold_days") as string) || 5,
+      // Energy imbalance warning
+      energy_imbalance_threshold_promille: parseFloat(formData.get("energy_imbalance_threshold_promille") as string) || 1,
       // Member portal
       portal_show_full_energy: formData.get("portal_show_full_energy") === "on",
     };
@@ -249,6 +252,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
             <input type="hidden" name="generate_credit_notes" value={eeg.generate_credit_notes ? "on" : "off"} />
             <input type="hidden" name="credit_note_number_prefix" value={eeg.credit_note_number_prefix || "GS"} />
             <input type="hidden" name="credit_note_number_digits" value={String(eeg.credit_note_number_digits || 5)} />
+            <input type="hidden" name="energy_imbalance_threshold_promille" value={String((eeg as any).energy_imbalance_threshold_promille ?? 1)} />
           </>
         )}
         {activeTab !== "sepa" && (
@@ -575,6 +579,57 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <h2 className="text-base font-semibold text-slate-900 mb-1">Fixgebühren-Abrechnung</h2>
+              <p className="text-xs text-slate-500 mb-4">Steuert, wie Fixgebühr, Teilnahmegebühr und Zählpunktsgebühr bei Abrechnungsläufen über mehrere Monate berechnet werden.</p>
+              <div className="space-y-3">
+                <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
+                  <input
+                    type="radio"
+                    name="fee_billing_mode"
+                    value="per_month"
+                    defaultChecked={!eeg.fee_billing_mode || eeg.fee_billing_mode === "per_month"}
+                    className="mt-0.5 h-4 w-4 border-slate-300 text-blue-700 focus:ring-blue-500"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">Pro Monat</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Gebühren werden je angefangenem Kalendermonat des Abrechnungszeitraums berechnet — eine Quartalsabrechnung enthält 3 Monatsgebühren (Standard).</p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
+                  <input
+                    type="radio"
+                    name="fee_billing_mode"
+                    value="per_invoice"
+                    defaultChecked={eeg.fee_billing_mode === "per_invoice"}
+                    className="mt-0.5 h-4 w-4 border-slate-300 text-blue-700 focus:ring-blue-500"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">Pro Abrechnungslauf</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Gebühren werden genau einmal pro Abrechnungslauf berechnet, unabhängig von der Länge des Zeitraums.</p>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <h2 className="text-base font-semibold text-slate-900 mb-1">Erzeugung/Verbrauch-Warnung</h2>
+              <p className="text-xs text-slate-500 mb-4">
+                Bei einem vollständigen Abrechnungslauf (alle Mitglieder, Bezug &amp; Einspeisung) wird gewarnt, wenn die Summe aus Bezug und die Summe aus Einspeisung stärker als dieser Toleranzwert voneinander abweichen — ein Hinweis auf fehlende Messdaten oder eine fehlerhafte NB-Zuteilung. Die Warnung blockiert die Abrechnung nicht.
+              </p>
+              <div className="w-48">
+                <label className={labelClass}>Toleranz (‰)</label>
+                <input
+                  type="number"
+                  name="energy_imbalance_threshold_promille"
+                  step="0.1"
+                  min="0"
+                  defaultValue={(eeg as any).energy_imbalance_threshold_promille ?? 1}
+                  className={inputClass}
+                />
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
               <h2 className="text-base font-semibold text-slate-900 mb-1">Gutschriften (Produzenten)</h2>
               <p className="text-xs text-slate-500 mb-4">
                 Wenn aktiviert, erhalten reine Produzenten ein separates Gutschrift-PDF.
@@ -740,7 +795,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
                 </div>
                 <div>
                   <label className={labelClass}>Passwort</label>
-                  <input type="password" name="eda_imap_password" placeholder="••••••••  (unverändert)" className={inputClass} autoComplete="new-password" />
+                  <input type="password" name="eda_imap_password" placeholder={eeg.has_eda_imap_password ? "••••••••  (gesetzt — leer lassen zum Beibehalten)" : "kein Passwort gesetzt"} className={inputClass} autoComplete="new-password" />
                 </div>
               </div>
             </div>
@@ -764,7 +819,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
                 </div>
                 <div>
                   <label className={labelClass}>Passwort</label>
-                  <input type="password" name="eda_smtp_password" placeholder="••••••••  (unverändert)" className={inputClass} autoComplete="new-password" />
+                  <input type="password" name="eda_smtp_password" placeholder={eeg.has_eda_smtp_password ? "••••••••  (gesetzt — leer lassen zum Beibehalten)" : "kein Passwort gesetzt"} className={inputClass} autoComplete="new-password" />
                 </div>
               </div>
               <div>
@@ -987,7 +1042,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
                   </div>
                   <div>
                     <label className={labelClass}>Passwort / API-Key</label>
-                    <input type="password" name="smtp_password" placeholder="••••••••  (unverändert)" className={inputClass} autoComplete="new-password" />
+                    <input type="password" name="smtp_password" placeholder={eeg.has_smtp_password ? "••••••••  (gesetzt — leer lassen zum Beibehalten)" : "kein Passwort gesetzt"} className={inputClass} autoComplete="new-password" />
                   </div>
                 </div>
                 <div>

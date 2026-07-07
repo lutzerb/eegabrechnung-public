@@ -147,18 +147,20 @@ func (s *Scheduler) checkEEG(ctx context.Context, eeg *domain.EEG, today time.Ti
 	s.sendSuccessEmail(ctx, eeg, result.BillingRun.ID, periodStart, periodEnd, len(result.Invoices))
 }
 
-// autoBillingPeriod returns [start, end) for the previous calendar month or quarter.
+// autoBillingPeriod returns the previous calendar month (or 3-month window) in the
+// timezone of `today` (Europe/Vienna), using the same convention as the manual
+// billing handler: start = first day 00:00, end = last day 23:59:59 (inclusive).
+// The reading sum queries use `ts <= end`, so an exclusive midnight end would
+// include the first 15-min slot of the following period and bill it twice —
+// once here and once in the next run.
 func autoBillingPeriod(period string, today time.Time) (time.Time, time.Time) {
-	y, m := today.Year(), today.Month()
+	currentMonthStart := time.Date(today.Year(), today.Month(), 1, 0, 0, 0, 0, today.Location())
+	monthsBack := -1
 	if period == "quarterly" {
-		// Previous quarter
-		qEnd := time.Date(y, m, 1, 0, 0, 0, 0, time.UTC) // first day of current month
-		qStart := qEnd.AddDate(0, -3, 0)
-		return qStart, qEnd
+		monthsBack = -3
 	}
-	// Monthly (default): previous calendar month
-	periodEnd := time.Date(y, m, 1, 0, 0, 0, 0, time.UTC)
-	periodStart := periodEnd.AddDate(0, -1, 0)
+	periodStart := currentMonthStart.AddDate(0, monthsBack, 0)
+	periodEnd := currentMonthStart.Add(-time.Second)
 	return periodStart, periodEnd
 }
 
@@ -172,7 +174,7 @@ func (s *Scheduler) sendSuccessEmail(ctx context.Context, eeg *domain.EEG, runID
 		return
 	}
 	subject := fmt.Sprintf("[Auto-Abrechnung] Entwurf erstellt für %s – %s bis %s",
-		eeg.Name, from.Format("01/2006"), to.AddDate(0, 0, -1).Format("01/2006"))
+		eeg.Name, from.Format("01/2006"), to.Format("01/2006"))
 	body := fmt.Sprintf(`<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
 <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1e293b;">
@@ -191,7 +193,7 @@ func (s *Scheduler) sendSuccessEmail(ctx context.Context, eeg *domain.EEG, runID
 <p style="color: #94a3b8; font-size: 12px;">Diese Nachricht wurde automatisch generiert.</p>
 </body></html>`,
 		eeg.Name,
-		from.Format("02.01.2006"), to.AddDate(0, 0, -1).Format("02.01.2006"),
+		from.Format("02.01.2006"), to.Format("02.01.2006"),
 		invoiceCount, runID)
 	s.sendHTMLEmail(ctx, eeg, "auto_billing_success", subject, body)
 }
@@ -219,7 +221,7 @@ func (s *Scheduler) sendWarningEmail(ctx context.Context, eeg *domain.EEG, from,
 <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
 <p style="color: #94a3b8; font-size: 12px;">Diese Nachricht wurde automatisch generiert.</p>
 </body></html>`,
-		eeg.Name, from.Format("02.01.2006"), to.AddDate(0, 0, -1).Format("02.01.2006"), zpList)
+		eeg.Name, from.Format("02.01.2006"), to.Format("02.01.2006"), zpList)
 	s.sendHTMLEmail(ctx, eeg, "auto_billing_warning", subject, body)
 }
 
@@ -238,7 +240,7 @@ func (s *Scheduler) sendErrorEmail(ctx context.Context, eeg *domain.EEG, from, t
 <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
 <p style="color: #94a3b8; font-size: 12px;">Diese Nachricht wurde automatisch generiert.</p>
 </body></html>`,
-		eeg.Name, from.Format("02.01.2006"), to.AddDate(0, 0, -1).Format("02.01.2006"), runErr)
+		eeg.Name, from.Format("02.01.2006"), to.Format("02.01.2006"), runErr)
 	s.sendHTMLEmail(ctx, eeg, "auto_billing_error", subject, body)
 }
 

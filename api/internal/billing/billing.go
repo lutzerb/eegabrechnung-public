@@ -2,6 +2,7 @@ package billing
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
@@ -15,6 +16,18 @@ import (
 	"github.com/lutzerb/eegabrechnung/internal/invoice"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
 )
+
+// viennaLoc is used for member join/leave day boundaries: beitritt_datum and
+// austritt_datum are Austrian calendar dates, so their days start and end at
+// Vienna midnight. tzdata is embedded via the import in scheduler.go, so the
+// lookup also works in Alpine containers; UTC is a last-resort fallback only.
+var viennaLoc = func() *time.Location {
+	loc, err := time.LoadLocation("Europe/Vienna")
+	if err != nil {
+		return time.UTC
+	}
+	return loc
+}()
 
 // Config holds configuration for PDF generation.
 type Config struct {
@@ -32,6 +45,7 @@ type Service struct {
 	tariffRepo     *repository.TariffRepository
 	emailLogRepo   *repository.EmailLogRepository
 	meterPointRepo *repository.MeterPointRepository
+	webBaseURL     string
 	cfg            Config
 }
 
@@ -45,6 +59,7 @@ func NewService(
 	tariffRepo *repository.TariffRepository,
 	emailLogRepo *repository.EmailLogRepository,
 	meterPointRepo *repository.MeterPointRepository,
+	webBaseURL string,
 	cfg ...Config,
 ) *Service {
 	s := &Service{
@@ -57,6 +72,7 @@ func NewService(
 		tariffRepo:     tariffRepo,
 		emailLogRepo:   emailLogRepo,
 		meterPointRepo: meterPointRepo,
+		webBaseURL:     webBaseURL,
 	}
 	if len(cfg) > 0 {
 		s.cfg = cfg[0]
@@ -175,7 +191,7 @@ func (s *Service) SendAll(ctx context.Context, eegID uuid.UUID, billingRunID *uu
 
 		invID := inv.ID
 		memID := member.ID
-		msgBytes, buildErr := invoice.BuildInvoiceMessage(smtpCfg.From, member.Email, inv, eeg, member, pdfData)
+		msgBytes, buildErr := invoice.BuildInvoiceMessage(smtpCfg.From, member.Email, inv, eeg, member, pdfData, s.webBaseURL)
 		if buildErr != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("invoice %s (%s): build message: %v", inv.ID, member.Email, buildErr))
@@ -273,10 +289,28 @@ func (e *DataGapError) Error() string {
 	return fmt.Sprintf("incomplete data: %d Zählpunkt(e) haben fehlende L1/L2-Intervalle", len(e.Details))
 }
 
+// ErrNoReadings is returned when the billing period contains no readings for
+// any (selected) member — no billing run is created in that case, so an empty
+// run cannot block the period for later attempts.
+var ErrNoReadings = errors.New("keine Messdaten im Abrechnungszeitraum")
+
+// ImbalanceWarning is a non-blocking signal that the EEG-wide sums of consumption
+// (wh_self) and generation (wh_community) — the same physically shared energy pool,
+// reported twice by the Netzbetreiber — diverge by more than the configured
+// tolerance. Usually indicates missing readings for a meter point or an allocation
+// problem, rather than a billing error, so it never blocks the run.
+type ImbalanceWarning struct {
+	ConsumptionKwh    float64 `json:"consumption_kwh"`
+	GenerationKwh     float64 `json:"generation_kwh"`
+	DiffPromille      float64 `json:"diff_promille"`
+	ThresholdPromille float64 `json:"threshold_promille"`
+}
+
 // RunResult holds the outcome of a billing run.
 type RunResult struct {
-	BillingRun *domain.BillingRun `json:"billing_run"`
-	Invoices   []domain.Invoice   `json:"invoices"`
+	BillingRun       *domain.BillingRun `json:"billing_run"`
+	Invoices         []domain.Invoice   `json:"invoices"`
+	ImbalanceWarning *ImbalanceWarning  `json:"imbalance_warning,omitempty"`
 }
 
 // RunBilling aggregates energy readings for the period and creates invoices.
@@ -290,9 +324,22 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		return nil, fmt.Errorf("period_end must be after period_start")
 	}
 
-	// Overlap check — skipped for preview runs and force-mode
+	// Normalize the run scope: anything but the two known filters means "all".
+	billingType := opts.BillingType
+	if billingType != "consumption_only" && billingType != "production_only" {
+		billingType = "all"
+	}
+	memberIDStrs := make([]string, 0, len(opts.MemberIDs))
+	for _, id := range opts.MemberIDs {
+		memberIDStrs = append(memberIDStrs, id.String())
+	}
+
+	// Overlap check — skipped for preview runs and force-mode.
+	// Scope-aware: only runs whose billing_type and member set intersect the
+	// requested ones count as a conflict (complementary consumption/production
+	// runs or disjoint member subsets over the same period are allowed).
 	if !opts.Force && !opts.Preview {
-		existing, err := s.billingRunRepo.FindOverlap(ctx, eegID, periodStart, periodEnd)
+		existing, err := s.billingRunRepo.FindOverlap(ctx, eegID, periodStart, periodEnd, billingType, memberIDStrs)
 		if err != nil {
 			return nil, fmt.Errorf("overlap check: %w", err)
 		}
@@ -367,12 +414,62 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		sums = filtered
 	}
 
+	// Refuse to create a run when there is nothing to bill — a persisted empty
+	// run would block the period as an overlap for every later attempt.
+	if len(sums) == 0 {
+		slog.Warn("no readings found for billing period",
+			"eeg_id", eegID,
+			"period_start", periodStart,
+			"period_end", periodEnd,
+		)
+		return nil, ErrNoReadings
+	}
+
+	// EEG-wide generation/consumption balance check — only meaningful for a full,
+	// unfiltered run: wh_self (consumption) and wh_community (generation) are the
+	// same physically shared energy pool reported twice by the Netzbetreiber, so
+	// over the whole community they should match within a small tolerance. A
+	// member filter or a consumption/production-only run intentionally looks at
+	// only one side and would produce a false positive here.
+	var imbalanceWarning *ImbalanceWarning
+	if len(opts.MemberIDs) == 0 && billingType == "all" {
+		var totalCons, totalGen float64
+		for _, sum := range sums {
+			totalCons += sum.ConsumptionKwh
+			totalGen += sum.GenerationKwh
+		}
+		if larger := math.Max(totalCons, totalGen); larger > 0 {
+			diffPromille := math.Abs(totalCons-totalGen) / larger * 1000
+			threshold := eeg.EnergyImbalanceThresholdPromille
+			if threshold <= 0 {
+				threshold = 1
+			}
+			if diffPromille > threshold {
+				imbalanceWarning = &ImbalanceWarning{
+					ConsumptionKwh:    totalCons,
+					GenerationKwh:     totalGen,
+					DiffPromille:      diffPromille,
+					ThresholdPromille: threshold,
+				}
+				slog.Warn("generation/consumption imbalance exceeds threshold",
+					"eeg_id", eegID,
+					"consumption_kwh", totalCons,
+					"generation_kwh", totalGen,
+					"diff_promille", diffPromille,
+					"threshold_promille", threshold,
+				)
+			}
+		}
+	}
+
 	// Create billing run record before processing invoices (skipped in preview mode)
 	run := &domain.BillingRun{
 		EegID:       eegID,
 		PeriodStart: periodStart,
 		PeriodEnd:   periodEnd,
 		Status:      "draft",
+		BillingType: billingType,
+		MemberIDs:   memberIDStrs,
 	}
 	if !opts.Preview {
 		if err := s.billingRunRepo.Create(ctx, run); err != nil {
@@ -381,18 +478,6 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		slog.Info("billing run created", "billing_run_id", run.ID)
 	} else {
 		slog.Info("preview billing run (not persisted)", "eeg_id", eegID, "period_start", periodStart, "period_end", periodEnd)
-	}
-
-	if len(sums) == 0 {
-		slog.Warn("no readings found for billing period",
-			"eeg_id", eegID,
-			"period_start", periodStart,
-			"period_end", periodEnd,
-		)
-		return &RunResult{
-			BillingRun: run,
-			Invoices:   []domain.Invoice{},
-		}, nil
 	}
 
 	var invoices []domain.Invoice
@@ -404,13 +489,18 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		member, memberErr := s.memberRepo.GetByID(ctx, sum.MemberID)
 
 		// ── Individualtarif resolution ───────────────────────────────────────────────
-		// A member with an active member-specific tariff schedule uses its Entries for the
-		// Arbeitspreis blend (see tariffWeightedPrice below) and its non-nil *Override fields
-		// for fixed fees; anything left nil (or no member schedule at all) falls back to the
-		// EEG-wide default schedule/settings.
+		// A member with an active member-specific tariff schedule uses its non-nil
+		// *Override fields for fixed fees (activeTariff). Energy pricing (priceTariff)
+		// falls back along member entries → EEG default schedule entries → flat EEG
+		// prices: an Individualtarif that only overrides fees (no own entries) must
+		// NOT drop the member out of the EEG-wide tariff pricing.
 		activeTariff := defaultTariff
+		priceTariff := defaultTariff
 		if mt, ok := memberTariffs[sum.MemberID]; ok {
 			activeTariff = mt
+			if len(mt.Entries) > 0 {
+				priceTariff = mt
+			}
 		}
 		freeKwh, discountPct := eeg.FreeKwh, eeg.DiscountPct
 		meterFee, participationFee, zpGebuehr := eeg.MeterFeeEur, eeg.ParticipationFeeEur, eeg.ZaehlpunktsGebuehrEur
@@ -432,27 +522,49 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 			}
 		}
 		activeZPCount, _ := s.meterPointRepo.CountActiveByMember(ctx, sum.MemberID)
-		zpGebuehrTotal := float64(activeZPCount) * zpGebuehr
 
 		// ── Effective billing period per member ────────────────────────────────
 		// Clamp to beitritt_datum / austritt_datum when they fall within the period.
 		effectiveStart := periodStart
 		effectiveEnd := periodEnd
 		if memberErr == nil {
-			// Clamp only when the date falls strictly within the billing period.
-			// Dates before periodStart or after periodEnd mean the member was in the
-			// EEG for the whole period (or the date is a future placeholder) — no trim.
+			// An INACTIVE member without an austritt_datum (legacy data — the status
+			// column predates the date columns) must not be billed: there is no date
+			// to clamp against, and INACTIVE means they left the EEG.
+			if member.Status == "INACTIVE" && member.AustrittsDatum == nil {
+				slog.Info("skipping INACTIVE member without austritt_datum",
+					"member_id", sum.MemberID)
+				continue
+			}
+			// beitritt_datum/austritt_datum are Austrian calendar dates: their day
+			// boundaries are Vienna midnights, not UTC midnights (pgx loads the bare
+			// date as midnight UTC — using that directly would shift the boundary by
+			// 1-2 hours against the reading timestamps).
 			if member.BeitrittsDatum != nil {
 				bd := member.BeitrittsDatum.UTC()
-				if bd.After(periodStart) && !bd.After(periodEnd) {
-					effectiveStart = bd
+				bdStart := time.Date(bd.Year(), bd.Month(), bd.Day(), 0, 0, 0, 0, viennaLoc)
+				if bdStart.After(periodEnd) {
+					// Joined only after the billing period — nothing to bill.
+					slog.Info("skipping member — beitritt_datum after billing period",
+						"member_id", sum.MemberID, "beitritts_datum", bdStart)
+					continue
+				}
+				if bdStart.After(periodStart) {
+					effectiveStart = bdStart
 				}
 			}
 			if member.AustrittsDatum != nil {
-				// Treat austritt_datum as end-of-day so the last day is fully billed.
+				// Treat austritt_datum as end-of-day (Vienna) so the last day is fully billed.
 				ad := member.AustrittsDatum.UTC()
-				adEndOfDay := time.Date(ad.Year(), ad.Month(), ad.Day(), 23, 59, 59, 0, time.UTC)
-				if adEndOfDay.After(periodStart) && adEndOfDay.Before(periodEnd) {
+				adEndOfDay := time.Date(ad.Year(), ad.Month(), ad.Day(), 23, 59, 59, 0, viennaLoc)
+				if !adEndOfDay.After(periodStart) {
+					// Left before the billing period — previously such members were
+					// billed in full because the clamp never applied.
+					slog.Info("skipping member — austritt_datum before billing period",
+						"member_id", sum.MemberID, "austritts_datum", adEndOfDay)
+					continue
+				}
+				if adEndOfDay.Before(periodEnd) {
 					effectiveEnd = adEndOfDay
 				}
 			}
@@ -473,6 +585,19 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 			}
 		}
 
+		// ── Fixed fees × months ────────────────────────────────────────────────
+		// fee_billing_mode per_month (default): meter/participation fee and
+		// Zählpunktsgebühr are charged once per started calendar month (Vienna) of
+		// the member's effective billing period — a quarterly run bills 3 months.
+		// per_invoice: charged exactly once per billing run (legacy behavior).
+		feeMonths := 1
+		if eeg.FeeBillingMode == "per_month" {
+			feeMonths = calendarMonthsSpanned(effectiveStart, effectiveEnd)
+		}
+		meterFeeTotal := meterFee * float64(feeMonths)
+		participationFeeTotal := participationFee * float64(feeMonths)
+		zpGebuehrTotal := float64(activeZPCount) * zpGebuehr * float64(feeMonths)
+
 		// Apply billing type filter
 		switch opts.BillingType {
 		case "consumption_only":
@@ -485,21 +610,60 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		// Apply free kWh and discount to consumption (Individualtarif-aware)
 		effectiveConsumption := math.Max(0, consumptionKwh-freeKwh)
 		effectiveConsumption = effectiveConsumption * (1 - discountPct/100)
-		// Compute effective prices: use tariff weighted average if available, else EEG flat price
-		energyPriceCt, producerPriceCt := eeg.EnergyPrice, eeg.ProducerPrice
-		if activeTariff != nil && len(activeTariff.Entries) > 0 {
-			energyPriceCt, producerPriceCt = tariffWeightedPrice(
-				activeTariff.Entries, effectiveStart, effectiveEnd, eeg.EnergyPrice, eeg.ProducerPrice,
-			)
-		}
-		// Work price: ct/kWh ÷ 100 = EUR/kWh — energy-only, excludes all fixed fees
-		energyOnlyNet := effectiveConsumption * energyPriceCt / 100
-		// Add fixed fees (meter/participation fee + Zählpunktsgebühr × active meter points)
-		consumptionNet := energyOnlyNet + meterFee + participationFee + zpGebuehrTotal
 
-		// ── Generation credit (Einspeisung) ────────────────────────────────────
-		// Producer price: ct/kWh ÷ 100 = EUR/kWh
-		generationCredit := generationKwh * producerPriceCt / 100
+		// ── Pricing: true time-of-use when a tariff schedule is active ─────────
+		// Every 15-min reading is priced with the tariff entry covering its own
+		// timestamp (SumTOUForMember). kWh outside every entry use the flat EEG
+		// fallback prices. Free kWh and discount scale the consumption amount
+		// proportionally across all windows. energyPriceCt/producerPriceCt become
+		// the derived consumption-weighted average prices (used for display and
+		// the monthly line-item fallback below).
+		energyPriceCt, producerPriceCt := eeg.EnergyPrice, eeg.ProducerPrice
+		var energyOnlyNet, generationCredit float64
+		usedTOU := false
+		if priceTariff != nil && len(priceTariff.Entries) > 0 {
+			// effectiveEnd is inclusive (…23:59:59) while the TOU query is half-open — +1s aligns both.
+			tou, touErr := s.readingRepo.SumTOUForMember(ctx, priceTariff.ID, sum.MemberID, effectiveStart, effectiveEnd.Add(time.Second))
+			if touErr == nil {
+				usedTOU = true
+				rawConsEur := tou.ConsumptionEur
+				if unc := consumptionKwh - tou.CoveredConsumptionKwh; unc > 0 {
+					rawConsEur += unc * eeg.EnergyPrice / 100
+				}
+				rawGenEur := tou.GenerationEur
+				if unc := generationKwh - tou.CoveredGenerationKwh; unc > 0 {
+					rawGenEur += unc * eeg.ProducerPrice / 100
+				}
+				factor := 0.0
+				if consumptionKwh > 0 {
+					factor = effectiveConsumption / consumptionKwh
+				}
+				energyOnlyNet = rawConsEur * factor
+				if generationKwh > 0 { // stays 0 when the billing-type filter zeroed generation
+					generationCredit = rawGenEur
+				}
+				if effectiveConsumption > 0 {
+					energyPriceCt = energyOnlyNet / effectiveConsumption * 100
+				}
+				if generationKwh > 0 {
+					producerPriceCt = generationCredit / generationKwh * 100
+				}
+			} else {
+				slog.Warn("time-of-use pricing failed — falling back to time-weighted average price",
+					"member_id", sum.MemberID, "schedule_id", priceTariff.ID, "error", touErr)
+				energyPriceCt, producerPriceCt = tariffWeightedPrice(
+					priceTariff.Entries, effectiveStart, effectiveEnd, eeg.EnergyPrice, eeg.ProducerPrice,
+				)
+			}
+		}
+		if !usedTOU {
+			// Flat pricing (no active tariff) or TOU query failure:
+			// ct/kWh ÷ 100 = EUR/kWh — energy-only, excludes all fixed fees
+			energyOnlyNet = effectiveConsumption * energyPriceCt / 100
+			generationCredit = generationKwh * producerPriceCt / 100
+		}
+		// Add fixed fees (meter/participation fee + Zählpunktsgebühr × active meter points, each × feeMonths)
+		consumptionNet := energyOnlyNet + meterFeeTotal + participationFeeTotal + zpGebuehrTotal
 
 		// ── Net saldo ──────────────────────────────────────────────────────────
 		// Net = consumption charge − generation credit
@@ -522,20 +686,40 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 				totalMonthlyG += m.GenerationKwh
 			}
 			for _, m := range monthlyRaw {
-				// Per-month tariff price: call tariffWeightedPrice for each month's window.
-				monthStart := time.Date(m.Month.Year(), m.Month.Month(), 1, 0, 0, 0, 0, time.UTC)
+				// Per-month price window: Vienna calendar month (MonthlySummaryForMember
+				// groups by Vienna months), clamped to the effective period. Half-open
+				// [monthStart, monthEnd) — effectiveEnd is inclusive, hence the +1s.
+				monthStart := time.Date(m.Month.Year(), m.Month.Month(), 1, 0, 0, 0, 0, viennaLoc)
 				monthEnd := monthStart.AddDate(0, 1, 0) // exclusive upper bound for this month
-				// Clamp to effective period
 				if monthStart.Before(effectiveStart) {
 					monthStart = effectiveStart
 				}
-				if monthEnd.After(effectiveEnd) {
-					monthEnd = effectiveEnd
+				if exclEnd := effectiveEnd.Add(time.Second); monthEnd.After(exclEnd) {
+					monthEnd = exclEnd
 				}
 				mEnergyPriceCt, mProducerPriceCt := eeg.EnergyPrice, eeg.ProducerPrice
-				if activeTariff != nil && len(activeTariff.Entries) > 0 {
+				if usedTOU {
+					// True time-of-use per month: derive the month's average price from
+					// the TOU-priced amount over the month's own readings.
+					if tou, touErr := s.readingRepo.SumTOUForMember(ctx, priceTariff.ID, sum.MemberID, monthStart, monthEnd); touErr == nil {
+						consEur := tou.ConsumptionEur
+						if unc := m.ConsumptionKwh - tou.CoveredConsumptionKwh; unc > 0 {
+							consEur += unc * eeg.EnergyPrice / 100
+						}
+						genEur := tou.GenerationEur
+						if unc := m.GenerationKwh - tou.CoveredGenerationKwh; unc > 0 {
+							genEur += unc * eeg.ProducerPrice / 100
+						}
+						if m.ConsumptionKwh > 0 {
+							mEnergyPriceCt = consEur / m.ConsumptionKwh * 100
+						}
+						if m.GenerationKwh > 0 {
+							mProducerPriceCt = genEur / m.GenerationKwh * 100
+						}
+					}
+				} else if priceTariff != nil && len(priceTariff.Entries) > 0 {
 					mEnergyPriceCt, mProducerPriceCt = tariffWeightedPrice(
-						activeTariff.Entries, monthStart, monthEnd, eeg.EnergyPrice, eeg.ProducerPrice,
+						priceTariff.Entries, monthStart, monthEnd, eeg.EnergyPrice, eeg.ProducerPrice,
 					)
 				}
 
@@ -555,14 +739,14 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 
 			// For multi-month billing with a tariff schedule, recompute the billing
 			// amounts from the per-month totals (each month × its own tariff price).
-			if len(monthlyItems) > 1 && activeTariff != nil {
+			if len(monthlyItems) > 1 && priceTariff != nil {
 				var totalEnergyEur, totalGenEur float64
 				for _, m := range monthlyItems {
 					totalEnergyEur += m.ConsumptionKwh * m.EnergyPriceCt / 100
 					totalGenEur += m.GenerationKwh * m.ProducerPriceCt / 100
 				}
 				energyOnlyNet = totalEnergyEur
-				consumptionNet = totalEnergyEur + meterFee + participationFee + zpGebuehrTotal
+				consumptionNet = totalEnergyEur + meterFeeTotal + participationFeeTotal + zpGebuehrTotal
 				generationCredit = totalGenEur
 				netAmount = consumptionNet - generationCredit
 			}
@@ -644,6 +828,7 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 			EnergyNet:                energyOnlyNet,
 			MeterFeeEur:              meterFee,
 			ParticipationFeeEur:      participationFee,
+			FeeMonths:                feeMonths,
 			ZaehlpunktsGebuehrEur:    zpGebuehr,
 			ZaehlpunktsGebuehrCount:  activeZPCount,
 			ZaehlpunktsGebuehrTotal:  zpGebuehrTotal,
@@ -777,8 +962,9 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 	}
 
 	return &RunResult{
-		BillingRun: run,
-		Invoices:   invoices,
+		BillingRun:       run,
+		Invoices:         invoices,
+		ImbalanceWarning: imbalanceWarning,
 	}, nil
 }
 
@@ -881,8 +1067,12 @@ func (s *Service) RegeneratePDF(ctx context.Context, invoiceID uuid.UUID) ([]byt
 	// persisted per-invoice). Uses *current* EEG/meter-point state, same caveat as the price
 	// reconstruction above.
 	activeZPCount, _ := s.meterPointRepo.CountActiveByMember(ctx, inv.MemberID)
-	zpGebuehrTotal := float64(activeZPCount) * eeg.ZaehlpunktsGebuehrEur
-	feeTotal := eeg.MeterFeeEur + eeg.ParticipationFeeEur + zpGebuehrTotal
+	regenFeeMonths := 1
+	if eeg.FeeBillingMode == "per_month" {
+		regenFeeMonths = calendarMonthsSpanned(inv.PeriodStart, inv.PeriodEnd)
+	}
+	zpGebuehrTotal := float64(activeZPCount) * eeg.ZaehlpunktsGebuehrEur * float64(regenFeeMonths)
+	feeTotal := (eeg.MeterFeeEur+eeg.ParticipationFeeEur)*float64(regenFeeMonths) + zpGebuehrTotal
 	energyOnlyNet := consumptionNet - feeTotal
 	if energyOnlyNet < 0 {
 		energyOnlyNet = consumptionNet
@@ -911,6 +1101,7 @@ func (s *Service) RegeneratePDF(ctx context.Context, invoiceID uuid.UUID) ([]byt
 		EnergyNet:                energyOnlyNet,
 		MeterFeeEur:              eeg.MeterFeeEur,
 		ParticipationFeeEur:      eeg.ParticipationFeeEur,
+		FeeMonths:                regenFeeMonths,
 		ZaehlpunktsGebuehrEur:    eeg.ZaehlpunktsGebuehrEur,
 		ZaehlpunktsGebuehrCount:  activeZPCount,
 		ZaehlpunktsGebuehrTotal:  zpGebuehrTotal,
@@ -951,8 +1142,24 @@ func (s *Service) RegeneratePDF(ctx context.Context, invoiceID uuid.UUID) ([]byt
 	return pdfData, nil
 }
 
+// calendarMonthsSpanned returns how many Vienna calendar months the period
+// [start, end] touches (each started month counts fully). Used for per_month
+// fixed-fee billing.
+func calendarMonthsSpanned(start, end time.Time) int {
+	s := start.In(viennaLoc)
+	e := end.In(viennaLoc)
+	n := (e.Year()-s.Year())*12 + int(e.Month()) - int(s.Month()) + 1
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
 // tariffWeightedPrice computes energy and producer prices from tariff entries weighted by time overlap
 // with the billing period. Uncovered portions use the fallback flat prices.
+// Only used as an emergency fallback when the true time-of-use query (SumTOUForMember)
+// fails — TOU prices each reading with the entry covering its own timestamp, whereas
+// this blend ignores the member's load profile.
 func tariffWeightedPrice(entries []domain.TariffEntry, start, end time.Time, fallbackEnergy, fallbackProducer float64) (energyPrice, producerPrice float64) {
 	totalSecs := end.Sub(start).Seconds()
 	if totalSecs <= 0 || len(entries) == 0 {

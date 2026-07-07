@@ -128,3 +128,81 @@ func (r *MemberPortalRepository) FindBySessionToken(ctx context.Context, session
 	`, sessionToken).Scan(&memberID, &eegID)
 	return
 }
+
+// EmailChangeVerification is a pending or completed self-service email change request.
+type EmailChangeVerification struct {
+	ID         uuid.UUID
+	MemberID   uuid.UUID
+	EegID      uuid.UUID
+	NewEmail   string
+	ExpiresAt  time.Time
+	VerifiedAt *time.Time
+}
+
+// CreateEmailChangeVerification removes any pending (unverified) email change request for
+// the member and creates a new one with a fresh token, valid for 30 minutes.
+func (r *MemberPortalRepository) CreateEmailChangeVerification(ctx context.Context, memberID, eegID uuid.UUID, newEmail string) (string, error) {
+	token, err := generatePortalToken()
+	if err != nil {
+		return "", err
+	}
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx,
+		`DELETE FROM member_email_change_verifications WHERE member_id = $1 AND verified_at IS NULL`,
+		memberID,
+	); err != nil {
+		return "", err
+	}
+
+	expiresAt := time.Now().Add(30 * time.Minute)
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO member_email_change_verifications (member_id, eeg_id, new_email, token, expires_at)
+		VALUES ($1, $2, $3, $4, $5)
+	`, memberID, eegID, newEmail, token, expiresAt); err != nil {
+		return "", err
+	}
+
+	return token, tx.Commit(ctx)
+}
+
+// FindEmailChangeVerificationByToken looks up a verification by token. Not scoped by EEG
+// since confirmation may happen from a different device/session than the request.
+func (r *MemberPortalRepository) FindEmailChangeVerificationByToken(ctx context.Context, token string) (*EmailChangeVerification, error) {
+	var v EmailChangeVerification
+	err := r.db.QueryRow(ctx, `
+		SELECT id, member_id, eeg_id, new_email, expires_at, verified_at
+		FROM member_email_change_verifications WHERE token = $1
+	`, token).Scan(&v.ID, &v.MemberID, &v.EegID, &v.NewEmail, &v.ExpiresAt, &v.VerifiedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &v, nil
+}
+
+// ConfirmEmailChange applies the verified new email to the member and marks the
+// verification as confirmed, in one transaction. Returns the member's email as it was
+// before the update (for the old-address security notice).
+func (r *MemberPortalRepository) ConfirmEmailChange(ctx context.Context, v *EmailChangeVerification) (oldEmail string, err error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback(ctx)
+
+	if err := tx.QueryRow(ctx, `SELECT email FROM members WHERE id = $1 FOR UPDATE`, v.MemberID).Scan(&oldEmail); err != nil {
+		return "", err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE members SET email = $1 WHERE id = $2`, v.NewEmail, v.MemberID); err != nil {
+		return "", err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE member_email_change_verifications SET verified_at = NOW() WHERE id = $1`, v.ID); err != nil {
+		return "", err
+	}
+
+	return oldEmail, tx.Commit(ctx)
+}

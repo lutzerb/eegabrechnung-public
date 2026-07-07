@@ -711,8 +711,10 @@ func (w *Worker) processCRMsg(ctx context.Context, msg *types.Message) (uuid.UUI
 
 	// Always mark the corresponding EC_REQ_PT process as completed when a DATEN_CRMSG
 	// arrives — even if all readings were filtered by the transition date.
-	// Edanet does not echo our ConversationID in the response, so we match by Zählpunkt.
-	if proc, err := w.edaProcRepo.FindSentReqPTByZaehlpunkt(ctx, record.Zaehlpunkt); err == nil {
+	// Edanet does not echo our ConversationID in the response, so we match by
+	// Zählpunkt — scoped to the resolved EEG, because with Mehrfachteilnahme the
+	// same Zählpunkt can have open EC_REQ_PT processes in two EEGs.
+	if proc, err := w.edaProcRepo.FindSentReqPTByZaehlpunkt(ctx, knownEegID, record.Zaehlpunkt); err == nil {
 		now := time.Now().UTC()
 		if upErr := w.edaProcRepo.UpdateStatus(ctx, proc.ID, "completed", &now, ""); upErr != nil {
 			w.log.Warn("CR_MSG: failed to mark EC_REQ_PT process completed",
@@ -760,12 +762,32 @@ func (w *Worker) processCRMsg(ctx context.Context, msg *types.Message) (uuid.UUI
 //	  Generation  2.9.0 P.01 → wh_community (EEG share, same convention as new schema)
 //
 // Values are in kWh (UOM=KWH as per ConsumptionRecord schema).
-// betterQuality returns true if a is a higher-quality reading than b.
-// Order (best first): L1 > L2 > L0 > "" ; L3 is never "better" than a valid code.
-func betterQuality(a, b string) bool {
-	rank := map[string]int{"L1": 3, "L2": 2, "L0": 1, "": 0, "L3": -1}
-	ra, rb := rank[a], rank[b]
-	return ra > rb
+// worseQuality returns true if a is a LOWER-quality reading than b, ignoring
+// empty codes (no quality info must not drag a slot down). A reading slot is
+// assembled from several OBIS components (G.01, G.03, P.01T, …); if any billing-
+// relevant component is marked faulty, the whole slot must carry that mark —
+// otherwise an L3 Eigendeckung next to an L1 total would be billed as L1.
+// Order (worst first): L3 < L0 < L2 < L1; unknown non-empty codes rank like L0.
+func worseQuality(a, b string) bool {
+	if a == "" {
+		return false
+	}
+	if b == "" {
+		return true
+	}
+	rank := func(q string) int {
+		switch q {
+		case "L3":
+			return 0
+		case "L2":
+			return 2
+		case "L1":
+			return 3
+		default: // L0 and unknown codes
+			return 1
+		}
+	}
+	return rank(a) < rank(b)
 }
 
 // detectSchemaDirection inspects the OBIS MeterCodes in a parsed CR_MSG record and returns
@@ -854,9 +876,10 @@ func buildReadingsFromCRMsg(resolve func(ts time.Time) (uuid.UUID, bool), record
 					}
 				}
 				r := byTS[ts]
-				// Keep the best quality seen across all OBIS codes for this slot.
-				// L1 > L2 > L0 > "" (L3 is kept as-is since it marks faulty data).
-				if betterQuality(pos.Quality, r.Quality) {
+				// Keep the WORST non-empty quality seen across all OBIS codes for this
+				// slot: if any component (e.g. the billed G.03 Eigendeckung) is faulty,
+				// the slot must not be billed just because another component is L1.
+				if worseQuality(pos.Quality, r.Quality) {
 					r.Quality = pos.Quality
 				}
 

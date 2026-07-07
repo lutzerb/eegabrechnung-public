@@ -31,6 +31,13 @@ interface DataGapInfo {
   details: GapDetail[];
 }
 
+interface ImbalanceWarningInfo {
+  consumption_kwh: number;
+  generation_kwh: number;
+  diff_promille: number;
+  threshold_promille: number;
+}
+
 function formatMissingDays(days: string[]): string {
   if (days.length === 0) return "";
   const fmt = (iso: string) => {
@@ -94,6 +101,7 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
   const [error, setError] = useState<string | null>(null);
   const [overlap, setOverlap] = useState<OverlapInfo | null>(null);
   const [dataGap, setDataGap] = useState<DataGapInfo | null>(null);
+  const [imbalanceWarning, setImbalanceWarning] = useState<ImbalanceWarningInfo | null>(null);
   const [previewResult, setPreviewResult] = useState<{ invoices: { member_id: string; total_amount: number; generation_vat_pct?: number; generation_vat_amount?: number; consumption_kwh: number; generation_kwh: number }[]; count: number } | null>(null);
 
   const toggleMember = (id: string) => {
@@ -112,6 +120,7 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
     setOverlap(null);
     setDataGap(null);
     setPreviewResult(null);
+    setImbalanceWarning(null);
 
     try {
       const body: Record<string, unknown> = {
@@ -164,6 +173,7 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
         setPreviewResult({ invoices: data.invoices || [], count: data.invoices_created || 0 });
       } else {
         setSuccess(data.billing_run ?? data);
+        if (data.imbalance_warning) setImbalanceWarning(data.imbalance_warning);
         router.refresh();
       }
     } catch (err: unknown) {
@@ -218,6 +228,19 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
               </p>
             </div>
           </div>
+        </div>
+      )}
+
+      {imbalanceWarning && (
+        <div className="mb-5 p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="font-medium text-amber-800">Bezug/Einspeisung nicht ausgeglichen</p>
+          <p className="text-sm text-amber-700 mt-1">
+            Summe Bezug ({imbalanceWarning.consumption_kwh.toFixed(2)} kWh) und Summe Einspeisung ({imbalanceWarning.generation_kwh.toFixed(2)} kWh)
+            {" "}weichen um {imbalanceWarning.diff_promille.toFixed(2)} ‰ voneinander ab (Toleranz: {imbalanceWarning.threshold_promille.toFixed(2)} ‰).
+          </p>
+          <p className="text-xs text-amber-600 mt-1">
+            Mögliche Ursache: fehlende Messdaten für einzelne Zählpunkte oder eine abweichende Zuteilung des Netzbetreibers. Die Abrechnung wurde trotzdem durchgeführt.
+          </p>
         </div>
       )}
 

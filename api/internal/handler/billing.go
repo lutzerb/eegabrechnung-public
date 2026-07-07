@@ -26,6 +26,7 @@ type BillingHandler struct {
 	memberRepo     *repository.MemberRepository
 	eegRepo        *repository.EEGRepository
 	emailLogRepo   *repository.EmailLogRepository
+	webBaseURL     string
 }
 
 func NewBillingHandler(
@@ -35,6 +36,7 @@ func NewBillingHandler(
 	memberRepo *repository.MemberRepository,
 	eegRepo *repository.EEGRepository,
 	emailLogRepo *repository.EmailLogRepository,
+	webBaseURL string,
 ) *BillingHandler {
 	return &BillingHandler{
 		billingSvc:     billingSvc,
@@ -43,6 +45,7 @@ func NewBillingHandler(
 		memberRepo:     memberRepo,
 		eegRepo:        eegRepo,
 		emailLogRepo:   emailLogRepo,
+		webBaseURL:     webBaseURL,
 	}
 }
 
@@ -128,6 +131,10 @@ func (h *BillingHandler) RunBilling(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
+		if errors.Is(err, billing.ErrNoReadings) {
+			jsonError(w, "Keine Messdaten im Abrechnungszeitraum gefunden — es wurde kein Abrechnungslauf angelegt", http.StatusUnprocessableEntity)
+			return
+		}
 		var gapErr *billing.DataGapError
 		if errors.As(err, &gapErr) {
 			w.Header().Set("Content-Type", "application/json")
@@ -143,10 +150,11 @@ func (h *BillingHandler) RunBilling(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, map[string]any{
-		"billing_run":      result.BillingRun,
-		"invoices_created": len(result.Invoices),
-		"invoices":         result.Invoices,
-		"preview":          req.Preview,
+		"billing_run":       result.BillingRun,
+		"invoices_created":  len(result.Invoices),
+		"invoices":          result.Invoices,
+		"preview":           req.Preview,
+		"imbalance_warning": result.ImbalanceWarning,
 	})
 }
 
@@ -737,7 +745,7 @@ func (h *BillingHandler) ResendInvoice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	smtpCfg := invoice.SMTPConfig{Host: eeg.SMTPHost, From: eeg.SMTPFrom, Username: eeg.SMTPUser, Password: eeg.SMTPPassword}
-	if err := invoice.SendInvoice(r.Context(), h.emailLogRepo, smtpCfg, member, eeg, inv, pdfData); err != nil {
+	if err := invoice.SendInvoice(r.Context(), h.emailLogRepo, smtpCfg, member, eeg, inv, pdfData, h.webBaseURL); err != nil {
 		jsonError(w, "failed to send invoice: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

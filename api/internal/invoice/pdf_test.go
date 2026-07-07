@@ -38,7 +38,7 @@ func TestGeneratePDF(t *testing.T) {
 		TotalAmount: 18.5184,
 	}
 
-	data, err := GeneratePDF(inv, eeg, member, VATOptions{UseVat: false})
+	data, err := GeneratePDF(inv, eeg, member, VATOptions{UseVat: false}, nil)
 	if err != nil {
 		t.Fatalf("GeneratePDF returned error: %v", err)
 	}

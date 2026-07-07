@@ -1283,6 +1283,7 @@ func (h *OnboardingHandler) sendConversionEmail(req *domain.OnboardingRequest, e
 		return nil
 	}
 	statusURL := fmt.Sprintf("%s/onboarding/status?token=%s", h.webBaseURL, req.MagicToken)
+	portalURL := fmt.Sprintf("%s/portal", h.webBaseURL)
 	subject := fmt.Sprintf("Willkommen in der %s – Nächste Schritte", eegName)
 
 	// Build Netzbetreiber portal block
@@ -1327,6 +1328,11 @@ func (h *OnboardingHandler) sendConversionEmail(req *domain.OnboardingRequest, e
 <p style="color: #475569; font-size: 14px;"><strong>Bitte beachten Sie:</strong> Es kann einige Stunden dauern, bis die Anfrage auf Datenfreigabe im Portal Ihres Netzbetreibers aufscheint – in der Regel innerhalb von 24 Stunden.</p>
 <p style="color: #475569; font-size: 14px;">Sobald Ihr Netzbetreiber die Anmeldung verarbeitet hat, beginnt die gemeinschaftliche Energieverrechnung automatisch.</p>
 %s
+<div style="background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 16px; margin: 16px 0;">
+  <strong style="color: #0369a1;">Ihr Mitgliederportal</strong><br>
+  <span style="color: #475569; font-size: 14px;">Sobald Sie Mitglied sind, können Sie im Mitgliederportal jederzeit Ihre Energiedaten und Rechnungen einsehen.</span><br>
+  <a href="%s" style="color: #1e40af;">%s</a>
+</div>
 <p style="margin: 24px 0;">
   <a href="%s" style="background-color: #1e40af; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
     Antragsstatus ansehen
@@ -1336,7 +1342,7 @@ func (h *OnboardingHandler) sendConversionEmail(req *domain.OnboardingRequest, e
 <p style="color: #94a3b8; font-size: 12px;">Bei Fragen wenden Sie sich bitte direkt an die Energiegemeinschaft.</p>
 </body>
 </html>`,
-		req.Name1, eegName, nbBlock, eegName, customBlock, statusURL,
+		req.Name1, eegName, nbBlock, eegName, customBlock, portalURL, portalURL, statusURL,
 	)
 
 	smtpCfg2 := invoice.SMTPConfig{Host: eeg2.SMTPHost, From: eeg2.SMTPFrom, Username: eeg2.SMTPUser, Password: eeg2.SMTPPassword}

@@ -389,6 +389,48 @@ func (r *ReadingRepository) GetMemberEnergy(ctx context.Context, memberID uuid.U
 	return result, rows.Err()
 }
 
+// TOUSum holds time-of-use priced energy for one member within a window:
+// every 15-min reading is multiplied with the tariff entry covering its own
+// timestamp. Covered* report how many kWh fell inside any tariff entry, so the
+// caller can price the uncovered remainder with the flat fallback prices.
+type TOUSum struct {
+	ConsumptionEur         float64 // Σ wh_self × entry.energy_price / 100 (CONSUMPTION ZPs)
+	GenerationEur          float64 // Σ wh_community × entry.producer_price / 100 (GENERATION ZPs)
+	CoveredConsumptionKwh  float64
+	CoveredGenerationKwh   float64
+}
+
+// SumTOUForMember prices a member's readings per tariff entry (true time-of-use):
+// each reading in [start, end) is matched to the tariff_entries row of the given
+// schedule whose [valid_from, valid_until) contains its timestamp. Readings outside
+// every entry are not included — the caller compares Covered* against the raw
+// period totals and prices the remainder with the flat EEG fallback.
+// Overlapping entries would price a reading once per overlap (the schema does not
+// prevent overlaps yet — same caveat as the previous time-weighted blend).
+func (r *ReadingRepository) SumTOUForMember(ctx context.Context, scheduleID, memberID uuid.UUID, start, end time.Time) (TOUSum, error) {
+	q := `
+		SELECT
+			COALESCE(SUM(CASE WHEN mp.energierichtung = 'CONSUMPTION' THEN er.wh_self      * te.energy_price   ELSE 0 END), 0) / 100 AS consumption_eur,
+			COALESCE(SUM(CASE WHEN mp.energierichtung = 'GENERATION'  THEN er.wh_community * te.producer_price ELSE 0 END), 0) / 100 AS generation_eur,
+			COALESCE(SUM(CASE WHEN mp.energierichtung = 'CONSUMPTION' THEN er.wh_self      ELSE 0 END), 0) AS covered_consumption_kwh,
+			COALESCE(SUM(CASE WHEN mp.energierichtung = 'GENERATION'  THEN er.wh_community ELSE 0 END), 0) AS covered_generation_kwh
+		FROM tariff_entries te
+		JOIN meter_points mp ON mp.member_id = $2
+		JOIN energy_readings er ON er.meter_point_id = mp.id
+			AND er.ts >= te.valid_from AND er.ts < te.valid_until
+			AND er.ts >= $3 AND er.ts < $4
+			AND er.quality <> 'L3'
+		WHERE te.schedule_id = $1
+	`
+	var s TOUSum
+	if err := r.db.QueryRow(ctx, q, scheduleID, memberID, start, end).Scan(
+		&s.ConsumptionEur, &s.GenerationEur, &s.CoveredConsumptionKwh, &s.CoveredGenerationKwh,
+	); err != nil {
+		return TOUSum{}, fmt.Errorf("tou sum query: %w", err)
+	}
+	return s, nil
+}
+
 // MonthlyKwh holds aggregated consumption and generation kWh for a single calendar month.
 type MonthlyKwh struct {
 	Month          time.Time

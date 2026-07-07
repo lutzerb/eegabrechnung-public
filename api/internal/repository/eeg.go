@@ -44,7 +44,7 @@ const eegCols = `id, organization_id, gemeinschaft_id, gemeinschaft_typ, netzbet
 	meter_fee_eur, free_kwh, discount_pct, participation_fee_eur, zaehlpunkts_gebuehr_eur,
 	billing_period,
 	invoice_number_prefix, invoice_number_digits, invoice_number_start,
-	invoice_pre_text, invoice_post_text, invoice_footer_text, invoice_payment_notice_mode,
+	invoice_pre_text, invoice_post_text, invoice_footer_text, invoice_payment_notice_mode, fee_billing_mode,
 	logo_path,
 	generate_credit_notes, credit_note_number_prefix, credit_note_number_digits,
 	iban, bic, sepa_creditor_id,
@@ -58,6 +58,7 @@ const eegCols = `id, organization_id, gemeinschaft_id, gemeinschaft_typ, netzbet
 	is_demo,
 	auto_billing_enabled, auto_billing_day_of_month, auto_billing_period, auto_billing_last_run_at,
 	gap_alert_enabled, gap_alert_threshold_days,
+	energy_imbalance_threshold_promille,
 	portal_show_full_energy,
 	eda_imap_host, eda_imap_user, eda_imap_password_enc,
 	eda_smtp_host, eda_smtp_user, eda_smtp_password_enc, eda_smtp_from,
@@ -78,7 +79,7 @@ func (r *EEGRepository) scanEEG(row interface{ Scan(...any) error }, e *domain.E
 		&e.MeterFeeEur, &e.FreeKwh, &e.DiscountPct, &e.ParticipationFeeEur, &e.ZaehlpunktsGebuehrEur,
 		&e.BillingPeriod,
 		&e.InvoiceNumberPrefix, &e.InvoiceNumberDigits, &e.InvoiceNumberStart,
-		&e.InvoicePreText, &e.InvoicePostText, &e.InvoiceFooterText, &e.InvoicePaymentNoticeMode,
+		&e.InvoicePreText, &e.InvoicePostText, &e.InvoiceFooterText, &e.InvoicePaymentNoticeMode, &e.FeeBillingMode,
 		&e.LogoPath,
 		&e.GenerateCreditNotes, &e.CreditNoteNumberPrefix, &e.CreditNoteNumberDigits,
 		&e.IBAN, &e.BIC, &e.SepaCreditorID,
@@ -92,6 +93,7 @@ func (r *EEGRepository) scanEEG(row interface{ Scan(...any) error }, e *domain.E
 		&e.IsDemo,
 		&e.AutoBillingEnabled, &autoBillingDayOfMonth, &autoBillingPeriod, &e.AutoBillingLastRunAt,
 		&e.GapAlertEnabled, &e.GapAlertThresholdDays,
+		&e.EnergyImbalanceThresholdPromille,
 		&e.PortalShowFullEnergy,
 		&edaImapHost, &edaImapUser, &edaImapPwEnc,
 		&edaSmtpHost, &edaSmtpUser, &edaSmtpPwEnc, &edaSmtpFrom,
@@ -123,12 +125,15 @@ func (r *EEGRepository) scanEEG(row interface{ Scan(...any) error }, e *domain.E
 	e.SMTPFrom = derefStr(smtpFrom)
 	if edaImapPwEnc != nil {
 		e.EDAIMAPPassword = r.decrypt(*edaImapPwEnc)
+		e.HasEdaImapPassword = *edaImapPwEnc != ""
 	}
 	if edaSmtpPwEnc != nil {
 		e.EDASmtpPassword = r.decrypt(*edaSmtpPwEnc)
+		e.HasEdaSmtpPassword = *edaSmtpPwEnc != ""
 	}
 	if smtpPwEnc != nil {
 		e.SMTPPassword = r.decrypt(*smtpPwEnc)
+		e.HasSmtpPassword = *smtpPwEnc != ""
 	}
 	return nil
 }
@@ -144,8 +149,8 @@ func (r *EEGRepository) Create(ctx context.Context, eeg *domain.EEG) error {
 	         generate_credit_notes, credit_note_number_prefix, credit_note_number_digits,
 	         iban, bic, sepa_creditor_id,
 	         eda_marktpartner_id, eda_netzbetreiber_id, zaehlpunkts_gebuehr_eur,
-	         invoice_payment_notice_mode, eda_dis_model)
-	      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32)
+	         invoice_payment_notice_mode, eda_dis_model, fee_billing_mode)
+	      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
 	      RETURNING id, created_at`
 	if eeg.BillingPeriod == "" {
 		eeg.BillingPeriod = "monthly"
@@ -174,6 +179,9 @@ func (r *EEGRepository) Create(ctx context.Context, eeg *domain.EEG) error {
 	if eeg.EdaDisModel == "" {
 		eeg.EdaDisModel = "D"
 	}
+	if eeg.FeeBillingMode == "" {
+		eeg.FeeBillingMode = "per_month"
+	}
 	return r.db.QueryRow(ctx, q,
 		eeg.OrganizationID, eeg.GemeinschaftID, eeg.GemeinschaftTyp, eeg.Netzbetreiber, eeg.Name, eeg.EnergyPrice, eeg.ProducerPrice,
 		eeg.UseVat, eeg.VatPct, eeg.MeterFeeEur, eeg.FreeKwh, eeg.DiscountPct,
@@ -184,7 +192,7 @@ func (r *EEGRepository) Create(ctx context.Context, eeg *domain.EEG) error {
 		eeg.GenerateCreditNotes, eeg.CreditNoteNumberPrefix, eeg.CreditNoteNumberDigits,
 		eeg.IBAN, eeg.BIC, eeg.SepaCreditorID,
 		eeg.EdaMarktpartnerID, eeg.EdaNetzbetreiberID, eeg.ZaehlpunktsGebuehrEur,
-		eeg.InvoicePaymentNoticeMode, eeg.EdaDisModel,
+		eeg.InvoicePaymentNoticeMode, eeg.EdaDisModel, eeg.FeeBillingMode,
 	).Scan(&eeg.ID, &eeg.CreatedAt)
 }
 
@@ -228,7 +236,9 @@ func (r *EEGRepository) Update(ctx context.Context, eeg *domain.EEG) error {
 	        gemeinschaft_typ=$59,
 	        zaehlpunkts_gebuehr_eur=$60,
 	        invoice_payment_notice_mode=$61,
-	        eda_dis_model=$62
+	        eda_dis_model=$62,
+	        fee_billing_mode=$63,
+	        energy_imbalance_threshold_promille=$64
 	      WHERE id=$50 AND organization_id=$51`
 	// Note: logo_path and auto_billing_last_run_at are not updated via this method.
 	days := eeg.SepaPreNotificationDays
@@ -262,6 +272,8 @@ func (r *EEGRepository) Update(ctx context.Context, eeg *domain.EEG) error {
 		eeg.ZaehlpunktsGebuehrEur,
 		eeg.InvoicePaymentNoticeMode,
 		eeg.EdaDisModel,
+		eeg.FeeBillingMode,
+		eeg.EnergyImbalanceThresholdPromille,
 	)
 	return err
 }

@@ -151,6 +151,8 @@ Embedded in `api/internal/db/migrations/`, applied automatically at startup via 
 | 080_invoice_payment_notice_mode | `invoice_payment_notice_mode` (text, default `sepa_lastschrift`) on eegs — controls the "Zahlungshinweis" paragraph on consumer invoices/emails: `sepa_lastschrift` (default, unchanged text) \| `ueberweisung` (shows EEG's own IBAN/BIC for manual bank transfer) \| `none` (section omitted entirely) |
 | 081_eda_dis_model | `eda_dis_model` (text, default `D`) on eegs — the ECDisModel (statisch `S` \| dynamisch `D`) declared to the Netzbetreiber, decided once for the whole community instead of per EDA action; set in EEG-Einstellungen (EDA-Tab), used as the fixed value for Online-Anmeldung (EC_REQ_ONL) and Teilnahmefaktor-Änderung (EC_PRTFACT_CHG) — no more manual per-action dropdown |
 | 082_member_sepa_mandate_history | `member_sepa_mandate_history` table (member_id, eeg_id, iban, signed_at, signed_ip, signed_text, archived_at, reason) — archives a member's SEPA mandate snapshot whenever their IBAN changes, so past mandates stay retrievable for audit purposes. Written by both the admin IBAN edit (reason `iban_change_admin`, signature cleared afterwards) and the member-portal self-service IBAN change (reason `iban_change_portal`, freshly signed) |
+| 083_fee_billing_mode | `fee_billing_mode` (text, default `per_month`) on eegs — Fixgebühren (meter_fee, participation_fee, Zählpunktsgebühr) pro angefangenem Kalendermonat des Abrechnungszeitraums (`per_month`) oder einmal pro Abrechnungslauf (`per_invoice`); Radio-Group im Rechnungen-Tab der EEG-Einstellungen |
+| 084_billing_run_scope | `billing_type` (default 'all') + `member_ids` (uuid[], NULL = alle) on billing_runs — Overlap-Prüfung ist scope-bewusst: consumption_only/production_only bzw. disjunkte Mitglieds-Teilmengen über denselben Zeitraum kollidieren nicht mehr |
 
 ## Energy Unit Convention
 **All energy values throughout the codebase are stored and transmitted in kWh**, despite column/field names using the `wh_` prefix (e.g. `wh_total`, `wh_self`, `wh_community`). This naming is a historical artifact — do NOT divide these values by 1000 when displaying as kWh. The `fmtKwh()` helper in `web/components/energy-charts.tsx` is the reference implementation: it displays values directly as kWh and only converts to MWh when the value exceeds 100 000.
@@ -307,7 +309,7 @@ DELETE /api/v1/eegs/{eegID}/ea/bank/transaktionen/{transaktionID}  — ignore ba
 | `/eegs/[eegId]/import` | Energy data import (XLSX) with coverage chart |
 | `/eegs/[eegId]/tariffs` | Tariff schedule management |
 | `/eegs/[eegId]/communications` | Bulk email campaigns (compose, member selection, history) |
-| `/eegs/[eegId]/settings` | EEG configuration (address, logo, SEPA, billing, DATEV, EDA, auto-billing); Rechnungen tab has "Fixgebühr" (flat, was mislabeled "Zählpunktgebühr") and "Zählpunktsgebühr" (true per-active-ZP fee) as separate fields; Rechnungen tab also has a "Zahlungshinweis" radio group (SEPA-Lastschrift / Überweisungshinweis / kein Hinweis, migration 080); EDA tab has a "Verteilungsmodell" select (statisch/dynamisch, migration 081) that fixes the ECDisModel for the whole community |
+| `/eegs/[eegId]/settings` | EEG configuration (address, logo, SEPA, billing, DATEV, EDA, auto-billing); Rechnungen tab has "Fixgebühr" (flat, was mislabeled "Zählpunktgebühr") and "Zählpunktsgebühr" (true per-active-ZP fee) as separate fields; Rechnungen tab also has a "Zahlungshinweis" radio group (SEPA-Lastschrift / Überweisungshinweis / kein Hinweis, migration 080) and a "Fixgebühren-Abrechnung" radio group (pro Monat / pro Abrechnungslauf, migration 083); EDA tab has a "Verteilungsmodell" select (statisch/dynamisch, migration 081) that fixes the ECDisModel for the whole community |
 | `/eegs/[eegId]/settings/email-log` | List of every outbound email attempt for the EEG (status, recipient, subject, error) |
 | `/eegs/[eegId]/ea` | E/A-Buchhaltung dashboard (KPI cards, open UVA alerts, nav grid) |
 | `/eegs/[eegId]/ea/buchungen` | Journal (all Buchungen, year/konto/richtung filter, XLSX export) |
@@ -458,10 +460,15 @@ docker stop eegabrechnung-eegabrechnung-eda-worker-test-1
 
 ## Pricing Logic
 Prices are set **only** in Tarifpläne (tariff schedules). 
- During billing:
+ During billing (true time-of-use since 2026-07-07):
 1. Load active tariff schedule entries overlapping the billing period
-2. Blend entries weighted by overlap duration
-3. Uncovered fractions fall back to `eeg.energy_price` / `eeg.producer_price` (DB fields, not exposed in UI)
+2. **Time-of-use**: every 15-min reading is priced with the tariff entry covering its own timestamp (`ReadingRepository.SumTOUForMember` — one query per member joining readings × tariff_entries)
+3. kWh outside every entry fall back to `eeg.energy_price` / `eeg.producer_price` (DB fields, not exposed in UI)
+4. Free kWh / discount scale the consumption amount proportionally across all entries
+5. The invoice shows the derived consumption-weighted average ct/kWh (per month on multi-month invoices)
+6. `tariffWeightedPrice` (time-weighted blend, ignores load profile) remains only as an emergency fallback if the TOU query fails
+
+**Fixed fees** (`meter_fee_eur`, `participation_fee_eur`, `zaehlpunkts_gebuehr_eur`) are multiplied by the number of started Vienna calendar months of the (member-effective) billing period when `fee_billing_mode = 'per_month'` (default), or charged once per run with `'per_invoice'`.
 
 ## API Testing
 ```bash

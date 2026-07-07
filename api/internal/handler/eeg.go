@@ -38,6 +38,15 @@ func validInvoicePaymentNoticeMode(mode string) bool {
 	}
 }
 
+func validFeeBillingMode(mode string) bool {
+	switch mode {
+	case "", "per_month", "per_invoice":
+		return true
+	default:
+		return false
+	}
+}
+
 func validEdaDisModel(model string) bool {
 	switch model {
 	case "", "S", "D":
@@ -90,6 +99,7 @@ type eegRequest struct {
 	InvoicePostText        string     `json:"invoice_post_text"`
 	InvoiceFooterText      string     `json:"invoice_footer_text"`
 	InvoicePaymentNoticeMode string   `json:"invoice_payment_notice_mode"`
+	FeeBillingMode         string     `json:"fee_billing_mode"`
 	GenerateCreditNotes    bool       `json:"generate_credit_notes"`
 	CreditNoteNumberPrefix string     `json:"credit_note_number_prefix"`
 	CreditNoteNumberDigits int        `json:"credit_note_number_digits"`
@@ -135,6 +145,8 @@ type eegRequest struct {
 	// Gap alert
 	GapAlertEnabled       bool `json:"gap_alert_enabled"`
 	GapAlertThresholdDays int  `json:"gap_alert_threshold_days"`
+	// Energy imbalance warning tolerance (‰)
+	EnergyImbalanceThresholdPromille float64 `json:"energy_imbalance_threshold_promille"`
 	// Member portal
 	PortalShowFullEnergy bool `json:"portal_show_full_energy"`
 }
@@ -301,6 +313,10 @@ func (h *EEGHandler) CreateEEG(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid eda_dis_model", http.StatusBadRequest)
 		return
 	}
+	if !validFeeBillingMode(req.FeeBillingMode) {
+		jsonError(w, "invalid fee_billing_mode", http.StatusBadRequest)
+		return
+	}
 
 	eeg := &domain.EEG{
 		OrganizationID:      claims.OrganizationID,
@@ -324,6 +340,7 @@ func (h *EEGHandler) CreateEEG(w http.ResponseWriter, r *http.Request) {
 		InvoicePostText:     req.InvoicePostText,
 		InvoiceFooterText:   req.InvoiceFooterText,
 		InvoicePaymentNoticeMode: req.InvoicePaymentNoticeMode,
+		FeeBillingMode:     req.FeeBillingMode,
 		IBAN:               req.IBAN,
 		BIC:                req.BIC,
 		SepaCreditorID:     req.SepaCreditorID,
@@ -394,6 +411,10 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid eda_dis_model", http.StatusBadRequest)
 		return
 	}
+	if !validFeeBillingMode(req.FeeBillingMode) {
+		jsonError(w, "invalid fee_billing_mode", http.StatusBadRequest)
+		return
+	}
 
 	if req.Name != "" {
 		existing.Name = req.Name
@@ -430,6 +451,9 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 	existing.InvoiceFooterText = req.InvoiceFooterText
 	if req.InvoicePaymentNoticeMode != "" {
 		existing.InvoicePaymentNoticeMode = req.InvoicePaymentNoticeMode
+	}
+	if req.FeeBillingMode != "" {
+		existing.FeeBillingMode = req.FeeBillingMode
 	}
 	existing.GenerateCreditNotes = req.GenerateCreditNotes
 	if req.CreditNoteNumberPrefix != "" {
@@ -506,6 +530,11 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 	if req.SMTPFrom != "" {
 		existing.SMTPFrom = req.SMTPFrom
 	}
+	// Refresh the has_*_password indicators so the response reflects the state
+	// after this update (the flags were loaded before the passwords were applied).
+	existing.HasEdaImapPassword = existing.EDAIMAPPassword != ""
+	existing.HasEdaSmtpPassword = existing.EDASmtpPassword != ""
+	existing.HasSmtpPassword = existing.SMTPPassword != ""
 	if req.Gruendungsdatum != "" {
 		t, err := time.Parse("2006-01-02", req.Gruendungsdatum)
 		if err != nil {
@@ -540,6 +569,13 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 		existing.GapAlertThresholdDays = 5
 	} else {
 		existing.GapAlertThresholdDays = req.GapAlertThresholdDays
+	}
+
+	// Energy imbalance warning tolerance
+	if req.EnergyImbalanceThresholdPromille <= 0 {
+		existing.EnergyImbalanceThresholdPromille = 1
+	} else {
+		existing.EnergyImbalanceThresholdPromille = req.EnergyImbalanceThresholdPromille
 	}
 
 	// Member portal

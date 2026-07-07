@@ -94,13 +94,15 @@ func main() {
 	participationRepo := repository.NewParticipationRepository(pool)
 	emailLogRepo := repository.NewEmailLogRepository(pool)
 
+	webBaseURL := getEnv("WEB_BASE_URL", "http://localhost:3001")
+
 	// Services
-	billingSvc := billing.NewService(pool, eegRepo, memberRepo, readingRepo, invoiceRepo, billingRunRepo, tariffRepo, emailLogRepo, meterPointRepo, billingCfg)
+	billingSvc := billing.NewService(pool, eegRepo, memberRepo, readingRepo, invoiceRepo, billingRunRepo, tariffRepo, emailLogRepo, meterPointRepo, webBaseURL, billingCfg)
 
 	// Handlers
 	eegHandler := handler.NewEEGHandler(eegRepo, memberRepo, meterPointRepo, participationRepo)
 	importHandler := handler.NewImportHandler(eegRepo, memberRepo, meterPointRepo, readingRepo)
-	billingHandler := handler.NewBillingHandler(billingSvc, invoiceRepo, billingRunRepo, memberRepo, eegRepo, emailLogRepo)
+	billingHandler := handler.NewBillingHandler(billingSvc, invoiceRepo, billingRunRepo, memberRepo, eegRepo, emailLogRepo, webBaseURL)
 	memberHandler := handler.NewMemberHandler(memberRepo, meterPointRepo, eegRepo, edaProcessRepo, jobRepo, participationRepo)
 	meterPointHandler := handler.NewMeterPointHandler(meterPointRepo, memberRepo, eegRepo, edaProcessRepo)
 	statsHandler := handler.NewStatsHandler(eegRepo, edaMessageRepo)
@@ -119,7 +121,6 @@ func main() {
 	backupHandler := handler.NewBackupHandler(pool, eegRepo, memberRepo, meterPointRepo, readingRepo, invoiceRepo, billingRunRepo, tariffRepo, participationRepo)
 	searchHandler := handler.NewSearchHandler(memberRepo, meterPointRepo, invoiceRepo, eegRepo)
 
-	webBaseURL := getEnv("WEB_BASE_URL", "http://localhost:3001")
 	onboardingRepo := repository.NewOnboardingRepository(pool)
 	memberEmailRepo := repository.NewMemberEmailRepository(pool)
 	eegDocumentRepo := repository.NewEEGDocumentRepository(pool)
@@ -194,6 +195,8 @@ func main() {
 	r.Get("/api/v1/public/portal/meter-points", portalHandler.GetMeterPoints)
 	r.Post("/api/v1/public/portal/change-factor", portalHandler.ChangeParticipationFactor)
 	r.Post("/api/v1/public/portal/sepa-mandate", portalHandler.ChangeSepaMandate)
+	r.With(portalLimiter.Middleware).Post("/api/v1/public/portal/email-change", portalHandler.RequestEmailChange)
+	r.Post("/api/v1/public/portal/email-change/confirm/{token}", portalHandler.ConfirmEmailChange)
 
 	authMiddleware := auth.Middleware(jwtSecret)
 

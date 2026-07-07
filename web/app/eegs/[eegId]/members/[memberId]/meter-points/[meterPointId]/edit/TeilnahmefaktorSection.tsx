@@ -40,7 +40,6 @@ export function TeilnahmefaktorSection({
           zaehlpunkt,
           participation_factor: parseFloat(factor),
           share_type: "GC",
-          ec_dis_model: "D",
           energy_direction: energyDirection,
           valid_from: validFrom,
         }),

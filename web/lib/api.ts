@@ -23,6 +23,7 @@ export interface EEG {
   invoice_post_text: string;
   invoice_footer_text: string;
   invoice_payment_notice_mode: string; // sepa_lastschrift | ueberweisung | none
+  fee_billing_mode: string; // per_month | per_invoice
   logo_path: string;
   generate_credit_notes: boolean;
   credit_note_number_prefix: string;
@@ -58,6 +59,8 @@ export interface EEG {
   // Gap alert
   gap_alert_enabled?: boolean;
   gap_alert_threshold_days?: number;  // default 5
+  // Energy imbalance warning (generation vs. consumption balance on billing runs)
+  energy_imbalance_threshold_promille?: number; // ‰, default 1
   // Member portal
   portal_show_full_energy?: boolean;
   created_at?: string;
@@ -71,6 +74,10 @@ export interface EEG {
   smtp_host?: string;
   smtp_user?: string;
   smtp_from?: string;
+  // Read-only: whether an encrypted password is stored (the secret itself is never returned)
+  has_eda_imap_password?: boolean;
+  has_eda_smtp_password?: boolean;
+  has_smtp_password?: boolean;
 }
 
 export interface EDAProcess {
@@ -128,6 +135,7 @@ export interface UpdateEEGRequest {
   invoice_post_text?: string;
   invoice_footer_text?: string;
   invoice_payment_notice_mode?: string;
+  fee_billing_mode?: string;
   generate_credit_notes?: boolean;
   credit_note_number_prefix?: string;
   credit_note_number_digits?: number;
@@ -171,6 +179,8 @@ export interface UpdateEEGRequest {
   // Gap alert
   gap_alert_enabled?: boolean;
   gap_alert_threshold_days?: number;
+  // Energy imbalance warning
+  energy_imbalance_threshold_promille?: number;
   // Member portal
   portal_show_full_energy?: boolean;
 }

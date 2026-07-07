@@ -84,9 +84,13 @@ type VATOptions struct {
 	// GenerationKwh is scaled so months sum to the billed generation total.
 	MonthlyLineItems []MonthlyKwh
 
-	// Fixed fees (shown as a separate line in multi-month invoices)
+	// Fixed fees (shown as a separate line in multi-month invoices).
+	// MeterFeeEur/ParticipationFeeEur/ZaehlpunktsGebuehrEur are per-month unit values;
+	// FeeMonths is the multiplier (per_month fee billing: started calendar months of
+	// the period; per_invoice: always 1). ZaehlpunktsGebuehrTotal already includes it.
 	MeterFeeEur        float64
 	ParticipationFeeEur float64
+	FeeMonths          int
 
 	// EnergyNet is the energy-only Bezug amount (excludes all fixed fees below) — used for the
 	// "Bezug Strom" line item so it doesn't silently absorb fixed fees.
@@ -881,9 +885,17 @@ func GeneratePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, va
 			drawMpSubRow(pdf, vat.GenerationMeterPointKwh)
 		}
 		// Fixed fees as separate line (were baked into ConsumptionNet for single-month)
-		feeTotal := vat.MeterFeeEur + vat.ParticipationFeeEur
+		feeMonths := vat.FeeMonths
+		if feeMonths < 1 {
+			feeMonths = 1
+		}
+		feeTotal := (vat.MeterFeeEur + vat.ParticipationFeeEur) * float64(feeMonths)
+		feeLabel := "Messstellengebühr / Teilnahmegebühr"
+		if feeMonths > 1 {
+			feeLabel = fmt.Sprintf("Messstellengebühr / Teilnahmegebühr (%d Monate)", feeMonths)
+		}
 		if feeTotal > 0 {
-			pdf.CellFormat(colDesc, rowH, "Messstellengebühr / Teilnahmegebühr", "1", 0, "L", false, 0, "")
+			pdf.CellFormat(colDesc, rowH, feeLabel, "1", 0, "L", false, 0, "")
 			pdf.CellFormat(colKwh, rowH, "", "1", 0, "R", false, 0, "")
 			pdf.CellFormat(colPrice, rowH, "", "1", 0, "R", false, 0, "")
 			pdf.CellFormat(colAmount, rowH, formatAmount(feeTotal), "1", 1, "R", false, 0, "")
@@ -914,6 +926,9 @@ func GeneratePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, va
 	// Messstellengebühr/Teilnahmegebühr line above which is only broken out for multi-month.
 	if vat.ZaehlpunktsGebuehrTotal > 0 {
 		label := fmt.Sprintf("Zählpunktsgebühr (%d × %s)", vat.ZaehlpunktsGebuehrCount, formatAmount(vat.ZaehlpunktsGebuehrEur))
+		if vat.FeeMonths > 1 {
+			label = fmt.Sprintf("Zählpunktsgebühr (%d × %s × %d Monate)", vat.ZaehlpunktsGebuehrCount, formatAmount(vat.ZaehlpunktsGebuehrEur), vat.FeeMonths)
+		}
 		pdf.CellFormat(colDesc, rowH, label, "1", 0, "L", false, 0, "")
 		pdf.CellFormat(colKwh, rowH, "", "1", 0, "R", false, 0, "")
 		pdf.CellFormat(colPrice, rowH, "", "1", 0, "R", false, 0, "")

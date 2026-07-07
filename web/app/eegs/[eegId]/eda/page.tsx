@@ -337,7 +337,7 @@ export default async function EDAPage({ params, searchParams }: Props) {
 
       {/* ── TAB: AKTIONEN ────────────────────────────────────── */}
       {activeTab === "aktionen" && (
-        <EDAActionForms eegId={eegId} edaConfigured={edaConfigured} netzbetreiberId={eeg?.eda_netzbetreiber_id ?? ""} edaDisModel={eeg?.eda_dis_model || "D"} />
+        <EDAActionForms eegId={eegId} edaConfigured={edaConfigured} netzbetreiberId={eeg?.eda_netzbetreiber_id ?? ""} />
       )}
 
       {/* ── TAB: FEHLER ──────────────────────────────────────── */}

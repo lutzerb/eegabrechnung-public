@@ -79,6 +79,9 @@ type EEG struct {
 	InvoiceFooterText   string    `json:"invoice_footer_text"`
 	// Controls the "Zahlungshinweis" paragraph on consumer invoices: sepa_lastschrift (default) | ueberweisung | none
 	InvoicePaymentNoticeMode string `json:"invoice_payment_notice_mode"`
+	// Controls how fixed fees (meter/participation fee, Zählpunktsgebühr) are charged:
+	// per_month (default: fee × started calendar months of the billing period) | per_invoice (once per billing run)
+	FeeBillingMode string `json:"fee_billing_mode"`
 	// Company logo path (stored as absolute filesystem path)
 	LogoPath string `json:"logo_path"`
 	// Credit note settings (for VAT-liable producers)
@@ -110,22 +113,31 @@ type EEG struct {
 	// Onboarding contract text shown to applicants (may include {iban} and {datum} placeholders)
 	OnboardingContractText string `json:"onboarding_contract_text"`
 	// Per-EEG EDA credentials (IMAP polling + SMTP send to edanet.at).
-	// Passwords are stored encrypted in the DB; the repository decrypts them.
-	// Returned as "***" via API if set; send empty or "***" to keep existing.
+	// Passwords are stored encrypted in the DB; the repository decrypts them for
+	// internal use (worker, mail send) but they are NEVER serialized to JSON
+	// (json:"-") — API responses and backups only carry the Has* flags below.
+	// Updates send the password via the handler's own request struct; empty
+	// means "keep existing".
 	EDAIMAPHost     string `json:"eda_imap_host"`
 	EDAIMAPUser     string `json:"eda_imap_user"`
-	EDAIMAPPassword string `json:"eda_imap_password,omitempty"`
+	EDAIMAPPassword string `json:"-"`
 
 	EDASmtpHost     string `json:"eda_smtp_host"`
 	EDASmtpUser     string `json:"eda_smtp_user"`
-	EDASmtpPassword string `json:"eda_smtp_password,omitempty"`
+	EDASmtpPassword string `json:"-"`
 	EDASmtpFrom     string `json:"eda_smtp_from"`
 
 	// Per-EEG invoice SMTP credentials (Rechnungsversand via resend / own SMTP).
 	SMTPHost     string `json:"smtp_host"`
 	SMTPUser     string `json:"smtp_user"`
-	SMTPPassword string `json:"smtp_password,omitempty"`
+	SMTPPassword string `json:"-"`
 	SMTPFrom     string `json:"smtp_from"`
+
+	// Read-only indicators whether an (encrypted) password is stored — lets the
+	// UI show "Passwort gesetzt" without ever transporting the secret itself.
+	HasEdaImapPassword bool `json:"has_eda_imap_password"`
+	HasEdaSmtpPassword bool `json:"has_eda_smtp_password"`
+	HasSmtpPassword    bool `json:"has_smtp_password"`
 
 	// SepaPreNotificationDays is the minimum days between invoice date and SEPA collection.
 	// SEPA Rulebook mandates ≥14 days. Configurable per EEG. Default: 14.
@@ -140,6 +152,9 @@ type EEG struct {
 	// Gap alert: notify when meter points have no readings for N days
 	GapAlertEnabled       bool `json:"gap_alert_enabled"`
 	GapAlertThresholdDays int  `json:"gap_alert_threshold_days"` // default 5
+	// EnergyImbalanceThresholdPromille is the tolerance (‰ of the larger total) for the
+	// community-wide generation-vs-consumption balance warning on billing runs. Default 1 (=0.1%).
+	EnergyImbalanceThresholdPromille float64 `json:"energy_imbalance_threshold_promille"`
 	// Portal: whether to show full energy data (total consumption/generation) in the member portal
 	PortalShowFullEnergy bool `json:"portal_show_full_energy"`
 	CreatedAt            time.Time `json:"created_at"`
@@ -279,12 +294,18 @@ type EDAWorkerStatus struct {
 }
 
 // BillingRun groups all invoices created in one billing operation.
+// BillingType ("all" | "consumption_only" | "production_only") and MemberIDs
+// (nil = all members) record the run's scope so the overlap check can allow
+// complementary runs over the same period (e.g. production_only after
+// consumption_only, or a second disjoint member subset).
 type BillingRun struct {
 	ID           uuid.UUID `json:"id"`
 	EegID        uuid.UUID `json:"eeg_id"`
 	PeriodStart  time.Time `json:"period_start"`
 	PeriodEnd    time.Time `json:"period_end"`
 	Status       string    `json:"status"`
+	BillingType  string    `json:"billing_type"`
+	MemberIDs    []string  `json:"member_ids,omitempty"`
 	InvoiceCount int       `json:"invoice_count"`
 	TotalAmount  float64   `json:"total_amount"`
 	CreatedAt    time.Time `json:"created_at"`
