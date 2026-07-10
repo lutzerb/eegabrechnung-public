@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getEEG, listEDAMessages, listEDAProcesses, listEDAErrors, getEDAWorkerStatus, type EDAMessage, type EDAProcess, type EDAError, type EDAWorkerStatus } from "@/lib/api";
+import { getEEG, listEDAMessages, listEDAProcesses, listEDAErrors, getEDAWorkerStatus, listMembers, type EDAMessage, type EDAProcess, type EDAError, type EDAWorkerStatus } from "@/lib/api";
 import Link from "next/link";
 import { EDAActionForms, PollNowButton } from "@/components/eda-action-forms";
 import { EDAProcessesTable } from "@/components/eda-processes-table";
@@ -71,10 +71,11 @@ export default async function EDAPage({ params, searchParams }: Props) {
   let processes: EDAProcess[] = [];
   let edaErrors: EDAError[] = [];
   let workerStatus: EDAWorkerStatus | null = null;
+  let members: Awaited<ReturnType<typeof listMembers>> = [];
   let error: string | null = null;
 
   try {
-    const [eegResult, messageResult, processResult, errorResult, workerStatusResult] = await Promise.all([
+    const [eegResult, messageResult, processResult, errorResult, workerStatusResult, membersResult] = await Promise.all([
       getEEG(session.accessToken!, eegId),
       listEDAMessages(session.accessToken!, eegId, {
         limit: messagePageSize,
@@ -86,6 +87,7 @@ export default async function EDAPage({ params, searchParams }: Props) {
       listEDAProcesses(session.accessToken!, eegId).catch(() => []),
       listEDAErrors(session.accessToken!, eegId).catch(() => []),
       getEDAWorkerStatus(session.accessToken!).catch(() => null),
+      listMembers(session.accessToken!, eegId).catch(() => []),
     ]);
     eeg = eegResult;
     messages = messageResult.messages;
@@ -93,6 +95,7 @@ export default async function EDAPage({ params, searchParams }: Props) {
     processes = processResult;
     edaErrors = errorResult;
     workerStatus = workerStatusResult;
+    members = membersResult;
   } catch (err: unknown) {
     error = (err as { message?: string }).message || "Fehler beim Laden.";
   }
@@ -337,7 +340,7 @@ export default async function EDAPage({ params, searchParams }: Props) {
 
       {/* ── TAB: AKTIONEN ────────────────────────────────────── */}
       {activeTab === "aktionen" && (
-        <EDAActionForms eegId={eegId} edaConfigured={edaConfigured} netzbetreiberId={eeg?.eda_netzbetreiber_id ?? ""} />
+        <EDAActionForms eegId={eegId} edaConfigured={edaConfigured} netzbetreiberId={eeg?.eda_netzbetreiber_id ?? ""} members={members} />
       )}
 
       {/* ── TAB: FEHLER ──────────────────────────────────────── */}

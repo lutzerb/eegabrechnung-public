@@ -31,15 +31,39 @@ export function PollNowButton({ eegId }: { eegId: string }) {
 
 type Tab = "anmeldung-online" | "teilnahmefaktor" | "zaehlerstandsgang" | "podlist" | "widerruf";
 
+export interface MemberMeterPointOption {
+  memberName: string;
+  meterId: string;
+  direction: string;
+  abgemeldetAm?: string;
+}
+
 interface Props {
   eegId: string;
   edaConfigured: boolean;
   netzbetreiberId: string;
+  members?: {
+    name: string;
+    name1?: string;
+    name2?: string;
+    meter_points: { meter_id: string; direction: string; abgemeldet_am?: string }[];
+  }[];
 }
 
-export function EDAActionForms({ eegId, edaConfigured, netzbetreiberId }: Props) {
+export function EDAActionForms({ eegId, edaConfigured, netzbetreiberId, members = [] }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("anmeldung-online");
   const router = useRouter();
+
+  const meterPointOptions: MemberMeterPointOption[] = members.flatMap((m) =>
+    m.meter_points
+      .filter((mp) => mp.meter_id)
+      .map((mp) => ({
+        memberName: m.name || m.name1 || m.name2 || "—",
+        meterId: mp.meter_id,
+        direction: mp.direction,
+        abgemeldetAm: mp.abgemeldet_am,
+      }))
+  );
 
   const tabs: { id: Tab; label: string }[] = [
     { id: "anmeldung-online", label: "Online-Anmeldung" },
@@ -93,7 +117,7 @@ export function EDAActionForms({ eegId, edaConfigured, netzbetreiberId }: Props)
           <TeilnahmefaktorForm eegId={eegId} disabled={!edaConfigured} netzbetreiberId={netzbetreiberId} onSuccess={() => router.refresh()} />
         )}
         {activeTab === "zaehlerstandsgang" && (
-          <ZaehlerstandsgangForm eegId={eegId} disabled={!edaConfigured} netzbetreiberId={netzbetreiberId} onSuccess={() => router.refresh()} />
+          <ZaehlerstandsgangForm eegId={eegId} disabled={!edaConfigured} netzbetreiberId={netzbetreiberId} meterPointOptions={meterPointOptions} onSuccess={() => router.refresh()} />
         )}
         {activeTab === "podlist" && (
           <PODListForm eegId={eegId} disabled={!edaConfigured} onSuccess={() => router.refresh()} />
@@ -379,93 +403,216 @@ function TeilnahmefaktorForm({
   );
 }
 
-// ── Zählpunktdaten nachfordern (EC_REQ_PT) ────────────────────────────────────
+// ── Zählpunktdaten nachfordern (CR_REQ_PT) ────────────────────────────────────
 
 function ZaehlerstandsgangForm({
   eegId,
   disabled,
   netzbetreiberId,
+  meterPointOptions,
   onSuccess,
 }: {
   eegId: string;
   disabled: boolean;
   netzbetreiberId: string;
+  meterPointOptions: MemberMeterPointOption[];
   onSuccess: () => void;
 }) {
-  const [zaehlpunkt, setZaehlpunkt] = useState("");
+  const [zaehlpunkteText, setZaehlpunkteText] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [pickerFilter, setPickerFilter] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState(false);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  function parseZaehlpunkte(): string[] {
+    return Array.from(
+      new Set(
+        zaehlpunkteText
+          .split(/[\n,;]+/)
+          .map((z) => z.trim())
+          .filter((z) => z.length > 0)
+      )
+    );
+  }
+
+  function toggleMeterPoint(meterId: string) {
+    const current = parseZaehlpunkte();
+    const next = current.includes(meterId)
+      ? current.filter((z) => z !== meterId)
+      : [...current, meterId];
+    setZaehlpunkteText(next.join("\n"));
+  }
+
+  const filteredOptions = meterPointOptions.filter((opt) => {
+    if (!pickerFilter.trim()) return true;
+    const needle = pickerFilter.trim().toLowerCase();
+    return (
+      opt.memberName.toLowerCase().includes(needle) ||
+      opt.meterId.toLowerCase().includes(needle)
+    );
+  });
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
-    setSuccess(false);
-    if (netzbetreiberId && zaehlpunkt.length >= 8 && zaehlpunkt.substring(0, 8) !== netzbetreiberId) {
-      setError(`Zählpunkt-Präfix „${zaehlpunkt.substring(0, 8)}" passt nicht zum konfigurierten Netzbetreiber „${netzbetreiberId}"`);
+    setSuccess(null);
+
+    const zaehlpunkte = parseZaehlpunkte();
+    if (zaehlpunkte.length === 0) {
+      setError("Mindestens ein Zählpunkt ist erforderlich");
+      setLoading(false);
+      return;
+    }
+    const badPrefix = zaehlpunkte.find(
+      (z) => netzbetreiberId && z.length >= 8 && z.substring(0, 8) !== netzbetreiberId
+    );
+    if (badPrefix) {
+      setError(`Zählpunkt-Präfix „${badPrefix.substring(0, 8)}" passt nicht zum konfigurierten Netzbetreiber „${netzbetreiberId}"`);
       setLoading(false);
       return;
     }
 
-    try {
-      const res = await fetch(`/api/eegs/${eegId}/eda/zaehlerstandsgang`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          zaehlpunkt,
-          date_from: dateFrom,
-          date_to: dateTo,
-        }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || `Fehler ${res.status}`);
+    const failures: string[] = [];
+    for (const zaehlpunkt of zaehlpunkte) {
+      try {
+        const res = await fetch(`/api/eegs/${eegId}/eda/zaehlerstandsgang`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            zaehlpunkt,
+            date_from: dateFrom,
+            date_to: dateTo,
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          failures.push(`${zaehlpunkt}: ${data.error || `Fehler ${res.status}`}`);
+        }
+      } catch (err: unknown) {
+        failures.push(`${zaehlpunkt}: ${(err as Error).message}`);
       }
-      setSuccess(true);
-      setZaehlpunkt("");
+    }
+
+    if (failures.length === 0) {
+      setSuccess(
+        zaehlpunkte.length === 1
+          ? "Anfrage wurde in die Warteschlange aufgenommen und wird übermittelt."
+          : `${zaehlpunkte.length} Anfragen wurden in die Warteschlange aufgenommen und werden übermittelt.`
+      );
+      setZaehlpunkteText("");
       setDateFrom("");
       setDateTo("");
       onSuccess();
-    } catch (err: unknown) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
+    } else {
+      setError(
+        `${failures.length} von ${zaehlpunkte.length} Anfragen fehlgeschlagen:\n${failures.join("\n")}`
+      );
+      if (failures.length < zaehlpunkte.length) onSuccess();
     }
+    setLoading(false);
   }
 
+  const zaehlpunkte = parseZaehlpunkte();
+  const selectedSet = new Set(zaehlpunkte);
+
   return (
-    <form onSubmit={submit} className="space-y-4 max-w-md">
+    <form onSubmit={submit} className="space-y-4 max-w-2xl">
       <p className="text-sm text-slate-600">
-        Zählpunktdaten (Messwerte) für einen Zeitraum beim Netzbetreiber nachfordern (EC_REQ_PT).
+        Zählpunktdaten (Messwerte) für einen Zeitraum beim Netzbetreiber nachfordern (CR_REQ_PT). Mehrere Zählpunkte können gleichzeitig abgefragt werden.
       </p>
 
       {success && (
         <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-green-800 text-sm">
-          Anfrage wurde in die Warteschlange aufgenommen und wird übermittelt.
+          {success}
         </div>
       )}
       {error && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm whitespace-pre-line">
           {error}
+        </div>
+      )}
+
+      {meterPointOptions.length > 0 && (
+        <div className="border border-slate-200 rounded-lg overflow-hidden">
+          <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 flex items-center gap-2">
+            <input
+              type="text"
+              value={pickerFilter}
+              onChange={(e) => setPickerFilter(e.target.value)}
+              placeholder="Mitglied oder Zählpunkt suchen…"
+              disabled={disabled}
+              className="flex-1 px-2.5 py-1.5 text-sm border border-slate-300 rounded-md text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-slate-50"
+            />
+            <button
+              type="button"
+              disabled={disabled || filteredOptions.length === 0}
+              onClick={() => {
+                const current = new Set(parseZaehlpunkte());
+                filteredOptions.forEach((opt) => current.add(opt.meterId));
+                setZaehlpunkteText(Array.from(current).join("\n"));
+              }}
+              className="text-xs font-medium text-teal-700 hover:underline whitespace-nowrap disabled:opacity-40 disabled:no-underline"
+            >
+              alle auswählen
+            </button>
+            <button
+              type="button"
+              disabled={disabled || zaehlpunkte.length === 0}
+              onClick={() => setZaehlpunkteText("")}
+              className="text-xs font-medium text-slate-500 hover:underline whitespace-nowrap disabled:opacity-40 disabled:no-underline"
+            >
+              Auswahl leeren
+            </button>
+          </div>
+          <div className="max-h-56 overflow-y-auto divide-y divide-slate-100">
+            {filteredOptions.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-slate-400">Keine Zählpunkte gefunden.</p>
+            ) : (
+              filteredOptions.map((opt) => (
+                <label
+                  key={opt.meterId}
+                  className="flex items-center gap-2.5 px-3 py-2 text-sm hover:bg-slate-50 cursor-pointer"
+                >
+                  <input
+                    type="checkbox"
+                    checked={selectedSet.has(opt.meterId)}
+                    onChange={() => toggleMeterPoint(opt.meterId)}
+                    disabled={disabled}
+                    className="rounded border-slate-300 text-teal-700 focus:ring-teal-500"
+                  />
+                  <span className="text-slate-700 truncate">{opt.memberName}</span>
+                  <span className="font-mono text-xs text-slate-500 truncate">{opt.meterId}</span>
+                  <span className="ml-auto text-xs text-slate-400 whitespace-nowrap">
+                    {opt.direction === "CONSUMPTION" ? "Bezug" : "Einspeisung"}
+                    {opt.abgemeldetAm && " · abgemeldet"}
+                  </span>
+                </label>
+              ))
+            )}
+          </div>
         </div>
       )}
 
       <div>
         <label className="block text-sm font-medium text-slate-700 mb-1.5">
-          Zählpunkt-ID *
+          Zählpunkt-ID(s) *
         </label>
-        <input
-          type="text"
-          value={zaehlpunkt}
-          onChange={(e) => setZaehlpunkt(e.target.value)}
-          placeholder="AT..."
+        <textarea
+          value={zaehlpunkteText}
+          onChange={(e) => setZaehlpunkteText(e.target.value)}
+          placeholder={"AT...\nAT...\nAT..."}
           required
+          rows={4}
           disabled={disabled || loading}
-          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-slate-50 disabled:text-slate-400"
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-slate-50 disabled:text-slate-400 font-mono text-sm"
         />
+        <p className="text-xs text-slate-500 mt-1">
+          Mehrere Zählpunkte: je eine ID pro Zeile (oder durch Komma getrennt).
+          {zaehlpunkte.length > 1 && ` ${zaehlpunkte.length} Zählpunkte erkannt.`}
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -499,10 +646,14 @@ function ZaehlerstandsgangForm({
 
       <button
         type="submit"
-        disabled={disabled || loading || !zaehlpunkt || !dateFrom || !dateTo}
+        disabled={disabled || loading || zaehlpunkte.length === 0 || !dateFrom || !dateTo}
         className="px-5 py-2.5 bg-teal-700 text-white text-sm font-medium rounded-lg hover:bg-teal-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
-        {loading ? "Wird gesendet…" : "Daten anfordern"}
+        {loading
+          ? "Wird gesendet…"
+          : zaehlpunkte.length > 1
+          ? `Daten für ${zaehlpunkte.length} Zählpunkte anfordern`
+          : "Daten anfordern"}
       </button>
     </form>
   );

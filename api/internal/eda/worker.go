@@ -747,12 +747,12 @@ func (w *Worker) processCRMsg(ctx context.Context, msg *types.Message) (uuid.UUI
 // OBIS mapping per schema 01.41 (ebutilities.at, December 2023):
 //
 //	Consumption meter (Bezugs-ZP, 1.9.0):
-//	  G.01 / G.01T → wh_total     Gesamtbezug × Teilnahmefaktor
+//	  G.01 / G.01T → wh_total     Gesamtbezug; G.01T (× Teilnahmefaktor) wins over G.01
 //	  G.02         → wh_community  Zuteilung (kann > Bezug sein — informational only)
 //	  G.03 / G.03R → wh_self      Eigendeckung = tatsächlich bezogener EEG-Anteil
 //
 //	Generation meter (Einspeise-ZP, 2.9.0):
-//	  G.01 / G.01T → wh_total     Gesamterzeugung × Teilnahmefaktor
+//	  G.01 / G.01T → wh_total     Gesamterzeugung; G.01T (× Teilnahmefaktor) wins over G.01
 //	  P.01T        → residual     Restnetzüberschuss (Resteinspeisung ins öffentliche Netz)
 //	                 → wh_community = wh_total − P.01T  (Einspeisung in EEG)
 //	                 → wh_self     = P.01T              (Resteinspeisung)
@@ -825,9 +825,10 @@ func detectSchemaDirection(record *edaxml.CRMsgRecord) string {
 func buildReadingsFromCRMsg(resolve func(ts time.Time) (uuid.UUID, bool), record *edaxml.CRMsgRecord) []domain.EnergyReading {
 	type accReading struct {
 		domain.EnergyReading
-		residual      float64 // P.01T scratch: Restnetzüberschuss (generation 01.41 only)
-		hasResidual   bool
-		hasOldGenComm bool // true when old-schema 2.9.0 P.01 set wh_community (generation meter)
+		residual       float64 // P.01T scratch: Restnetzüberschuss (generation 01.41 only)
+		hasResidual    bool
+		hasOldGenComm  bool // true when old-schema 2.9.0 P.01 set wh_community (generation meter)
+		hasScaledTotal bool // true when G.01T set wh_total — plain G.01 must not overwrite it
 	}
 
 	byTS := map[time.Time]*accReading{}
@@ -854,6 +855,11 @@ func buildReadingsFromCRMsg(resolve func(ts time.Time) (uuid.UUID, bool), record
 			// G.02: allocated EEG energy (consumption only, can exceed actual consumption).
 			// Same note: 2.9.0 prefix on consumption meter — do NOT gate on isConsumptionDir.
 			isAllocation := strings.Contains(mc, "G.02")
+			// G.01T: total × Teilnahmefaktor. On Mehrfachteilnahme meters the NB sends
+			// BOTH G.01 (100% of the plant) and G.01T (scaled to this community's share)
+			// in arbitrary document order — G.01T must win regardless of position.
+			isScaledTotal := strings.Contains(mc, "G.01T")
+			isPlainTotal := strings.Contains(mc, "G.01") && !isScaledTotal
 
 			for _, pos := range ed.Positions {
 				ts := pos.From
@@ -909,8 +915,17 @@ func buildReadingsFromCRMsg(resolve func(ts time.Time) (uuid.UUID, bool), record
 					// Old schema 1.9.0 P.01: EEG share consumed → wh_self.
 					r.WhSelf = pos.Value
 
+				case isScaledTotal:
+					// G.01T: Gesamtbezug/-erzeugung × Teilnahmefaktor → wh_total.
+					r.WhTotal = pos.Value
+					r.hasScaledTotal = true
+
+				case isPlainTotal && r.hasScaledTotal:
+					// G.01 (100% plant total) alongside G.01T: ignore — the scaled
+					// value is the community's share and must not be overwritten.
+
 				default:
-					// G.01 / G.01T (both directions): Gesamtbezug or Gesamterzeugung → wh_total.
+					// G.01 without G.01T, or codes without suffix: total → wh_total.
 					r.WhTotal = pos.Value
 				}
 			}
