@@ -66,9 +66,12 @@ func makeInfoDaten(fastnr string) infoDaten {
 	}
 }
 
-// normFastNr strips non-digits and ensures exactly 9 digits.
-// Returns empty string if the result is invalid (< 9 digits after stripping).
-func normFastNr(s string) string {
+// normFastNr strips non-digits (Sonderzeichen wie "/", "-", Leerzeichen) from the
+// Steuernummer and requires exactly 9 digits, matching FASTNR/IDENTIFIKATIONSBEGRIFF
+// in the BMF XSDs (xs:pattern \d{9}, minInclusive 010000010). Returns an error —
+// instead of silently padding with zeros — when no valid Steuernummer is configured,
+// since a fabricated FASTNR would misidentify the Abgabepflichtige on submission.
+func normFastNr(s string) (string, error) {
 	var b strings.Builder
 	for _, r := range s {
 		if r >= '0' && r <= '9' {
@@ -76,13 +79,13 @@ func normFastNr(s string) string {
 		}
 	}
 	d := b.String()
-	if len(d) < 9 {
-		// Pad with leading zeros (best effort — user should configure valid Steuernummer)
-		d = fmt.Sprintf("%09s", d)
-	} else if len(d) > 9 {
-		d = d[:9]
+	if d == "" {
+		return "", fmt.Errorf("Steuernummer ist nicht konfiguriert (EA-Einstellungen)")
 	}
-	return d
+	if len(d) != 9 {
+		return "", fmt.Errorf("Steuernummer %q hat ungültiges Format (erwarte 9 Ziffern ohne Sonderzeichen)", s)
+	}
+	return d, nil
 }
 
 // marshalFON marshals v to indented XML with the ISO-8859-1 declaration required by BMF.
@@ -107,8 +110,12 @@ func marshalFON(v any) ([]byte, error) {
 //       ALLGEMEINE_DATEN (ANBRINGEN, ZRVON, ZRBIS, FASTNR)
 //       LIEFERUNGEN_LEISTUNGEN_EIGENVERBRAUCH
 //         KZ000 (required, kznull)
-//         VERSTEUERT? (KZ022, KZ029, KZ044, KZ056, KZ057, ...)
-//       VORSTEUER? (KZ060, KZ090, ...)
+//         VERSTEUERT? (KZ022, KZ029, KZ044, KZ056, KZ032, ...)
+//       VORSTEUER? (KZ060, ...)
+//
+// KZ095 (Zahllast/Gutschrift) is NOT transmitted — neither u30.xsd nor
+// jahreserklaerungen.xsd defines a KZ095 element. FinanzOnline computes it itself
+// from all other Kennzahlen; we only show it in the frontend as a preview.
 
 type u30Root struct {
 	XMLName    xml.Name        `xml:"ERKLAERUNGS_UEBERMITTLUNG"`
@@ -124,12 +131,15 @@ type u30AllgDaten struct {
 }
 
 // u30Versteuert — all KZ in schema sequence order (xs:sequence is strict).
+// Full VERSTEUERT sequence per u30.xsd: KZ022, KZ029, KZ006, KZ037, KZ052, KZ007,
+// KZ056, KZ057, KZ048, KZ044, KZ032 — we only ever populate the subset below, but
+// their relative order must still match (KZ032 sorts after KZ044, not next to KZ056).
 type u30Versteuert struct {
 	KZ022 *kzField `xml:"KZ022,omitempty"`
 	KZ029 *kzField `xml:"KZ029,omitempty"`
 	KZ056 *kzField `xml:"KZ056,omitempty"`
-	KZ057 *kzField `xml:"KZ057,omitempty"`
 	KZ044 *kzField `xml:"KZ044,omitempty"`
+	KZ032 *kzField `xml:"KZ032,omitempty"` // Steuerschuld § 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV (Reverse Charge)
 }
 
 // u30Lieferungen — KZ000 is required (kznull allows 0), VERSTEUERT optional.
@@ -139,13 +149,16 @@ type u30Lieferungen struct {
 }
 
 // u30Vorsteuer — sequence per BMF XSD VORSTEUER element.
-// KZ060 (pos 1), KZ083 (pos 9), KZ065 (pos 10), KZ066 (pos 11), KZ090 (pos 19).
+// KZ060 (pos 1), KZ083 (pos 9), KZ065 (pos 10), KZ066 (pos 11).
+// KZ090 ("sonstige Berichtigungen") exists in the schema but we have no data source
+// for it (no manual-correction feature) — never populated, so omitted from the struct.
+// The final Zahllast/Gutschrift (KZ095) isn't in the schema at all; FinanzOnline
+// computes it itself from the other Kennzahlen.
 type u30Vorsteuer struct {
 	KZ060 *kzField `xml:"KZ060,omitempty"` // Gesamtbetrag abziehbare Vorsteuern
 	KZ083 *kzField `xml:"KZ083,omitempty"` // Vorsteuern aus ig. Dreiecksgeschäften
 	KZ065 *kzField `xml:"KZ065,omitempty"` // Vorsteuern aus ig. Erwerben
 	KZ066 *kzField `xml:"KZ066,omitempty"` // Vorsteuern für Leistungen gem. § 19 Abs. 1
-	KZ090 *kzField `xml:"KZ090,omitempty"` // Vorauszahlung (pos) / Überschuss (neg)
 }
 
 type u30Erklaerung struct {
@@ -159,9 +172,12 @@ type u30Erklaerung struct {
 // EAUVAFinanzOnlineXML generates a FinanzOnline-compliant U30 (UVA) XML file.
 // The schema has no namespace; encoding is ISO-8859-1.
 func EAUVAFinanzOnlineXML(u *domain.EAUVAPeriode, settings *domain.EASettings) ([]byte, error) {
-	fastnr := ""
-	if settings != nil {
-		fastnr = normFastNr(settings.Steuernummer)
+	if settings == nil {
+		return nil, fmt.Errorf("Steuernummer ist nicht konfiguriert (EA-Einstellungen)")
+	}
+	fastnr, err := normFastNr(settings.Steuernummer)
+	if err != nil {
+		return nil, err
 	}
 
 	// Period range as YYYY-MM
@@ -170,26 +186,25 @@ func EAUVAFinanzOnlineXML(u *domain.EAUVAPeriode, settings *domain.EASettings) (
 
 	// Build VERSTEUERT section (only if there are taxable supplies or RC)
 	var versteuert *u30Versteuert
-	if u.KZ022 != 0 || u.KZ029 != 0 || u.KZ056 != 0 || u.KZ057 != 0 || u.KZ044 != 0 {
+	if u.KZ022 != 0 || u.KZ029 != 0 || u.KZ056 != 0 || u.KZ032 != 0 || u.KZ044 != 0 {
 		versteuert = &u30Versteuert{
 			KZ022: kzPtr(roundCent(u.KZ022)),
 			KZ029: kzPtr(roundCent(u.KZ029)),
 			KZ056: kzPtr(roundCent(u.KZ056)),
-			KZ057: kzPtr(roundCent(u.KZ057)),
 			KZ044: kzPtr(roundCent(u.KZ044)),
+			KZ032: kzPtr(roundCent(u.KZ032)),
 		}
 	}
 
-	// Build VORSTEUER section
+	// Build VORSTEUER section. Zahllast/Gutschrift (KZ095) is not part of the
+	// submission — FinanzOnline computes it itself — so it's excluded here.
 	var vorsteuer *u30Vorsteuer
-	zahllast := roundCent(u.Zahllast)
-	if u.KZ060 != 0 || u.KZ083 != 0 || u.KZ065 != 0 || u.KZ066 != 0 || zahllast != 0 {
+	if u.KZ060 != 0 || u.KZ083 != 0 || u.KZ065 != 0 || u.KZ066 != 0 {
 		vorsteuer = &u30Vorsteuer{
 			KZ060: kzPtr(roundCent(u.KZ060)),
 			KZ083: kzPtr(roundCent(u.KZ083)),
 			KZ065: kzPtr(roundCent(u.KZ065)),
 			KZ066: kzPtr(roundCent(u.KZ066)),
-			KZ090: kzPtr(zahllast),
 		}
 	}
 
@@ -225,7 +240,7 @@ func EAUVAFinanzOnlineXML(u *domain.EAUVAPeriode, settings *domain.EASettings) (
 //         SATZNR
 //         ALLGEMEINE_DATEN (ANBRINGEN="U1", ZR=year, FASTNR)
 //         LIEFERUNGEN_LEISTUNGEN_EIGENVERBRAUCH (KZ000, VERSTEUERT?)
-//         VORSTEUER? (KZ060, KZ090)
+//         VORSTEUER? (KZ060, ...) — KZ095 Zahllast/Gutschrift not transmitted, see U30 note above
 
 type jahrRoot struct {
 	XMLName          xml.Name          `xml:"ERKLAERUNGS_UEBERMITTLUNG"`
@@ -272,31 +287,34 @@ type jahrErklaerung struct {
 // It uses the live annual Kennzahlen computed from all buchungen for the year
 // (passed in as a computed EAUVAPeriode, not the stored UVA period values).
 func EAU1FinanzOnlineXML(annual *domain.EAUVAPeriode, settings *domain.EASettings, jahr int) ([]byte, error) {
-	fastnr := ""
-	if settings != nil {
-		fastnr = normFastNr(settings.Steuernummer)
+	if settings == nil {
+		return nil, fmt.Errorf("Steuernummer ist nicht konfiguriert (EA-Einstellungen)")
+	}
+	fastnr, err := normFastNr(settings.Steuernummer)
+	if err != nil {
+		return nil, err
 	}
 
 	var versteuert *u30Versteuert
-	if annual.KZ022 != 0 || annual.KZ029 != 0 || annual.KZ056 != 0 || annual.KZ057 != 0 || annual.KZ044 != 0 {
+	if annual.KZ022 != 0 || annual.KZ029 != 0 || annual.KZ056 != 0 || annual.KZ032 != 0 || annual.KZ044 != 0 {
 		versteuert = &u30Versteuert{
 			KZ022: kzPtr(roundCent(annual.KZ022)),
 			KZ029: kzPtr(roundCent(annual.KZ029)),
 			KZ056: kzPtr(roundCent(annual.KZ056)),
-			KZ057: kzPtr(roundCent(annual.KZ057)),
 			KZ044: kzPtr(roundCent(annual.KZ044)),
+			KZ032: kzPtr(roundCent(annual.KZ032)),
 		}
 	}
 
-	zahllast := roundCent(annual.Zahllast)
+	// Zahllast/Gutschrift (KZ095) is not part of the submission — FinanzOnline
+	// computes it itself — so it's excluded here.
 	var vorsteuer *u30Vorsteuer
-	if annual.KZ060 != 0 || annual.KZ083 != 0 || annual.KZ065 != 0 || annual.KZ066 != 0 || zahllast != 0 {
+	if annual.KZ060 != 0 || annual.KZ083 != 0 || annual.KZ065 != 0 || annual.KZ066 != 0 {
 		vorsteuer = &u30Vorsteuer{
 			KZ060: kzPtr(roundCent(annual.KZ060)),
 			KZ083: kzPtr(roundCent(annual.KZ083)),
 			KZ065: kzPtr(roundCent(annual.KZ065)),
 			KZ066: kzPtr(roundCent(annual.KZ066)),
-			KZ090: kzPtr(zahllast),
 		}
 	}
 
@@ -396,9 +414,12 @@ type k1Einkuenfte struct {
 // EAK1Summary generates a FinanzOnline-compliant K1 (corporate tax) XML.
 // KZ assignments follow the official BMF K1 2025 form exactly.
 func EAK1Summary(ja *domain.EAJahresabschluss, settings *domain.EASettings) ([]byte, error) {
-	fastnr := ""
-	if settings != nil {
-		fastnr = normFastNr(settings.Steuernummer)
+	if settings == nil {
+		return nil, fmt.Errorf("Steuernummer ist nicht konfiguriert (EA-Einstellungen)")
+	}
+	fastnr, err := normFastNr(settings.Steuernummer)
+	if err != nil {
+		return nil, err
 	}
 
 	// Aggregate Einnahmen by k1_kz.
@@ -578,9 +599,12 @@ type k2JahrRoot struct {
 // EAK2Summary generates a FinanzOnline-compliant K2 XML for Verein EEGs (§5 KStG).
 // KZ assignments reuse the k1_kz column — K2 uses identical KZ9040–KZ9230 numbering.
 func EAK2Summary(ja *domain.EAJahresabschluss, settings *domain.EASettings) ([]byte, error) {
-	fastnr := ""
-	if settings != nil {
-		fastnr = normFastNr(settings.Steuernummer)
+	if settings == nil {
+		return nil, fmt.Errorf("Steuernummer ist nicht konfiguriert (EA-Einstellungen)")
+	}
+	fastnr, err := normFastNr(settings.Steuernummer)
+	if err != nil {
+		return nil, err
 	}
 
 	// Aggregate by k1_kz (K2 reuses the identical KZ numbers).

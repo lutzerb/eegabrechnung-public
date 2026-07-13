@@ -76,6 +76,34 @@ func (h *EAHandler) ensureSeeded(w http.ResponseWriter, r *http.Request, eegID u
 	return true
 }
 
+// filenameSafe replaces characters that are awkward in a download filename
+// (spaces, slashes, quotes) with underscores, for embedding e.g. an EEG name.
+func filenameSafe(s string) string {
+	replacer := strings.NewReplacer(" ", "_", "/", "-", "\\", "-", "\"", "", "\n", "", "\r", "")
+	return replacer.Replace(strings.TrimSpace(s))
+}
+
+// finanzOnlineFilenameMaxLen is FinanzOnline's upload limit for the filename
+// (including extension) of a manually attached document like the UVA export.
+const finanzOnlineFilenameMaxLen = 50
+
+// uvaExportFilename builds the UVA XML download filename, truncating the EEG
+// name (never the von/bis dates or extension) to stay within FinanzOnline's
+// 50-character filename limit.
+func uvaExportFilename(eegName string, von, bis time.Time) string {
+	prefix := "UVA_"
+	suffix := fmt.Sprintf("_%s_%s.xml", von.Format("2006-01"), bis.Format("2006-01"))
+	budget := finanzOnlineFilenameMaxLen - len(prefix) - len(suffix)
+	name := []rune(filenameSafe(eegName))
+	if budget < 0 {
+		budget = 0
+	}
+	if len(name) > budget {
+		name = name[:budget]
+	}
+	return prefix + string(name) + suffix
+}
+
 func parseOptDate(s string) (*time.Time, error) {
 	if s == "" {
 		return nil, nil
@@ -986,11 +1014,16 @@ func (h *EAHandler) ExportUVAXML(w http.ResponseWriter, r *http.Request) {
 	if format == "xml" || format == "finanz-online-xml" {
 		xmlData, err := EAUVAFinanzOnlineXML(live, settings)
 		if err != nil {
-			jsonError(w, "xml: "+err.Error(), http.StatusInternalServerError)
+			jsonError(w, "xml: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		eegName := "EEG"
+		if eeg, err := h.eegRepo.GetByIDInternal(r.Context(), eegID); err == nil && eeg != nil {
+			eegName = eeg.Name
+		}
+		filename := uvaExportFilename(eegName, uva.DatumVon, uva.DatumBis)
 		w.Header().Set("Content-Type", "application/xml")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="uva_%d_%d.xml"`, uva.Jahr, uva.PeriodeNr))
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 		w.Write(xmlData)
 		return
 	}
@@ -1355,7 +1388,7 @@ func (h *EAHandler) GetU1(w http.ResponseWriter, r *http.Request) {
 	if format == "xml" {
 		xmlData, err := EAU1FinanzOnlineXML(annual, settings, jahr)
 		if err != nil {
-			jsonError(w, "xml: "+err.Error(), http.StatusInternalServerError)
+			jsonError(w, "xml: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/xml")
@@ -1371,7 +1404,7 @@ func (h *EAHandler) GetU1(w http.ResponseWriter, r *http.Request) {
 		"kz_029":   annual.KZ029,
 		"kz_044":   annual.KZ044,
 		"kz_056":   annual.KZ056,
-		"kz_057":   annual.KZ057,
+		"kz_032":   annual.KZ032,
 		"kz_060":   annual.KZ060,
 		"kz_065":   annual.KZ065,
 		"kz_066":   annual.KZ066,
@@ -1397,7 +1430,7 @@ func (h *EAHandler) GetK1(w http.ResponseWriter, r *http.Request) {
 	if format == "xml" {
 		xmlData, err := EAK1Summary(ja, settings)
 		if err != nil {
-			jsonError(w, "xml: "+err.Error(), http.StatusInternalServerError)
+			jsonError(w, "xml: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/xml")
@@ -1425,7 +1458,7 @@ func (h *EAHandler) GetK2(w http.ResponseWriter, r *http.Request) {
 	if format == "xml" {
 		xmlData, err := EAK2Summary(ja, settings)
 		if err != nil {
-			jsonError(w, "xml: "+err.Error(), http.StatusInternalServerError)
+			jsonError(w, "xml: "+err.Error(), http.StatusBadRequest)
 			return
 		}
 		w.Header().Set("Content-Type", "application/xml")

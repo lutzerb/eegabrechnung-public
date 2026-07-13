@@ -2194,7 +2194,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Sends an EC_REQ_PT request for historical Zählpunktdaten (meter readings) over a given date range. Queues an outbound XML job for the EDA worker.",
+                "description": "Sends an CR_REQ_PT request for historical Zählpunktdaten (meter readings) over a given date range. Queues an outbound XML job for the EDA worker.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2204,7 +2204,7 @@ const docTemplate = `{
                 "tags": [
                     "EDA"
                 ],
-                "summary": "Request historical meter data (EC_REQ_PT)",
+                "summary": "Request historical meter data (CR_REQ_PT)",
                 "parameters": [
                     {
                         "type": "string",
@@ -6346,7 +6346,7 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "process_type": {
-                    "description": "EC_REQ_ONL, EC_REQ_OFF, CM_REV_SP, EC_PRTFACT_CHG, EC_REQ_PT",
+                    "description": "EC_REQ_ONL, EC_REQ_OFF, CM_REV_SP, EC_PRTFACT_CHG, CR_REQ_PT",
                     "type": "string"
                 },
                 "share_type": {

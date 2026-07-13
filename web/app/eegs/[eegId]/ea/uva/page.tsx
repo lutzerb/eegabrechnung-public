@@ -10,7 +10,7 @@ interface UVAKennzahlen {
   kz_029: number; // Umsätze zu 10 % (Bemessungsgrundlage)
   kz_044: number; // Umsatzsteuer 10 %
   kz_056: number; // Umsatzsteuer 20 %
-  kz_057: number; // Steuerschuld gem. § 19 Abs. 1 (Reverse Charge)
+  kz_032: number; // Steuerschuld gem. § 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV (Reverse Charge)
   kz_060: number; // Gesamtbetrag abziehbare Vorsteuern
   kz_065: number; // Vorsteuern aus ig. Erwerben
   kz_066: number; // Vorsteuern für Leistungen gem. § 19 Abs. 1
@@ -261,6 +261,7 @@ export default function UVAPage() {
               </div>
 
               {kennzahlen && (
+                <>
                 <table className="w-full text-sm">
                   <tbody className="divide-y divide-slate-100">
                     <tr><td className="py-2 text-slate-600">KZ 000 – Gesamtbetrag der Lieferungen, sonstigen Leistungen und Eigenverbrauch</td><td className="py-2 text-right font-medium">{fmt(kennzahlen.kz_000)}</td></tr>
@@ -268,17 +269,21 @@ export default function UVAPage() {
                     <tr><td className="py-2 text-slate-600">KZ 056 – Umsatzsteuer 20 %</td><td className="py-2 text-right font-medium">{fmt(kennzahlen.kz_056)}</td></tr>
                     {kennzahlen.kz_029 !== 0 && <tr><td className="py-2 text-slate-600">KZ 029 – Lieferungen und sonstige Leistungen zu 10 %</td><td className="py-2 text-right font-medium">{fmt(kennzahlen.kz_029)}</td></tr>}
                     {kennzahlen.kz_044 !== 0 && <tr><td className="py-2 text-slate-600">KZ 044 – Umsatzsteuer 10 %</td><td className="py-2 text-right font-medium">{fmt(kennzahlen.kz_044)}</td></tr>}
-                    {kennzahlen.kz_057 !== 0 && <tr><td className="py-2 text-slate-600">KZ 057 – Steuerschuld gem. § 19 Abs. 1 (Reverse Charge)</td><td className="py-2 text-right font-medium">{fmt(kennzahlen.kz_057)}</td></tr>}
+                    {kennzahlen.kz_032 !== 0 && <tr><td className="py-2 text-slate-600">KZ 032 – Steuerschuld gem. § 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV (Reverse Charge)</td><td className="py-2 text-right font-medium">{fmt(kennzahlen.kz_032)}</td></tr>}
                     <tr><td className="py-2 text-slate-600">KZ 060 – Gesamtbetrag der abziehbaren Vorsteuern</td><td className="py-2 text-right font-medium">{fmt(kennzahlen.kz_060)}</td></tr>
                     {kennzahlen.kz_065 !== 0 && <tr><td className="py-2 text-slate-600">KZ 065 – Vorsteuern aus ig. Erwerben</td><td className="py-2 text-right font-medium">{fmt(kennzahlen.kz_065)}</td></tr>}
                     {kennzahlen.kz_066 !== 0 && <tr><td className="py-2 text-slate-600">KZ 066 – Vorsteuern für Leistungen gem. § 19 Abs. 1</td><td className="py-2 text-right font-medium">{fmt(kennzahlen.kz_066)}</td></tr>}
                     {kennzahlen.kz_083 !== 0 && <tr><td className="py-2 text-slate-600">KZ 083 – Vorsteuern aus ig. Dreiecksgeschäften</td><td className="py-2 text-right font-medium">{fmt(kennzahlen.kz_083)}</td></tr>}
                     <tr className="border-t-2 border-slate-300">
-                      <td className="py-2.5 font-bold text-slate-900">KZ 090 – Vorauszahlung / Überschuss</td>
+                      <td className="py-2.5 font-bold text-slate-900">KZ 095 – Zahllast / Gutschrift</td>
                       <td className={`py-2.5 text-right font-bold text-base ${kennzahlen.zahllast > 0 ? "text-red-700" : "text-green-700"}`}>{fmt(kennzahlen.zahllast)}</td>
                     </tr>
                   </tbody>
                 </table>
+                <p className="mt-2 text-xs text-slate-400">
+                  KZ 095 wird hier nur zur Vorschau angezeigt — FinanzOnline berechnet die Zahllast/Gutschrift beim Einreichen selbst aus den übermittelten Kennzahlen.
+                </p>
+                </>
               )}
 
               {sel?.eingereicht_am && (
@@ -288,7 +293,7 @@ export default function UVAPage() {
               )}
 
               <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-800">
-                Für Kleinunternehmer (§6 Abs. 1 Z 27 UStG) entfällt der Vorsteuerabzug (KZ 060, KZ 066 = 0) — die Steuerschuld aus Reverse Charge (KZ 057) ist trotzdem zu melden und abzuführen.
+                Für Kleinunternehmer (§6 Abs. 1 Z 27 UStG) entfällt der Vorsteuerabzug (KZ 060, KZ 066 = 0) — die Steuerschuld aus Reverse Charge (KZ 032) ist trotzdem zu melden und abzuführen.
               </div>
             </div>
           )}

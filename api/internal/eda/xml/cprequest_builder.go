@@ -176,7 +176,7 @@ type cpProcessDirXML struct {
 	ValidFrom           string   `xml:"cp:ValidFrom,omitempty"`
 }
 
-// ── CPRequest 01.12 (ANFORDERUNG_PT / EC_REQ_PT) ─────────────────────────────
+// ── CPRequest 01.12 (ANFORDERUNG_PT / CR_REQ_PT) ─────────────────────────────
 //
 // Process CR_REQ_PT (04.10) uses schema CPRequest 01.12.
 // Key differences from 01.40:
@@ -232,7 +232,7 @@ type AnforderungPTParams struct {
 }
 
 // BuildAnforderungPT builds a CPRequest 01.12 message with MessageCode=ANFORDERUNG_PT
-// for requesting historical meter point data (EC_REQ_PT / CR_REQ_PT 04.10).
+// for requesting historical meter point data (CR_REQ_PT 04.10).
 func BuildAnforderungPT(p AnforderungPTParams) (string, error) {
 	if p.From == "" {
 		return "", fmt.Errorf("From (Marktpartner-ID) is required")

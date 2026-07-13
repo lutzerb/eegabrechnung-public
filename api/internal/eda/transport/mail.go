@@ -73,7 +73,7 @@ const smtpTimeout = 30 * time.Second
 var edanetProzessID = map[string]string{
 	"EC_PRTFACT_CHG": "EC_PRTFACT_CHANGE_01.00",
 	"EC_REQ_ONL":     "EC_REQ_ONL_02.30",
-	"EC_REQ_PT":      "CR_REQ_PT_04.10",
+	"CR_REQ_PT":      "CR_REQ_PT_04.10",
 	"EC_PODLIST":     "EC_PODLIST_01.00",
 	"CM_REV_SP":      "CM_REV_SP_01.00",
 }

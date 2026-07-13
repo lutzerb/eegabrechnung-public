@@ -107,7 +107,7 @@ const PROCESS_OPTIONS = [
   { value: "CM_REV_CUS", label: "Widerruf durch Kunde" },
   { value: "CM_REV_IMP", label: "Widerruf durch NB (Unmöglichkeit)" },
   { value: "EC_PRTFACT_CHG", label: "Teilnahmefaktor" },
-  { value: "EC_REQ_PT", label: "Zählerstandsgang" },
+  { value: "CR_REQ_PT", label: "Zählerstandsgang" },
   { value: "ZUSTIMMUNG_ECON", label: "Zustimmung" },
   { value: "ABLEHNUNG_ECON", label: "Ablehnung" },
   { value: "ANTWORT_ECON", label: "Zwischenbestätigung" },

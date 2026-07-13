@@ -6,7 +6,7 @@ export const EDA_PROCESS_TYPE_LABELS: Record<string, string> = {
   EC_REQ_ONL:     "Anmeldung",
   EC_PRTFACT_CHG: "Teilnahmefaktor",
   CM_REV_SP:      "Widerruf",
-  EC_REQ_PT:      "Zählerstandsgang",
+  CR_REQ_PT:      "Zählerstandsgang",
   EC_PODLIST:     "Zählpunktliste",
 };
 

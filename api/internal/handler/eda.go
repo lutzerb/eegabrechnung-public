@@ -454,8 +454,8 @@ type zaehlerstandsgangRequest struct {
 
 // ZaehlerstandsgangAnfordern godoc
 //
-//	@Summary		Request historical meter data (EC_REQ_PT)
-//	@Description	Sends an EC_REQ_PT request for historical Zählpunktdaten (meter readings) over a given date range. Queues an outbound XML job for the EDA worker.
+//	@Summary		Request historical meter data (CR_REQ_PT)
+//	@Description	Sends an CR_REQ_PT request for historical Zählpunktdaten (meter readings) over a given date range. Queues an outbound XML job for the EDA worker.
 //	@Tags			EDA
 //	@Accept			json
 //	@Produce		json
@@ -567,7 +567,7 @@ func (h *EDAHandler) ZaehlerstandsgangAnfordern(w http.ResponseWriter, r *http.R
 	proc := &domain.EDAProcess{
 		EegID:          eegID,
 		MeterPointID:   mpID,
-		ProcessType:    "EC_REQ_PT",
+		ProcessType:    "CR_REQ_PT",
 		Status:         "pending",
 		ConversationID: convID,
 		Zaehlpunkt:     req.Zaehlpunkt,
@@ -577,7 +577,7 @@ func (h *EDAHandler) ZaehlerstandsgangAnfordern(w http.ResponseWriter, r *http.R
 		jsonError(w, "failed to create EDA process record", http.StatusInternalServerError)
 		return
 	}
-	if err := h.jobRepo.EnqueueEDA(r.Context(), "EC_REQ_PT", eeg.EdaMarktpartnerID, netzbetreiberTo,
+	if err := h.jobRepo.EnqueueEDA(r.Context(), "CR_REQ_PT", eeg.EdaMarktpartnerID, netzbetreiberTo,
 		eeg.GemeinschaftID, convID, xmlBody, proc.ID, eegID); err != nil {
 		jsonError(w, "failed to queue EDA job", http.StatusInternalServerError)
 		return

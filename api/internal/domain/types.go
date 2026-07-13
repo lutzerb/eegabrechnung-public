@@ -58,7 +58,7 @@ type EEG struct {
 	ID                  uuid.UUID `json:"id"`
 	OrganizationID      uuid.UUID `json:"organization_id"`
 	GemeinschaftID      string    `json:"gemeinschaft_id"`
-	GemeinschaftTyp     string    `json:"gemeinschaft_typ"` // EEG or GEA
+	GemeinschaftTyp     string    `json:"gemeinschaft_typ"` // EEG, GEA or BEG
 	Netzbetreiber       string    `json:"netzbetreiber"`
 	Name                string    `json:"name"`
 	EnergyPrice         float64   `json:"energy_price"`          // consumer work price ct/kWh (net)
@@ -430,7 +430,7 @@ type EDAProcess struct {
 	ID                  uuid.UUID  `json:"id"`
 	EegID               uuid.UUID  `json:"eeg_id"`
 	MeterPointID        *uuid.UUID `json:"meter_point_id,omitempty"`
-	ProcessType         string     `json:"process_type"`    // EC_REQ_ONL, EC_REQ_OFF, CM_REV_SP, EC_PRTFACT_CHG, EC_REQ_PT
+	ProcessType         string     `json:"process_type"`    // EC_REQ_ONL, EC_REQ_OFF, CM_REV_SP, EC_PRTFACT_CHG, CR_REQ_PT
 	Status              string     `json:"status"`          // pending, sent, first_confirmed, confirmed, completed, rejected, error
 	ConversationID      string     `json:"conversation_id"` // links outbound to inbound confirmations
 	Zaehlpunkt          string     `json:"zaehlpunkt"`

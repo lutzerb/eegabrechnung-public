@@ -12,7 +12,7 @@ interface U1Response {
   kz_029: number;
   kz_044: number;
   kz_056: number;
-  kz_057: number;
+  kz_032: number;
   kz_060: number;
   kz_065: number;
   kz_066: number;
@@ -193,18 +193,21 @@ export default function ErklaerунgenPage() {
                     <tr><td className="py-2 font-mono text-xs text-slate-400">KZ 056</td><td className="py-2 text-slate-600">Umsatzsteuer 20 %</td><td className="py-2 text-right tabular-nums">{fmt(u1.kz_056)}</td></tr>
                     {u1.kz_029 !== 0 && <tr><td className="py-2 font-mono text-xs text-slate-400">KZ 029</td><td className="py-2 text-slate-600">Lieferungen und sonstige Leistungen zu 10 %</td><td className="py-2 text-right tabular-nums">{fmt(u1.kz_029)}</td></tr>}
                     {u1.kz_044 !== 0 && <tr><td className="py-2 font-mono text-xs text-slate-400">KZ 044</td><td className="py-2 text-slate-600">Umsatzsteuer 10 %</td><td className="py-2 text-right tabular-nums">{fmt(u1.kz_044)}</td></tr>}
-                    {u1.kz_057 !== 0 && <tr><td className="py-2 font-mono text-xs text-slate-400">KZ 057</td><td className="py-2 text-slate-600">Steuerschuld gem. § 19 Abs. 1 (Reverse Charge)</td><td className="py-2 text-right tabular-nums">{fmt(u1.kz_057)}</td></tr>}
+                    {u1.kz_032 !== 0 && <tr><td className="py-2 font-mono text-xs text-slate-400">KZ 032</td><td className="py-2 text-slate-600">Steuerschuld gem. § 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV (Reverse Charge)</td><td className="py-2 text-right tabular-nums">{fmt(u1.kz_032)}</td></tr>}
                     {u1.kz_060 !== 0 && <tr><td className="py-2 font-mono text-xs text-slate-400">KZ 060</td><td className="py-2 text-slate-600">Gesamtbetrag der abziehbaren Vorsteuern</td><td className="py-2 text-right tabular-nums">{fmt(u1.kz_060)}</td></tr>}
                     {u1.kz_065 !== 0 && <tr><td className="py-2 font-mono text-xs text-slate-400">KZ 065</td><td className="py-2 text-slate-600">Vorsteuern aus ig. Erwerben</td><td className="py-2 text-right tabular-nums">{fmt(u1.kz_065)}</td></tr>}
                     {u1.kz_066 !== 0 && <tr><td className="py-2 font-mono text-xs text-slate-400">KZ 066</td><td className="py-2 text-slate-600">Vorsteuern für Leistungen gem. § 19 Abs. 1</td><td className="py-2 text-right tabular-nums">{fmt(u1.kz_066)}</td></tr>}
                     {u1.kz_083 !== 0 && <tr><td className="py-2 font-mono text-xs text-slate-400">KZ 083</td><td className="py-2 text-slate-600">Vorsteuern aus ig. Dreiecksgeschäften</td><td className="py-2 text-right tabular-nums">{fmt(u1.kz_083)}</td></tr>}
                     <tr className="border-t-2 border-slate-300">
-                      <td className="py-2.5 font-mono text-xs font-bold text-slate-900">KZ 090</td>
-                      <td className="py-2.5 font-bold text-slate-900">Vorauszahlung / Überschuss</td>
+                      <td className="py-2.5 font-mono text-xs font-bold text-slate-900">KZ 095</td>
+                      <td className="py-2.5 font-bold text-slate-900">Zahllast / Gutschrift</td>
                       <td className={`py-2.5 text-right font-bold tabular-nums ${u1.zahllast > 0 ? "text-red-700" : "text-green-700"}`}>{fmt(u1.zahllast)}</td>
                     </tr>
                   </tbody>
                 </table>
+                <p className="mt-2 text-xs text-slate-400">
+                  KZ 095 wird hier nur zur Vorschau angezeigt — FinanzOnline berechnet die Zahllast/Gutschrift beim Einreichen selbst aus den übermittelten Kennzahlen.
+                </p>
               </div>
             )}
           </div>

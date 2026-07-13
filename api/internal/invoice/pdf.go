@@ -63,12 +63,12 @@ type VATOptions struct {
 	GenerationGross     float64 // GenerationNet + GenerationVatAmount
 	GenerationVatText   string  // legal VAT notice text for generation side
 
-	// GenerationReverseCharge: true when § 19 Abs. 1 UStG applies to the generation side.
+	// GenerationReverseCharge: true when § 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV applies to the generation side.
 	// This happens when a VAT-registered Unternehmen delivers electricity to the EEG.
 	// The EEG is the tax debtor; 20 % VAT is shown on the invoice and remitted by the EEG.
 	GenerationReverseCharge bool
 
-	// ConsumptionReverseCharge: true when § 19 Abs. 1 UStG applies to the consumption side.
+	// ConsumptionReverseCharge: true when § 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV applies to the consumption side.
 	// This happens when a Regelbesteuerung EEG delivers electricity to a VAT-registered Unternehmen.
 	// The 20% VAT is still shown and remitted by the EEG, but the invoice must note that
 	// the tax debt passes to the recipient (Steuerschuldübergang).
@@ -219,7 +219,7 @@ func GenerationVATPct(member *domain.Member) float64 {
 	return 0.0
 }
 
-// GenerationReverseCharge reports whether § 19 Abs. 1 UStG (Reverse Charge) applies
+// GenerationReverseCharge reports whether § 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV (Reverse Charge) applies
 // to the generation side for this member — i.e. the EEG is the tax debtor.
 func GenerationReverseCharge(member *domain.Member) bool {
 	if member.BusinessRole == "privat" || member.BusinessRole == "gemeinde_hoheitlich" || member.BusinessRole == "landwirt_pauschaliert" {

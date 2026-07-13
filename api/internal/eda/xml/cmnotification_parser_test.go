@@ -109,8 +109,8 @@ func TestParseCMNotification_Zustimmung(t *testing.T) {
 	if res.MeteringPoint != "AT0020000000000000000000100242261" {
 		t.Errorf("MeteringPoint = %q, want AT0020000000000000000000100242261", res.MeteringPoint)
 	}
-	if res.ResponseCode != "175" {
-		t.Errorf("ResponseCode = %q, want 175", res.ResponseCode)
+	if len(res.ResponseCodes) != 1 || res.ResponseCodes[0] != "175" {
+		t.Errorf("ResponseCodes = %v, want [175]", res.ResponseCodes)
 	}
 	if res.From != "AT002000" {
 		t.Errorf("From = %q, want AT002000", res.From)
@@ -135,8 +135,8 @@ func TestParseCMNotification_Ablehnung(t *testing.T) {
 	if res.CMRequestID != "TESTABCD" {
 		t.Errorf("CMRequestID = %q, want TESTABCD", res.CMRequestID)
 	}
-	if res.ResponseCode != "176" {
-		t.Errorf("ResponseCode = %q, want 176", res.ResponseCode)
+	if len(res.ResponseCodes) != 1 || res.ResponseCodes[0] != "176" {
+		t.Errorf("ResponseCodes = %v, want [176]", res.ResponseCodes)
 	}
 	if res.MeteringPoint != "AT0020000000000000000000100999999" {
 		t.Errorf("MeteringPoint = %q, want AT0020000000000000000000100999999", res.MeteringPoint)

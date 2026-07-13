@@ -606,13 +606,13 @@ func (r *EARepository) Kontenblatt(ctx context.Context, eegID, kontoID uuid.UUID
 // ── UVA ───────────────────────────────────────────────────────────────────────
 
 const uvaCols = `id, eeg_id, jahr, periodentyp, periode_nr, datum_von, datum_bis, status,
-	kz_000, kz_022, kz_029, kz_044, kz_056, kz_057, kz_060, kz_065, kz_066, kz_083, zahllast,
+	kz_000, kz_022, kz_029, kz_044, kz_056, kz_032, kz_060, kz_065, kz_066, kz_083, zahllast,
 	eingereicht_am, erstellt_am`
 
 func scanUVA(row interface{ Scan(...any) error }, u *domain.EAUVAPeriode) error {
 	return row.Scan(
 		&u.ID, &u.EegID, &u.Jahr, &u.Periodentyp, &u.PeriodeNr, &u.DatumVon, &u.DatumBis, &u.Status,
-		&u.KZ000, &u.KZ022, &u.KZ029, &u.KZ044, &u.KZ056, &u.KZ057, &u.KZ060, &u.KZ065, &u.KZ066, &u.KZ083, &u.Zahllast,
+		&u.KZ000, &u.KZ022, &u.KZ029, &u.KZ044, &u.KZ056, &u.KZ032, &u.KZ060, &u.KZ065, &u.KZ066, &u.KZ083, &u.Zahllast,
 		&u.EingereichtAm, &u.ErstelltAm,
 	)
 }
@@ -654,15 +654,15 @@ func (r *EARepository) GetUVA(ctx context.Context, id, eegID uuid.UUID) (*domain
 func (r *EARepository) UpsertUVA(ctx context.Context, u *domain.EAUVAPeriode) error {
 	q := `INSERT INTO ea_uva_perioden
 	        (eeg_id, jahr, periodentyp, periode_nr, datum_von, datum_bis, status,
-	         kz_000, kz_022, kz_029, kz_044, kz_056, kz_057, kz_060, kz_065, kz_066, kz_083, zahllast)
+	         kz_000, kz_022, kz_029, kz_044, kz_056, kz_032, kz_060, kz_065, kz_066, kz_083, zahllast)
 	      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 	      ON CONFLICT (eeg_id, jahr, periodentyp, periode_nr) DO UPDATE SET
-	        kz_000=$8, kz_022=$9, kz_029=$10, kz_044=$11, kz_056=$12, kz_057=$13,
+	        kz_000=$8, kz_022=$9, kz_029=$10, kz_044=$11, kz_056=$12, kz_032=$13,
 	        kz_060=$14, kz_065=$15, kz_066=$16, kz_083=$17, zahllast=$18
 	      RETURNING id, erstellt_am`
 	return r.db.QueryRow(ctx, q,
 		u.EegID, u.Jahr, u.Periodentyp, u.PeriodeNr, u.DatumVon, u.DatumBis, u.Status,
-		u.KZ000, u.KZ022, u.KZ029, u.KZ044, u.KZ056, u.KZ057, u.KZ060, u.KZ065, u.KZ066, u.KZ083, u.Zahllast,
+		u.KZ000, u.KZ022, u.KZ029, u.KZ044, u.KZ056, u.KZ032, u.KZ060, u.KZ065, u.KZ066, u.KZ083, u.Zahllast,
 	).Scan(&u.ID, &u.ErstelltAm)
 }
 
@@ -688,14 +688,14 @@ func (r *EARepository) DeleteUVA(ctx context.Context, id, eegID uuid.UUID) error
 //   UST_20  EINNAHME → KZ000+KZ022 (base), KZ056 (20% output tax)
 //   UST_10  EINNAHME → KZ000+KZ029 (base), KZ044 (10% output tax)
 //   KEINE   EINNAHME → KZ000 (exempt/Kleinunternehmer turnover, no output tax)
-//   RC_20   AUSGABE  → KZ057 (Steuerschuld §19 Abs.1, self-assessed RC tax)
+//   RC_20   AUSGABE  → KZ032 (Steuerschuld § 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV, self-assessed RC tax)
 //                      KZ060 (deductible as VST if full deduction right)
 //   RC_13   AUSGABE  → same as RC_20
 //   VST_20  AUSGABE  → KZ060 (input VAT from supplier invoices)
 //   VST_10  AUSGABE  → KZ060
 func (r *EARepository) CalcUVAKennzahlen(ctx context.Context, eegID uuid.UUID, von, bis time.Time) (*domain.EAUVAPeriode, error) {
 	// Kleinunternehmer (use_vat=false) have no Vorsteuerabzugsrecht:
-	//   - RC tax goes to KZ057 only (not KZ060)
+	//   - RC tax goes to KZ032 only (not KZ060)
 	//   - KEINE revenues are KU-exempt and not reported in the UVA
 	var useVat bool
 	if err := r.db.QueryRow(ctx, "SELECT COALESCE(use_vat, false) FROM eegs WHERE id=$1", eegID).Scan(&useVat); err != nil {
@@ -744,7 +744,7 @@ func (r *EARepository) CalcUVAKennzahlen(ctx context.Context, eegID uuid.UUID, v
 			}
 		case "RC_20", "RC_13":
 			if richtung == "AUSGABE" {
-				u.KZ057 += ust // Steuerschuld §19 Abs. 1 UStG
+				u.KZ032 += ust // Steuerschuld § 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV
 				if useVat {
 					// Vorsteuerabzug only for USt-pflichtige entities (KU: §12 Abs. 3 UStG excludes this)
 					u.KZ060 += ust
@@ -761,8 +761,8 @@ func (r *EARepository) CalcUVAKennzahlen(ctx context.Context, eegID uuid.UUID, v
 	}
 
 	// Zahllast = all output taxes - all input taxes
-	// KZ056 (20% USt) + KZ044 (10% USt) + KZ057 (RC §19) - KZ060 (Vorsteuer gesamt)
-	u.Zahllast = u.KZ056 + u.KZ044 + u.KZ057 - u.KZ060
+	// KZ056 (20% USt) + KZ044 (10% USt) + KZ032 (RC §19) - KZ060 (Vorsteuer gesamt)
+	u.Zahllast = u.KZ056 + u.KZ044 + u.KZ032 - u.KZ060
 
 	return u, nil
 }

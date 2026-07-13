@@ -763,7 +763,7 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		// Consumption (Bezug): EEG-level VAT (§ 6 exempt if Kleinunternehmer, 20% if VAT-registered)
 		// Generation (Einspeisung): member-specific VAT per Austrian EEG law:
 		//   - pauschalierter Landwirt (§ 22 UStG): 13 % on Gutschrift/Einspeisung credit
-		//   - Unternehmen/Gemeinde (BgA) with UID: Reverse Charge § 19, 0% on document
+		//   - Unternehmen/Gemeinde (BgA) with UID: Reverse Charge § 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV, 0% on document
 		//   - all others: 0 % (exempt)
 		consumptionVatPct := 0.0
 		consumptionVatAmount := 0.0
@@ -793,7 +793,7 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		vatAmount := consumptionVatAmount + generationVatAmount
 		vatPctApplied := consumptionVatPct // EEG-level rate (for DATEV / summary)
 
-		// § 19 Abs. 1 UStG (Reverse Charge on consumption): applies when a VAT-registered EEG
+		// § 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV (Reverse Charge on consumption): applies when a VAT-registered EEG
 		// delivers electricity to a VAT-registered business (Unternehmen/Gemeinde BgA with UID).
 		// The EEG still shows and remits 20% VAT, but the invoice must note the Steuerschuldübergang.
 		consumptionReverseCharge := false

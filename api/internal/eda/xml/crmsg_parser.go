@@ -34,7 +34,7 @@ import (
 type CRMsgRecord struct {
 	DocumentMode   string       // "PROD" or "SIMU"
 	MessageID      string       // unique message identifier
-	ConversationID string       // links back to the EC_REQ_PT process
+	ConversationID string       // links back to the CR_REQ_PT process
 	Zaehlpunkt     string       // MeteringPoint (AT...)
 	GemeinschaftID string       // DeliveryPoint EC number
 	From           string       // Sender MessageAddress

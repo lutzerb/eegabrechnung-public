@@ -84,7 +84,7 @@ export interface EDAProcess {
   id: string;
   eeg_id: string;
   meter_point_id?: string;
-  process_type: string;         // EC_REQ_ONL | EC_REQ_OFF | CM_REV_SP | EC_PRTFACT_CHG | EC_REQ_PT
+  process_type: string;         // EC_REQ_ONL | EC_REQ_OFF | CM_REV_SP | EC_PRTFACT_CHG | CR_REQ_PT
   status: string;               // pending | sent | first_confirmed | confirmed | completed | rejected | error
   conversation_id: string;
   zaehlpunkt: string;

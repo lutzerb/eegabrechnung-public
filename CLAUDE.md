@@ -148,11 +148,17 @@ Embedded in `api/internal/db/migrations/`, applied automatically at startup via 
 | 075_invoice_paid_at | `paid_at` (date) on invoices — set by the CAMT.053 payment-matching import (`POST .../billing/camt053`) or manually during EA-Rechnungsimport |
 | 076_member_tariffs | `member_id` (nullable) + 5 `*_override` columns on tariff_schedules ("Individualtarif" — per-member pricing overrides, independent one-active-per-scope indexes for EEG-default vs. per-member); `zaehlpunkts_gebuehr_eur` on eegs (fee × active meter points per member, unlike the flat `meter_fee_eur`) |
 | 077_meter_point_registration_periods | `meter_point_registration_periods` table — full Anmeldung/Abmeldung history per Zählpunkt, keyed by `(eeg_id, zaehlpunkt)` (not `meter_point_id`) so history survives Zählpunkt-recycling; partial unique index enforces max one open period per Zählpunkt; backfilled from existing `meter_points.registriert_seit`/`abgemeldet_am` |
+| 078_eda_message_zaehlpunkt | `zaehlpunkt` (text, DEFAULT '') + partial index on eda_messages — makes the EDA message log searchable by Zählpunkt; backfilled by extracting all `<MeteringPoint>` values from the stored XML payloads (list responses get all values space-joined) |
+| 079_meter_point_direction_mismatch | `direction_mismatch_notified_at` on meter_points — dedup flag for the automatic operator email when an incoming CR_MSG OBIS schema doesn't match the stored Energierichtung (e.g. swapped consumption/generation Zählpunkte of a prosumer) |
 | 080_invoice_payment_notice_mode | `invoice_payment_notice_mode` (text, default `sepa_lastschrift`) on eegs — controls the "Zahlungshinweis" paragraph on consumer invoices/emails: `sepa_lastschrift` (default, unchanged text) \| `ueberweisung` (shows EEG's own IBAN/BIC for manual bank transfer) \| `none` (section omitted entirely) |
 | 081_eda_dis_model | `eda_dis_model` (text, default `D`) on eegs — the ECDisModel (statisch `S` \| dynamisch `D`) declared to the Netzbetreiber, decided once for the whole community instead of per EDA action; set in EEG-Einstellungen (EDA-Tab), used as the fixed value for Online-Anmeldung (EC_REQ_ONL) and Teilnahmefaktor-Änderung (EC_PRTFACT_CHG) — no more manual per-action dropdown |
 | 082_member_sepa_mandate_history | `member_sepa_mandate_history` table (member_id, eeg_id, iban, signed_at, signed_ip, signed_text, archived_at, reason) — archives a member's SEPA mandate snapshot whenever their IBAN changes, so past mandates stay retrievable for audit purposes. Written by both the admin IBAN edit (reason `iban_change_admin`, signature cleared afterwards) and the member-portal self-service IBAN change (reason `iban_change_portal`, freshly signed) |
 | 083_fee_billing_mode | `fee_billing_mode` (text, default `per_month`) on eegs — Fixgebühren (meter_fee, participation_fee, Zählpunktsgebühr) pro angefangenem Kalendermonat des Abrechnungszeitraums (`per_month`) oder einmal pro Abrechnungslauf (`per_invoice`); Radio-Group im Rechnungen-Tab der EEG-Einstellungen |
 | 084_billing_run_scope | `billing_type` (default 'all') + `member_ids` (uuid[], NULL = alle) on billing_runs — Overlap-Prüfung ist scope-bewusst: consumption_only/production_only bzw. disjunkte Mitglieds-Teilmengen über denselben Zeitraum kollidieren nicht mehr |
+| 085_member_email_change_verifications | `member_email_change_verifications` table (new_email, token, expires_at, verified_at; partial unique index = max one pending request per member) — member-portal self-service email change; confirmation link is sent to the NEW address and must be clicked before the member row is updated |
+| 086_energy_imbalance_threshold | `energy_imbalance_threshold_promille` (numeric, default 1) on eegs — tolerance (‰ of the larger total) for the non-blocking Bezug/Einspeisung imbalance warning computed on full billing runs |
+| 087_rename_ec_req_pt | Renames EC_REQ_PT → CR_REQ_PT (canonical ebutilities.at process name) in eda_processes.process_type, eda_messages.message_type and pending jobs (type + payload `process` field); mirrors migration 054 |
+| 088_rename_kz057_to_kz032 | Renames `ea_uva_perioden.kz_057` → `kz_032` — Reverse-Charge-Steuerschuld (§19 Abs. 1 zweiter Satz UStG) gehört im FinanzOnline U30-Formular in Kennzahl 032, nicht 057; XML-Export-Feldreihenfolge in `VERSTEUERT` korrigiert (KZ032 steht laut echter BMF-XSD hinter KZ044, nicht neben KZ056/KZ057) |
 
 ## Energy Unit Convention
 **All energy values throughout the codebase are stored and transmitted in kWh**, despite column/field names using the `wh_` prefix (e.g. `wh_total`, `wh_self`, `wh_community`). This naming is a historical artifact — do NOT divide these values by 1000 when displaying as kWh. The `fmtKwh()` helper in `web/components/energy-charts.tsx` is the reference implementation: it displays values directly as kWh and only converts to MWh when the value exceeds 100 000.
@@ -182,10 +188,10 @@ Embedded in `api/internal/db/migrations/`, applied automatically at startup via 
 - **Member portal**: magic-link self-service dashboard for members; monthly energy breakdown; invoice list + PDF download (no password required)
 - **Mehrfachteilnahme**: meter point participates in multiple EEGs simultaneously (Austrian EAG April 2024); factor + share type (GC/RC_R/RC_L/CC) + date range; source of truth for EDA
 - **OeMAG market prices**: scraped from oem-ag.at; sync to producer/energy price
-- **EDA process management**: Anmeldung (EC_REQ_ONL), Teilnahmefaktor (EC_PRTFACT_CHG), Widerruf (CM_REV_SP), Datenanforderung (EC_REQ_PT), Zählpunktliste (EC_PODLIST) via MaKo XML; process lifecycle tracking (pending→sent→first_confirmed→confirmed/completed/rejected/error); deadline tracking; duplicate-change prevention; eda_errors dead-letter table; eda_worker_status singleton
+- **EDA process management**: Anmeldung (EC_REQ_ONL), Teilnahmefaktor (intern `EC_PRTFACT_CHG`, offiziell **EC_PRTFACT_CHANGE**), Widerruf (CM_REV_SP), Datenanforderung (CR_REQ_PT), Zählpunktliste (EC_PODLIST) via MaKo XML; process lifecycle tracking (pending→sent→first_confirmed→confirmed/completed/rejected/error); deadline tracking; duplicate-change prevention; eda_errors dead-letter table; eda_worker_status singleton
 - **EEG settings**: address (strasse/plz/ort/uid_nummer for §11 UStG invoice block), logo, founding date, generation type on meter points (PV/Wind/Wasser)
 - **Backup/Restore**: full EEG snapshot export (JSON) and restore via transaction
-- **Gemeinschaftstypen**: `gemeinschaft_typ` = EEG (§79 EAG, Marktpartner-ID `RC######`) | GEA (§16c ElWOG, `GC######`) | BEG (§16a ElWOG, `CC######`); selected as a 3-column grid at EEG creation (`web/app/eegs/new/page.tsx`); Netzbetreiber is optional for BEG (community can span multiple grid operators), required for EEG/GEA. **BEG support is partial**: only the type selector + Marktpartner-ID validation exist so far — full multi-Netzbetreiber EDA routing (per-ZP `netzbetreiber`, `EC_PODLIST` looped per NB) is planned but not implemented (see `project_beg_plan` design notes)
+- **Gemeinschaftstypen**: `gemeinschaft_typ` = EEG (§79 EAG, Marktpartner-ID `RC######`) | GEA (§16c ElWOG, `GC######`) | BEG (§16a ElWOG, `CC######`); selected as a 3-column grid at EEG creation (`web/app/eegs/new/page.tsx`); Netzbetreiber is optional for BEG (community can span multiple grid operators), required for EEG/GEA. **Multi-Netzbetreiber EDA routing for BEG is implemented**: per-ZP actions (Anmeldung, Teilnahmefaktor, CR_REQ_PT, Widerruf) derive the target NB from the Zählpunkt prefix (`zaehlpunkt[:8]`) instead of the EEG-wide `eda_netzbetreiber_id`, and `EC_PODLIST` loops over all distinct NBs of the active meter points (`handler/eda.go`). BEG is less field-proven than EEG/GEA operation
 - **Individualtarife**: member-specific tariff-plan overrides (migration 076) — a member can get their own time-varying Arbeitspreis (own `tariff_entries`) plus nullable overrides for `free_kwh`/`discount_pct`/`meter_fee_eur`/`participation_fee_eur`/`zaehlpunkts_gebuehr_eur`; nil = fall back to the EEG default. Independent "one active schedule" scope per member vs. the EEG-wide default (two partial unique indexes). Routes mirror the EEG-wide tariff endpoints under `/eegs/{eegID}/members/{memberID}/tariffs/...`; UI at `/eegs/[eegId]/members/[memberId]/tariff`. **Never call this feature "Sozialtarif"** — that term is legally reserved in Austria for ElWOG basic-supply protections and doesn't apply here.
 - **Zählpunktsgebühr**: EEG-wide fee × number of a member's *active* meter points (`abgemeldet_am IS NULL`), added on top of the flat `meter_fee_eur`/`participation_fee_eur`. Always rendered as its own PDF line item ("Zählpunktsgebühr (N × X €)"), unlike the flat fees which only get a separate line on multi-month invoices.
 - **Email log**: every outbound email (invoices, campaigns, onboarding, portal, EDA notices) is recorded via `invoice.SendLogged()` into `email_log` (status sent/failed, error message); `GET /eegs/{eegID}/email-log`; viewable at `/eegs/[eegId]/settings/email-log`
@@ -193,6 +199,11 @@ Embedded in `api/internal/db/migrations/`, applied automatically at startup via 
 - **Bank-Import Duplikatschutz**: two partial unique indexes on `ea_banktransaktionen` prevent double-import on overlapping MT940/CAMT.053 statement periods — by `(eeg_id, buchungsdatum, betrag, referenz)` when a bank reference exists, else by `(eeg_id, buchungsdatum, betrag, verwendungszweck)`
 - **EDA response codes & §16e Smartmeter-Benachrichtigung**: worker captures `ResponseCode`/`MeterOwnerName`/`PortalApprovalURL` from `ANTWORT_ECON`; response code `182` (meter not remotely readable) triggers an automatic member email noting the Netzbetreiber's 2-month smart-meter installation obligation under §16e ElWOG (`worker.sendSmartmeterInfoEmail`, idempotent via `customer_notified_at`)
 - **Bulk-Mail Performance**: `invoice.BulkSender` opens one SMTP connection per send run and reuses it for all invoices, instead of a fresh TCP+TLS+login per mail (fixed a Cloudflare-tunnel timeout at ~50+ invoices)
+- **Energierichtungs-Mismatch-Erkennung**: worker's `detectSchemaDirection` compares the OBIS schema of incoming CR_MSG data against the meter point's stored Energierichtung; on mismatch (e.g. a prosumer's two Zählpunkte swapped at onboarding) it sends a one-time operator email (email_type `eda_direction_mismatch`), idempotent via `direction_mismatch_notified_at` (migration 079)
+- **Bezug/Einspeisung-Ungleichgewichts-Warnung**: full unfiltered billing runs compare EEG-wide consumption (wh_self) vs generation (wh_community) totals — the same physically shared energy pool reported twice by the NB; if the relative diff exceeds `energy_imbalance_threshold_promille` (‰, default 1, configurable in EEG settings, migration 086), the run response carries a non-blocking `imbalance_warning` shown in the billing form. Member-filtered and consumption/production-only runs skip the check (false positives)
+- **G.01T vor G.01 (Mehrfachteilnahme)**: on Mehrfachteilnahme meter points the NB sends BOTH G.01 (100% of the plant) and G.01T (× Teilnahmefaktor) in arbitrary document order — `buildReadingsFromCRMsg` lets G.01T set `wh_total` bindingly; plain G.01 is only a fallback when no G.01T exists (previously the last code in the document won, corrupting scaled values)
+- **Portal-Selbstbedienung E-Mail-Änderung**: member requests a new email in the portal Profil tab (`POST /api/v1/public/portal/email-change`); a confirmation link goes to the NEW address and only `POST .../email-change/confirm/{token}` (page `/portal/email-change/confirm`) applies the change; max one pending request per member (migration 085)
+- **Portal-Hinweis in E-Mails**: invoice emails and the onboarding welcome email include a pointer to the member portal (link built from `WEB_BASE_URL`)
 
 ## Additional API Endpoints
 
@@ -234,11 +245,19 @@ GET  /api/v1/eegs/{eegID}/meter-points/{meterPointID}/history — full Anmeldung
 # Payment matching
 POST /api/v1/eegs/{eegID}/billing/camt053              — import CAMT.053 bank statement; matches invoice UUID via EndToEndId, marks status=paid
 
-# Member portal (magic-link, no Bearer auth)
-POST /api/v1/public/portal/request-link               — send magic link to member email
-GET  /api/v1/public/portal/{token}/activate            — activate session from link
-GET  /api/v1/portal/me                                 — member dashboard data (energy + invoices)
+# Member portal (magic-link, no Bearer auth — session token from /exchange)
+POST /api/v1/public/portal/request-link               — send magic link to member email (rate-limited)
+POST /api/v1/public/portal/exchange                    — exchange magic-link token for a session token
+GET  /api/v1/public/portal/me                          — member dashboard data
+GET  /api/v1/public/portal/energy                      — monthly energy breakdown
+GET  /api/v1/public/portal/invoices                    — invoice list
+GET  /api/v1/public/portal/invoices/{invoiceID}/pdf    — invoice PDF download
+GET  /api/v1/public/portal/documents                   — EEG documents list (+ /{docID} download)
+GET  /api/v1/public/portal/meter-points                — member's meter points
+POST /api/v1/public/portal/change-factor               — request Teilnahmefaktor change
 POST /api/v1/public/portal/sepa-mandate                — member self-service IBAN change; body: {iban, confirm:true}; archives old mandate, stores freshly signed one
+POST /api/v1/public/portal/email-change                — request email change; sends confirmation link to the NEW address (rate-limited)
+POST /api/v1/public/portal/email-change/confirm/{token} — confirm & apply the email change
 
 # Mehrfachteilnahme
 GET  /api/v1/eegs/{eegID}/participations               — list participations
@@ -305,11 +324,11 @@ DELETE /api/v1/eegs/{eegID}/ea/bank/transaktionen/{transaktionID}  — ignore ba
 | `/eegs/[eegId]/onboarding` | Admin approval queue for new member applications |
 | `/eegs/[eegId]/participations` | Mehrfachteilnahme CRUD |
 | `/eegs/[eegId]/billing` | Billing runs management |
-| `/eegs/[eegId]/eda` | EDA process list + Anmeldung/Abmeldung/Teilnahmefaktor actions (also reachable per-ZP from meter point edit page) |
+| `/eegs/[eegId]/eda` | EDA process list + Anmeldung/Abmeldung/Teilnahmefaktor actions (also reachable per-ZP from meter point edit page); "Zählpunktdaten anfordern" (CR_REQ_PT) supports Mehrfachabfrage with member/ZP checkbox selection; message log searchable by Zählpunkt (migration 078) |
 | `/eegs/[eegId]/import` | Energy data import (XLSX) with coverage chart |
 | `/eegs/[eegId]/tariffs` | Tariff schedule management |
 | `/eegs/[eegId]/communications` | Bulk email campaigns (compose, member selection, history) |
-| `/eegs/[eegId]/settings` | EEG configuration (address, logo, SEPA, billing, DATEV, EDA, auto-billing); Rechnungen tab has "Fixgebühr" (flat, was mislabeled "Zählpunktgebühr") and "Zählpunktsgebühr" (true per-active-ZP fee) as separate fields; Rechnungen tab also has a "Zahlungshinweis" radio group (SEPA-Lastschrift / Überweisungshinweis / kein Hinweis, migration 080) and a "Fixgebühren-Abrechnung" radio group (pro Monat / pro Abrechnungslauf, migration 083); EDA tab has a "Verteilungsmodell" select (statisch/dynamisch, migration 081) that fixes the ECDisModel for the whole community |
+| `/eegs/[eegId]/settings` | EEG configuration (address, logo, SEPA, billing, DATEV, EDA, auto-billing); Rechnungen tab has "Fixgebühr" (flat, was mislabeled "Zählpunktgebühr") and "Zählpunktsgebühr" (true per-active-ZP fee) as separate fields; Rechnungen tab also has a "Zahlungshinweis" radio group (SEPA-Lastschrift / Überweisungshinweis / kein Hinweis, migration 080) and a "Fixgebühren-Abrechnung" radio group (pro Monat / pro Abrechnungslauf, migration 083); EDA tab has a "Verteilungsmodell" select (statisch/dynamisch, migration 081) that fixes the ECDisModel for the whole community; Abrechnung section has the "Ungleichgewichts-Toleranz" (‰) field for the imbalance warning (migration 086) |
 | `/eegs/[eegId]/settings/email-log` | List of every outbound email attempt for the EEG (status, recipient, subject, error) |
 | `/eegs/[eegId]/ea` | E/A-Buchhaltung dashboard (KPI cards, open UVA alerts, nav grid) |
 | `/eegs/[eegId]/ea/buchungen` | Journal (all Buchungen, year/konto/richtung filter, XLSX export) |
@@ -327,7 +346,8 @@ DELETE /api/v1/eegs/{eegID}/ea/bank/transaktionen/{transaktionID}  — ignore ba
 | `/eegs/[eegId]/ea/settings` | E/A settings (Steuernummer, UVA-Periodentyp) |
 | `/onboarding/[eegId]` | Public member self-registration form |
 | `/portal/[token]` | Magic-link entry point for member portal |
-| `/portal/dashboard` | Member self-service dashboard (energy + invoices); "Profil" tab shows masked current IBAN + self-service "IBAN ändern" form (re-signs SEPA mandate, archives the old one) |
+| `/portal/dashboard` | Member self-service dashboard (energy + invoices); "Profil" tab shows masked current IBAN + self-service "IBAN ändern" form (re-signs SEPA mandate, archives the old one) and an "E-Mail-Adresse ändern" form (confirmation link to the new address, migration 085) |
+| `/portal/email-change/confirm` | Confirmation landing page for the member email change (reads token from query, calls the confirm endpoint) |
 | `/admin/users` | User administration (admin only) |
 | `/eegs/[eegId]/members/[memberId]/meter-points/[id]/edit` | Meter point edit: attributes, abgemeldet_am (manual), Teilnahmefaktor, "Zählpunkt abmelden" EDA section (shown only when EDA configured + consent_id set + not yet deregistered), Registrierungshistorie timeline card |
 | `/eegs/[eegId]/members/[memberId]/tariff` | Individualtarif management for one member — own tariff-entry editor + overrides form (free_kwh/discount_pct/meter_fee_eur/participation_fee_eur/zaehlpunkts_gebuehr_eur, each nullable back to EEG default); member detail page shows a diff card of active overrides vs. EEG defaults |
@@ -380,7 +400,7 @@ GET  /api/v1/eegs/{eegID}/eda/processes                  — list all processes
 POST /api/v1/eegs/{eegID}/eda/anmeldung                  — register meter point (EC_REQ_ONL)
 POST /api/v1/eegs/{eegID}/eda/widerruf                   — revoke consent (CM_REV_SP); requires stored consent_id on meter point
 POST /api/v1/eegs/{eegID}/eda/teilnahmefaktor            — change participation factor (EC_PRTFACT_CHG)
-POST /api/v1/eegs/{eegID}/eda/zaehlerstandsgang          — request historical meter data (EC_REQ_PT)
+POST /api/v1/eegs/{eegID}/eda/zaehlerstandsgang          — request historical meter data (CR_REQ_PT)
 GET  /api/v1/eegs/{eegID}/eda/messages                   — list EDA messages (scoped by eeg_id)
 GET  /api/v1/eegs/{eegID}/eda/messages/{id}/xml          — download raw XML for a message
 GET  /api/v1/eegs/{eegID}/eda/errors                     — list dead-letter errors
@@ -394,7 +414,7 @@ Zaehlerstandsgang request body:
 ### Key EDA files
 - `api/internal/eda/transport/file.go` — FILE transport (inbox/outbox directories)
 - `api/internal/eda/transport/mail.go` — MAIL transport (IMAP polling + SMTP send); edanetProzessID map
-- `api/internal/eda/xml/cprequest_builder.go` — builds outbound CPRequest XML (EC_REQ_PT, EC_PODLIST)
+- `api/internal/eda/xml/cprequest_builder.go` — builds outbound CPRequest XML (CR_REQ_PT, EC_PODLIST)
 - `api/internal/eda/xml/cmrequest_builder.go` — builds outbound CMRequest XML (EC_REQ_ONL)
 - `api/internal/eda/xml/ecmplist_builder.go` — builds outbound ECMPList XML (EC_PRTFACT_CHG)
 - `api/internal/eda/xml/cmrevoke_builder.go` — builds outbound CMRevoke XML (CM_REV_SP)
@@ -425,10 +445,12 @@ Process type → edanet Subject field (in `api/internal/eda/transport/mail.go`):
 ```
 EC_PRTFACT_CHG → EC_PRTFACT_CHANGE_01.00
 EC_REQ_ONL     → EC_REQ_ONL_02.30
-EC_REQ_PT      → CR_REQ_PT_04.10
+CR_REQ_PT      → CR_REQ_PT_04.10
 EC_PODLIST     → EC_PODLIST_01.00
 CM_REV_SP      → CM_REV_SP_01.00
 ```
+
+**Internal vs. official process names**: the left-hand values are internal DB/code identifiers (`eda_processes.process_type`, handlers, jobs). Only `EC_PRTFACT_CHG` still differs from the official ebutilities.at name (**EC_PRTFACT_CHANGE**) — kept deliberately as internal short form. `EC_REQ_PT` was renamed to the canonical **CR_REQ_PT** in code + data (migration 087, analogous to 054 EC_EINZEL_ANM → EC_REQ_ONL); the wire format (Subject Prozess-Id, XML MessageCodes) was always correct.
 
 ### IMAP / Worker Operational Notes
 

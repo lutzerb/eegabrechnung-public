@@ -47,7 +47,7 @@ func TestBuildReadingsFromCRMsg_ScaledTotalWinsRegardlessOfOrder(t *testing.T) {
 			genEnergyData("1-1:2.9.0 G.01T", 0.8),  // × 40% Teilnahmefaktor
 			genEnergyData("1-1:2.9.0 P.01T", 0.3),  // Restnetzüberschuss (40% basis)
 		},
-		"G.01 last (EC_REQ_PT response order)": {
+		"G.01 last (CR_REQ_PT response order)": {
 			genEnergyData("1-1:2.9.0 P.01T", 0.3),
 			genEnergyData("1-1:2.9.0 G.01T", 0.8),
 			genEnergyData("1-1:2.9.0 G.01", 2.0),

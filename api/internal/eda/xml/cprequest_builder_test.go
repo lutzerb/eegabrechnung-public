@@ -132,24 +132,35 @@ func TestBuildCPRequest_PrtfactChg(t *testing.T) {
 	}
 }
 
-func TestBuildCPRequest_ReqPT(t *testing.T) {
-	p := buildCPReqParams("EC_REQ_PT")
-	p.DateFrom = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	p.DateTo = time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC)
-
-	xmlStr, err := edaxml.BuildCPRequest(p)
+func TestBuildAnforderungPT(t *testing.T) {
+	xmlStr, err := edaxml.BuildAnforderungPT(edaxml.AnforderungPTParams{
+		From:           "RC105970",
+		To:             "AT002000",
+		MessageID:      "11111111-2222-3333-4444-555555555555",
+		ConversationID: "66666666-7777-8888-9999-000000000000",
+		Zaehlpunkt:     "AT0020000000000000000000100242261",
+		DateFrom:       time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		DateTo:         time.Date(2026, 3, 31, 0, 0, 0, 0, time.UTC),
+	})
 	if err != nil {
-		t.Fatalf("BuildCPRequest: %v", err)
+		t.Fatalf("BuildAnforderungPT: %v", err)
 	}
 
-	if !strings.Contains(xmlStr, "EC_REQ_PT") {
-		t.Error("missing MessageCode EC_REQ_PT")
+	if !strings.Contains(xmlStr, "ANFORDERUNG_PT") {
+		t.Error("missing MessageCode ANFORDERUNG_PT")
+	}
+	if !strings.Contains(xmlStr, "AT0020000000000000000000100242261") {
+		t.Error("missing Zaehlpunkt")
 	}
 	if !strings.Contains(xmlStr, "2026-01-01") {
 		t.Error("missing DateFrom")
 	}
 	if !strings.Contains(xmlStr, "2026-03-31") {
 		t.Error("missing DateTo")
+	}
+	// ct:GroupingId pattern forbids hyphens — UUIDs must be stripped.
+	if strings.Contains(xmlStr, "11111111-2222") {
+		t.Error("MessageId must not contain hyphens")
 	}
 }
 

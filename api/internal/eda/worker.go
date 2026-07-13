@@ -709,20 +709,20 @@ func (w *Worker) processCRMsg(ctx context.Context, msg *types.Message) (uuid.UUI
 		)
 	}
 
-	// Always mark the corresponding EC_REQ_PT process as completed when a DATEN_CRMSG
+	// Always mark the corresponding CR_REQ_PT process as completed when a DATEN_CRMSG
 	// arrives — even if all readings were filtered by the transition date.
 	// Edanet does not echo our ConversationID in the response, so we match by
 	// Zählpunkt — scoped to the resolved EEG, because with Mehrfachteilnahme the
-	// same Zählpunkt can have open EC_REQ_PT processes in two EEGs.
+	// same Zählpunkt can have open CR_REQ_PT processes in two EEGs.
 	if proc, err := w.edaProcRepo.FindSentReqPTByZaehlpunkt(ctx, knownEegID, record.Zaehlpunkt); err == nil {
 		now := time.Now().UTC()
 		if upErr := w.edaProcRepo.UpdateStatus(ctx, proc.ID, "completed", &now, ""); upErr != nil {
-			w.log.Warn("CR_MSG: failed to mark EC_REQ_PT process completed",
+			w.log.Warn("CR_MSG: failed to mark CR_REQ_PT process completed",
 				"zaehlpunkt", record.Zaehlpunkt,
 				"error", upErr,
 			)
 		} else {
-			w.log.Info("CR_MSG: EC_REQ_PT process marked completed",
+			w.log.Info("CR_MSG: CR_REQ_PT process marked completed",
 				"zaehlpunkt", record.Zaehlpunkt,
 				"process_id", proc.ID,
 			)

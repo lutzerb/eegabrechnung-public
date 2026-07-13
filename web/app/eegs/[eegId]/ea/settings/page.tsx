@@ -101,8 +101,8 @@ export default function EASettingsPage() {
       )}
 
       <div className="mt-6 p-4 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
-        <strong>Hinweis zu Reverse Charge (§19 UStG):</strong> Als EEG mit Energieeinspeisung durch umsatzsteuerpflichtige Mitglieder unterliegen die Gutschriften
-        an diese Mitglieder dem Übergang der Steuerschuld (Reverse Charge). Die EEG schuldet die USt (KZ 057) und kann — als
+        <strong>Hinweis zu Reverse Charge (§ 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV):</strong> Als EEG mit Energieeinspeisung durch umsatzsteuerpflichtige Mitglieder unterliegen die Gutschriften
+        an diese Mitglieder dem Übergang der Steuerschuld (Reverse Charge). Die EEG schuldet die USt (KZ 032) und kann — als
         Kleinunternehmer ohne VSt-Abzug — keinen Vorsteuerabzug geltend machen (KZ 060, KZ 066 = 0).
         Konsultieren Sie Ihren Steuerberater für die konkrete steuerliche Beurteilung.
       </div>

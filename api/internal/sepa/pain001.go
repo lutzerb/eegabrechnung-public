@@ -22,7 +22,7 @@ type Pain001Entry struct {
 // The EEG must have its own IBAN configured.
 //
 // execDate sets the ReqdExctnDt. Pass the zero value to default to now+2 days.
-// For credit notes with Reverse Charge (§ 19 Abs. 1 UStG) the EEG remits the VAT directly to
+// For credit notes with Reverse Charge (§ 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV) the EEG remits the VAT directly to
 // the Finanzamt — only the net amount is transferred to the producer.
 func GeneratePain001(eeg *domain.EEG, entries []Pain001Entry, execDate time.Time) ([]byte, error) {
 	if eeg.IBAN == "" {
@@ -219,7 +219,7 @@ func mandateDate(m *domain.Member) string {
 }
 
 // sepaPayAmount returns the amount to transfer for one credit-transfer entry.
-// For Reverse Charge (§ 19 Abs. 1 UStG) the EEG self-assesses and remits the generation VAT
+// For Reverse Charge (§ 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV) the EEG self-assesses and remits the generation VAT
 // to the Finanzamt — only the net generation amount is paid to the member.
 // Correct formula: total_amount + generation_vat_amount = consumptionGross − generationNet.
 // For all other cases (Landwirt §22 UStG, exempt Privatpersonen) the full total_amount is used.
@@ -230,7 +230,7 @@ func sepaPayAmount(inv *domain.Invoice, m *domain.Member) float64 {
 	return inv.TotalAmount
 }
 
-// isGenerationRC reports whether Reverse Charge (§ 19 Abs. 1 UStG) applies on the generation
+// isGenerationRC reports whether Reverse Charge (§ 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV) applies on the generation
 // side for this member — i.e. the EEG is the tax debtor and remits VAT to the Finanzamt.
 func isGenerationRC(m *domain.Member) bool {
 	if m == nil {

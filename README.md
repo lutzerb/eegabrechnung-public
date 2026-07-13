@@ -34,13 +34,14 @@ Genau aus dieser Motivation ist `eegabrechnung` entstanden: ein Werkzeug, das f�
 - DATEV/XLSX-Buchhaltungsexport
 - Einnahmen-Ausgaben-Buchhaltung für Vereine (wirtschaftlicher Geschäftsbetrieb, bis € 700.000 Umsatz)
 - Onboarding-Portal für neue Mitglieder (inkl. manuell erstellbarem Anmeldelink durch Admins)
-- passwortloses Mitgliederportal
+- passwortloses Mitgliederportal mit Selbstbedienung (IBAN-Änderung mit neuem SEPA-Mandat, E-Mail-Änderung mit Bestätigungslink)
 - EDA-Prozesse für Anmeldung, Widerruf, Teilnahmefaktor und Datenanforderung
+- automatische Plausibilitätswarnungen (vertauschte Energierichtung eines Zählpunkts, Ungleichgewicht zwischen Bezug und Einspeisung)
 - automatische Mitglieder-Benachrichtigung bei fehlendem Smartmeter (§16e ElWOG)
 - E-Mail-Kampagnen an Mitglieder mit Platzhaltersubstitution und Anhängen
 - E-Mail-Protokoll: jeder Versand (Rechnungen, Kampagnen, Onboarding, EDA) wird nachvollziehbar geloggt
 - Zählpunkt-Notizen und SEPA-Mandat-PDF
-- Gemeinschaftstypen EEG, GEA und Bürgerenergiegemeinschaft (BEG) als Grundtyp wählbar
+- Gemeinschaftstypen EEG, GEA und Bürgerenergiegemeinschaft (BEG); bei BEG mit mehreren Netzbetreibern und zählpunktweisem EDA-Routing
 
 ## Screenshots
 
@@ -93,6 +94,8 @@ Eine EEG hat typischerweise dieselben operativen Reibungen:
 - Stammdaten inkl. IBAN, UID, Beitritts- und Austrittsdatum
 - automatische Mitgliedsnummern
 - Lebenszyklus-Status für Mitglieder und Zählpunkte
+- vollständige Anmelde-/Abmelde-Historie je Zählpunkt
+- Zählpunkt-Wiederverwendung bei Mieterwechsel (historische Messdaten bleiben erhalten)
 - Notizfeld pro Zählpunkt
 - Mehrfachteilnahme nach EAG
 - automatischer Widerrufs-Workflow (CM_REV_SP) für austretende Mitglieder
@@ -100,16 +103,21 @@ Eine EEG hat typischerweise dieselben operativen Reibungen:
 ### Energiedaten
 
 - XLSX-Import mit Vorschau und Konflikterkennung
-- automatische Übernahme eingehender EDA-Messdaten
-- historische Datenanforderung beim Netzbetreiber
+- automatische Übernahme eingehender EDA-Messdaten (inkl. korrekter Behandlung von G.01T bei Mehrfachteilnahme)
+- historische Datenanforderung beim Netzbetreiber (auch als Mehrfachabfrage über ausgewählte Mitglieder/Zählpunkte)
 - Datenabdeckung und Lücken-Erkennung
+- automatische Warnung, wenn eingehende Messdaten nicht zur hinterlegten Energierichtung eines Zählpunkts passen (vertauschte Zählpunkte)
 
 ### Abrechnung und Rechnungen
 
 - Tarifpläne mit verschiedenen Granularitäten
+- echtes Time-of-Use-Billing: jede 15-Minuten-Messung wird mit dem zu ihrem Zeitpunkt gültigen Tarif bepreist
 - individuelle Tarif-Overrides pro Mitglied (eigener Arbeitspreis, reduzierte/erlassene Fixgebühren) unabhängig vom EEG-Standardtarif
 - Zählpunktsgebühr — Fixbetrag je aktivem Zählpunkt eines Mitglieds, immer als eigene Rechnungszeile
+- Fixgebühren wahlweise pro angefangenem Kalendermonat oder einmal pro Abrechnungslauf
 - Abrechnungsläufe mit Zeitraumsschutz
+- konfigurierbare Warnung bei Ungleichgewicht zwischen Bezugs- und Einspeisungssumme (Hinweis auf fehlende Messdaten, blockiert die Abrechnung nicht)
+- konfigurierbarer Zahlungshinweis auf Rechnungen (SEPA-Lastschrift, Überweisung oder kein Hinweis)
 - Draft-, Finalisierungs- und Storno-Workflow
 - PDF-Rechnungen und Gutschriften
 - automatischer Mailversand mit wiederverwendeter SMTP-Verbindung beim Massenversand
@@ -145,20 +153,22 @@ EEGs als Verein können ihre steuerliche Buchhaltung direkt im System führen:
 - Admin-Freigabe und automatische Anlage von Mitgliedern und Zählpunkten
 - automatische Benachrichtigung, wenn der Netzbetreiber laut Rückmeldung noch keinen fernauslesbaren Zähler installiert hat (§16e ElWOG, 2-Monats-Frist)
 - Mitgliederportal mit Magic Link, Rechnungen und Energieübersicht (wahlweise eigene Quote oder volle EEG-Energie)
+- Selbstbedienung im Portal: IBAN-Änderung mit neu signiertem SEPA-Mandat (alte Mandate bleiben als Historie erhalten) und E-Mail-Änderung mit Bestätigungslink an die neue Adresse
+- Hinweis auf das Mitgliederportal in Rechnungs- und Willkommensmails
 - E-Mail-Kampagnen an Mitglieder mit Zielgruppenauswahl, Platzhaltern und Anhängen
 - E-Mail-Protokoll pro EEG: Status, Empfänger und Fehlermeldung jedes Versands nachvollziehbar
 
 ### EDA-Marktkommunikation
 
-Die aktuelle Implementierung orientiert sich im Wesentlichen direkt an den tatsächlich verwendeten EDA-Prozessnamen und Nachrichtencodes. Im Zentrum stehen derzeit Online-/Offline-Anmeldung, Teilnahmefaktoränderung, Zählpunktlistenabfrage, Messdatenanforderung und Zustimmungswiderruf.
+Im Zentrum stehen derzeit Online-Anmeldung, Teilnahmefaktoränderung, Zählpunktlistenabfrage, Messdatenanforderung und Zustimmungswiderruf. Die Prozessnamen folgen der offiziellen ebutilities-Prozessliste; einzig `EC_PRTFACT_CHG` wird intern als Kurzform des offiziellen Namens `EC_PRTFACT_CHANGE` verwendet.
 
 ### Ausgehende EDA-Prozesse
 
-| Interner Prozessname | Tatsächlich erzeugte Nachricht | Was der Prozess fachlich tut |
+| Prozess | Tatsächlich erzeugte Nachricht | Was der Prozess fachlich tut |
 |---|---|---|
 | `EC_REQ_ONL` | `CMRequest 01.30` mit `MessageCode=ANFORDERUNG_ECON` | Startet die Online-Anmeldung eines Zählpunkts zur Energiegemeinschaft. |
-| `EC_PRTFACT_CHG` | `ECMPList 01.10` mit `MessageCode=ANFORDERUNG_CPF` | Ändert den Teilnahmefaktor eines bereits zugeordneten Zählpunkts. |
-| `EC_REQ_PT` | `CPRequest 01.12` mit `MessageCode=ANFORDERUNG_PT` | Fordert historische Zählpunktdaten bzw. Messwerte für einen Zeitraum an. |
+| `EC_PRTFACT_CHG` (offiziell `EC_PRTFACT_CHANGE`) | `ECMPList 01.10` mit `MessageCode=ANFORDERUNG_CPF` | Ändert den Teilnahmefaktor eines bereits zugeordneten Zählpunkts. |
+| `CR_REQ_PT` | `CPRequest 01.12` mit `MessageCode=ANFORDERUNG_PT` | Fordert historische Zählpunktdaten bzw. Messwerte für einen Zeitraum an. |
 | `EC_PODLIST` | `CPRequest 01.12` mit `MessageCode=ANFORDERUNG_ECP` | Fordert die aktuelle Zählpunktliste der Energiegemeinschaft beim Netzbetreiber an. |
 | `CM_REV_SP` | `CMRevoke 01.10` mit `MessageCode=AUFHEBUNG_CCMS` | Widerruft eine zuvor erteilte Zustimmung. Dieser Prozess wird insbesondere beim Austritt eines Mitglieds verwendet und setzt eine gespeicherte `ConsentId` voraus. |
 
@@ -174,6 +184,7 @@ Im SMTP-Betreff werden dazu aktuell diese edanet-`Prozess-Id`-Mappings verwendet
 | `DATEN_CRMSG` | Importiert eingehende Messdaten in das System und schließt zugehörige Datenanforderungen ab. |
 | `CM_REV_CUS` (`AUFHEBUNG_CCMS`) | Kunde widerruft seine Zustimmung über den Netzbetreiber. Markiert den ursprünglichen Anmeldeprozess als `completed`, setzt `abgemeldet_am` auf dem Zählpunkt aus dem `ConsentEnd`-Datum. |
 | `CM_REV_IMP` (`AUFHEBUNG_CCMS_IMP`) | Netzbetreiber hebt die Anmeldung wegen Unmöglichkeit auf (z. B. Zählpunkt-Übertragung). Gleiche Effekte wie `CM_REV_CUS`, zusätzlich wird eine Operator-E-Mail zur Information versendet. |
+| unaufgeforderte NB-Widerrufe (z. B. `AUFHEBUNG_CCMI`) | Auch Widerrufe ohne eigenen vorausgehenden `CM_REV_SP`-Prozess (etwa nach einem Lieferantenwechsel am Zählpunkt) werden automatisch verarbeitet: Zuordnung über Zählpunkt und `ConsentId`, Abmeldedatum wird gesetzt, bei unfreiwilligen Varianten wird der Betreiber per E-Mail informiert. |
 | `EDASendError` | Verarbeitet Gateway- oder Versandfehler und markiert den betroffenen Prozess bzw. die Nachricht als Fehlerfall. |
 
 Fachlich wichtig: Die Abmeldung erfolgt ausschließlich über den Zustimmungswiderruf `CM_REV_SP` beziehungsweise den Mitglieder-Austritt, der daraus automatisch Widerrufe für alle aktiven Zählpunkte erzeugt. Eine gespeicherte `ConsentId` (aus der Anmeldebestätigung) ist dafür Voraussetzung.
@@ -332,6 +343,7 @@ Bei größeren Updates lohnt sich ein kurzer Blick in die Commit-History (`git l
 | `cloudflare` | Cloudflare Tunnel (kein offener Port nötig) |
 | `test` | Integrations-Teststack mit Mailpit und FILE-Worker |
 | `demo` | Demo-Reset-Job |
+| `forecast` | ML-Prognose-Service für die 7-Tage-Prognose auf der Berichte-Seite (benötigt ≥ 200 Stundenwerte historische Messdaten) |
 
 Beispiele:
 
@@ -365,23 +377,19 @@ Der Integrationstest-Harness läuft gegen den Docker-Stack und deckt Billing, SE
 
 ## Roadmap
 
-Das Tool ist momentan stark auf lokale und regionale Energiegemeinschaften ausgelegt. Prinzipiell sollte es aber auch für gemeinschaftliche Erzeugungsanlagen funktionieren.
+Alle drei Gemeinschaftstypen — Erneuerbare-Energie-Gemeinschaft (EEG), gemeinschaftliche Erzeugungsanlage (GEA) und Bürgerenergiegemeinschaft (BEG) — werden unterstützt, inklusive des BEG-Spezialfalls mehrerer Netzbetreiber mit zählpunktweisem EDA-Routing.
 
 Themen, die als Nächstes spannend sind und bei denen ich mich auch über Beiträge freue:
 
-- gemeinschaftliche Erzeugungsanlagen
 - Ponton X/P-Anbindung
-- Bürgerenergiegemeinschaften
-  - der Gemeinschaftstyp lässt sich bereits anlegen (eigenes Marktpartner-ID-Präfix, kein verpflichtender Standard-Netzbetreiber)
-  - die eigentliche Besonderheit von BEGs — mehrere Netzbetreiber gleichzeitig, inkl. zählpunktweisem EDA-Routing — ist noch nicht implementiert
-  - ich kann diesen Bereich derzeit selbst nicht realistisch testen, weil ich nur eine regionale EEG betreibe
 - P2P-Austausch laut ElWOG-Novelle
   - fachlich besonders spannend im Hinblick auf die Änderungen ab Oktober 2026
 
 ## Grenzen und ehrliche Hinweise
 
 - Das System ist stark auf den österreichischen EEG-Kontext zugeschnitten.
-- Derzeit ist nur das dynamische Aufteilungsmodell implementiert. Eine statische Aufteilung ist aktuell nicht implementiert.
+- Das Verteilungsmodell (statisch/dynamisch) wird EEG-weit festgelegt und bei EDA-Prozessen an den Netzbetreiber gemeldet. Im realen Betrieb erprobt ist bisher nur das dynamische Modell.
+- Die BEG-Unterstützung (mehrere Netzbetreiber, zählpunktweises EDA-Routing) ist implementiert, aber noch weniger praxiserprobt als der EEG-/GEA-Betrieb.
 - EDA per Mail ist der primäre reale Betriebsweg.
 - Ponton ist derzeit kein offiziell produktionsreifer Standardpfad.
 - Wer das Tool öffentlich oder produktiv betreibt, sollte TLS, Backups, Monitoring und Secret-Management sauber selbst aufsetzen.

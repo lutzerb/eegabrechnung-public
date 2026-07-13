@@ -146,7 +146,7 @@ func (r *EDAProcessRepository) UpdateStatus(ctx context.Context, id uuid.UUID, s
 	return err
 }
 
-// FindSentReqPTByZaehlpunkt returns the most recent EC_REQ_PT process in "sent"
+// FindSentReqPTByZaehlpunkt returns the most recent CR_REQ_PT process in "sent"
 // status for a given Zählpunkt within one EEG. Used to auto-complete the process
 // when a DATEN_CRMSG (ConsumptionRecord) arrives. The eeg_id scope matters for
 // Mehrfachteilnahme: the same Zählpunkt can have open data requests in two EEGs,
@@ -156,7 +156,7 @@ func (r *EDAProcessRepository) FindSentReqPTByZaehlpunkt(ctx context.Context, ee
 	      FROM eda_processes
 	      WHERE eeg_id = $1
 	        AND zaehlpunkt = $2
-	        AND process_type = 'EC_REQ_PT'
+	        AND process_type = 'CR_REQ_PT'
 	        AND status = 'sent'
 	      ORDER BY initiated_at DESC
 	      LIMIT 1`

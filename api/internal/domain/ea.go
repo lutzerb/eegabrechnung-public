@@ -109,7 +109,7 @@ type EAUVAPeriode struct {
 	KZ029       float64    `json:"kz_029"`   // 10% Umsätze (Bemessungsgrundlage)
 	KZ044       float64    `json:"kz_044"`   // Steuer für KZ029 (10% output tax)
 	KZ056       float64    `json:"kz_056"`   // Steuer für KZ022 (20% output tax)
-	KZ057       float64    `json:"kz_057"`   // Steuerschuld §19 Abs. 1 (Reverse Charge domestic)
+	KZ032       float64    `json:"kz_032"`   // Steuerschuld § 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV (Reverse Charge Elektrizitätslieferung)
 	KZ060       float64    `json:"kz_060"`   // Gesamtbetrag abziehbare Vorsteuer §12
 	KZ065       float64    `json:"kz_065"`   // Vorsteuer aus igE
 	KZ066       float64    `json:"kz_066"`   // Einfuhrumsatzsteuer (import VAT — rarely used)
