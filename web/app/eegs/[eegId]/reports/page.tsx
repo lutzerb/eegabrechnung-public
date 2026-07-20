@@ -651,6 +651,8 @@ export default function ReportsPage() {
             data={summaryData}
             granularity={granularity}
             forecastDailyTotals={forecastDailyTotals}
+            from={from}
+            to={to}
           />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">

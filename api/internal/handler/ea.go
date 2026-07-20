@@ -17,6 +17,7 @@ import (
 	"github.com/lutzerb/eegabrechnung/internal/auth"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
+	"github.com/lutzerb/eegabrechnung/internal/sepa"
 )
 
 type EAHandler struct {
@@ -93,6 +94,23 @@ const finanzOnlineFilenameMaxLen = 50
 func uvaExportFilename(eegName string, von, bis time.Time) string {
 	prefix := "UVA_"
 	suffix := fmt.Sprintf("_%s_%s.xml", von.Format("2006-01"), bis.Format("2006-01"))
+	budget := finanzOnlineFilenameMaxLen - len(prefix) - len(suffix)
+	name := []rune(filenameSafe(eegName))
+	if budget < 0 {
+		budget = 0
+	}
+	if len(name) > budget {
+		name = name[:budget]
+	}
+	return prefix + string(name) + suffix
+}
+
+// annualExportFilename builds a FinanzOnline annual-declaration download filename
+// (U1/K1/K2), truncating the EEG name (never the year or extension) to stay
+// within FinanzOnline's 50-character filename limit.
+func annualExportFilename(formPrefix, eegName string, jahr int) string {
+	prefix := formPrefix + "_"
+	suffix := fmt.Sprintf("_%d.xml", jahr)
 	budget := finanzOnlineFilenameMaxLen - len(prefix) - len(suffix)
 	name := []rune(filenameSafe(eegName))
 	if budget < 0 {
@@ -1027,6 +1045,42 @@ func (h *EAHandler) ExportUVAXML(w http.ResponseWriter, r *http.Request) {
 		w.Write(xmlData)
 		return
 	}
+	if format == "sepa" {
+		eeg, err := h.eegRepo.GetByIDInternal(r.Context(), eegID)
+		if err != nil || eeg == nil {
+			jsonError(w, "EEG nicht gefunden", http.StatusInternalServerError)
+			return
+		}
+		if settings == nil {
+			jsonError(w, "EA-Einstellungen nicht konfiguriert", http.StatusBadRequest)
+			return
+		}
+		ordnungsbegriff, err := normFastNr(settings.Steuernummer)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		ustr, err := buildVerrechnungsweisung(uva.Periodentyp, uva.DatumVon, live.Zahllast)
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		finanzamtName := settings.Finanzamt
+		if finanzamtName == "" {
+			finanzamtName = "Finanzamt Österreich"
+		}
+		sepaData, err := sepa.GenerateFinanzamtZahlung(eeg, ordnungsbegriff, finanzamtName, settings.FinanzamtIBAN, roundCent(live.Zahllast), ustr, time.Time{})
+		if err != nil {
+			jsonError(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		filename := uvaExportFilename(eeg.Name, uva.DatumVon, uva.DatumBis)
+		filename = "FAZ_" + strings.TrimPrefix(filename, "UVA_")
+		w.Header().Set("Content-Type", "application/xml")
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+		w.Write(sepaData)
+		return
+	}
 	// default: JSON summary
 	jsonOK(w, live)
 }
@@ -1391,8 +1445,13 @@ func (h *EAHandler) GetU1(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, "xml: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		eegName := "EEG"
+		if eeg, err := h.eegRepo.GetByIDInternal(r.Context(), eegID); err == nil && eeg != nil {
+			eegName = eeg.Name
+		}
+		filename := annualExportFilename("U1", eegName, jahr)
 		w.Header().Set("Content-Type", "application/xml")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="u1_%d.xml"`, jahr))
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 		w.Write(xmlData)
 		return
 	}
@@ -1400,6 +1459,7 @@ func (h *EAHandler) GetU1(w http.ResponseWriter, r *http.Request) {
 		"jahr":     jahr,
 		"perioden": perioden,
 		"kz_000":   annual.KZ000,
+		"kz_016":   annual.KZ016,
 		"kz_022":   annual.KZ022,
 		"kz_029":   annual.KZ029,
 		"kz_044":   annual.KZ044,
@@ -1433,8 +1493,13 @@ func (h *EAHandler) GetK1(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, "xml: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		eegName := "EEG"
+		if eeg, err := h.eegRepo.GetByIDInternal(r.Context(), eegID); err == nil && eeg != nil {
+			eegName = eeg.Name
+		}
+		filename := annualExportFilename("KSt_Basis", eegName, jahr)
 		w.Header().Set("Content-Type", "application/xml")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="kst_basis_%d.xml"`, jahr))
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 		w.Write(xmlData)
 		return
 	}
@@ -1461,8 +1526,13 @@ func (h *EAHandler) GetK2(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, "xml: "+err.Error(), http.StatusBadRequest)
 			return
 		}
+		eegName := "EEG"
+		if eeg, err := h.eegRepo.GetByIDInternal(r.Context(), eegID); err == nil && eeg != nil {
+			eegName = eeg.Name
+		}
+		filename := annualExportFilename("KSt_K2", eegName, jahr)
 		w.Header().Set("Content-Type", "application/xml")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="kst_k2_%d.xml"`, jahr))
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
 		w.Write(xmlData)
 		return
 	}

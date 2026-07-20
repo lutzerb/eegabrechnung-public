@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/xml"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -55,7 +56,13 @@ type infoDaten struct {
 }
 
 func makeInfoDaten(fastnr string) infoDaten {
+	// DATUM_ERSTELLUNG/UHRZEIT_ERSTELLUNG must reflect Austrian wall-clock time, not the
+	// container's OS timezone (UTC) — matches the Europe/Vienna convention used throughout
+	// the rest of the codebase for legally relevant timestamps.
 	now := time.Now()
+	if loc, err := time.LoadLocation("Europe/Vienna"); err == nil {
+		now = now.In(loc)
+	}
 	return infoDaten{
 		ArtIdentBegriff:   "FASTNR",
 		IdentBegriff:      fastnr,
@@ -88,6 +95,37 @@ func normFastNr(s string) (string, error) {
 	return d, nil
 }
 
+// buildVerrechnungsweisung encodes the structured remittance string for a SEPA
+// "Finanzamtszahlung" (FAZ) per PSA "Finanzamtszahlung in EBICS" v1.0.01 (zv.psa.at):
+// {Zeitraum}{+/-}{Betrag in Cent, ohne führende Nullen}{Abgabenart}.
+//
+//	MONAT:   YYMM      z.B. "2607"    = Juli 2026
+//	QUARTAL: YYQQ/QQ   z.B. "2604/06" = Q2 2026 (nur 01/03, 04/06, 07/09, 10/12 zulässig)
+//
+// zahllast > 0 = Rückstand (Kennzeichen "+"), zahllast < 0 = Gutschrift (Kennzeichen "-").
+// Abgabenart ist für die UVA immer "U" (Umsatzsteuer).
+func buildVerrechnungsweisung(periodentyp string, datumVon time.Time, zahllast float64) (string, error) {
+	yy := datumVon.Format("06")
+	var zeitraum string
+	switch periodentyp {
+	case "MONAT":
+		zeitraum = yy + datumVon.Format("01")
+	case "QUARTAL":
+		m := int(datumVon.Month())
+		start := ((m-1)/3)*3 + 1
+		zeitraum = fmt.Sprintf("%s%02d/%02d", yy, start, start+2)
+	default:
+		return "", fmt.Errorf("unbekannter UVA-Periodentyp %q", periodentyp)
+	}
+	cents := int64(math.Round(zahllast * 100))
+	sign := "+"
+	if cents < 0 {
+		sign = "-"
+		cents = -cents
+	}
+	return fmt.Sprintf("%s%s%dU", zeitraum, sign, cents), nil
+}
+
 // marshalFON marshals v to indented XML with the ISO-8859-1 declaration required by BMF.
 // All content we generate is ASCII-safe so the declaration is cosmetically correct.
 func marshalFON(v any) ([]byte, error) {
@@ -110,6 +148,7 @@ func marshalFON(v any) ([]byte, error) {
 //       ALLGEMEINE_DATEN (ANBRINGEN, ZRVON, ZRBIS, FASTNR)
 //       LIEFERUNGEN_LEISTUNGEN_EIGENVERBRAUCH
 //         KZ000 (required, kznull)
+//         STEUERFREI? (KZ016 — Kleinunternehmer-Umsätze, § 6 Abs. 1 Z 27 UStG)
 //         VERSTEUERT? (KZ022, KZ029, KZ044, KZ056, KZ032, ...)
 //       VORSTEUER? (KZ060, ...)
 //
@@ -142,9 +181,18 @@ type u30Versteuert struct {
 	KZ032 *kzField `xml:"KZ032,omitempty"` // Steuerschuld § 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV (Reverse Charge)
 }
 
-// u30Lieferungen — KZ000 is required (kznull allows 0), VERSTEUERT optional.
+// u30Steuerfrei — STEUERFREI sequence per u30.xsd: KZ011, KZ012, KZ015, KZ017,
+// KZ018, KZ019, KZ016, KZ020 — we only ever populate KZ016 (Kleinunternehmer,
+// § 6 Abs. 1 Z 27 UStG), a subset of the gross KZ000 total.
+type u30Steuerfrei struct {
+	KZ016 *kzField `xml:"KZ016,omitempty"`
+}
+
+// u30Lieferungen — KZ000 is required (kznull allows 0); STEUERFREI and VERSTEUERT
+// optional, in that schema order.
 type u30Lieferungen struct {
 	KZ000      kzField        `xml:"KZ000"`
+	Steuerfrei *u30Steuerfrei `xml:"STEUERFREI,omitempty"`
 	Versteuert *u30Versteuert `xml:"VERSTEUERT,omitempty"`
 }
 
@@ -196,6 +244,12 @@ func EAUVAFinanzOnlineXML(u *domain.EAUVAPeriode, settings *domain.EASettings) (
 		}
 	}
 
+	// Build STEUERFREI section (Kleinunternehmer-Umsätze, § 6 Abs. 1 Z 27 UStG)
+	var steuerfrei *u30Steuerfrei
+	if u.KZ016 != 0 {
+		steuerfrei = &u30Steuerfrei{KZ016: kzPtr(roundCent(u.KZ016))}
+	}
+
 	// Build VORSTEUER section. Zahllast/Gutschrift (KZ095) is not part of the
 	// submission — FinanzOnline computes it itself — so it's excluded here.
 	var vorsteuer *u30Vorsteuer
@@ -221,6 +275,7 @@ func EAUVAFinanzOnlineXML(u *domain.EAUVAPeriode, settings *domain.EASettings) (
 			},
 			Lieferungen: u30Lieferungen{
 				KZ000:      kzf(roundCent(u.KZ000)),
+				Steuerfrei: steuerfrei,
 				Versteuert: versteuert,
 			},
 			Vorsteuer: vorsteuer,
@@ -239,7 +294,7 @@ func EAUVAFinanzOnlineXML(u *domain.EAUVAPeriode, settings *domain.EASettings) (
 //       ERKLAERUNG art="U1"
 //         SATZNR
 //         ALLGEMEINE_DATEN (ANBRINGEN="U1", ZR=year, FASTNR)
-//         LIEFERUNGEN_LEISTUNGEN_EIGENVERBRAUCH (KZ000, VERSTEUERT?)
+//         LIEFERUNGEN_LEISTUNGEN_EIGENVERBRAUCH (KZ000, STEUERFREI?, VERSTEUERT?)
 //         VORSTEUER? (KZ060, ...) — KZ095 Zahllast/Gutschrift not transmitted, see U30 note above
 
 type jahrRoot struct {
@@ -318,8 +373,14 @@ func EAU1FinanzOnlineXML(annual *domain.EAUVAPeriode, settings *domain.EASetting
 		}
 	}
 
+	var steuerfrei *u30Steuerfrei
+	if annual.KZ016 != 0 {
+		steuerfrei = &u30Steuerfrei{KZ016: kzPtr(roundCent(annual.KZ016))}
+	}
+
 	lieferungen := &u30Lieferungen{
 		KZ000:      kzf(roundCent(annual.KZ000)),
+		Steuerfrei: steuerfrei,
 		Versteuert: versteuert,
 	}
 

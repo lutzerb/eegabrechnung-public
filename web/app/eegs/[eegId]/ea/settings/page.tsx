@@ -8,13 +8,14 @@ interface EASettings {
   uva_periodentyp: string;
   steuernummer: string;
   finanzamt: string;
+  finanzamt_iban: string;
 }
 
 export default function EASettingsPage() {
   const params = useParams<{ eegId: string }>();
   const eegId = params.eegId;
 
-  const [form, setForm] = useState<EASettings>({ uva_periodentyp: "QUARTAL", steuernummer: "", finanzamt: "" });
+  const [form, setForm] = useState<EASettings>({ uva_periodentyp: "QUARTAL", steuernummer: "", finanzamt: "", finanzamt_iban: "" });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -90,6 +91,16 @@ export default function EASettingsPage() {
             <label className="block text-sm font-medium text-slate-700 mb-1.5">Finanzamt</label>
             <input className={inputClass} value={form.finanzamt} onChange={(e) => setForm({ ...form, finanzamt: e.target.value })} placeholder="z.B. FA Wien 1/23" />
             <p className="text-xs text-slate-500 mt-1">Zuständiges Finanzamt für die Steuernummer</p>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Finanzamt-IBAN (Dienststelle)</label>
+            <input className={inputClass} value={form.finanzamt_iban} onChange={(e) => setForm({ ...form, finanzamt_iban: e.target.value })} placeholder="z.B. AT08 0100 0000 0550 4295" />
+            <p className="text-xs text-slate-500 mt-1">
+              IBAN der zuständigen Finanzamt-Dienststelle (steht auf jedem Schreiben des Finanzamts) — wird für die
+              SEPA-Finanzamtszahlung (UVA-Zahllast) benötigt. Nicht aus der Steuernummer ableitbar, da es seit den
+              FA-Zusammenlegungen 2020 keinen festen Zusammenhang mehr zwischen FA-Nummer und IBAN gibt.
+            </p>
           </div>
 
           <div className="border-t border-slate-200 pt-4">

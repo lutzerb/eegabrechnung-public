@@ -65,3 +65,9 @@ test-results/
 
 # Generated CAMT.053 test fixtures (runtime output, not versioned)
 testdata/*_camt053_*.xml
+
+# Local GEA import test fixtures (not versioned)
+testdata/geatest/
+
+# Local code review notes (not versioned)
+CODE_REVIEW_LOCAL.md

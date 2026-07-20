@@ -606,13 +606,13 @@ func (r *EARepository) Kontenblatt(ctx context.Context, eegID, kontoID uuid.UUID
 // ── UVA ───────────────────────────────────────────────────────────────────────
 
 const uvaCols = `id, eeg_id, jahr, periodentyp, periode_nr, datum_von, datum_bis, status,
-	kz_000, kz_022, kz_029, kz_044, kz_056, kz_032, kz_060, kz_065, kz_066, kz_083, zahllast,
+	kz_000, kz_016, kz_022, kz_029, kz_044, kz_056, kz_032, kz_060, kz_065, kz_066, kz_083, zahllast,
 	eingereicht_am, erstellt_am`
 
 func scanUVA(row interface{ Scan(...any) error }, u *domain.EAUVAPeriode) error {
 	return row.Scan(
 		&u.ID, &u.EegID, &u.Jahr, &u.Periodentyp, &u.PeriodeNr, &u.DatumVon, &u.DatumBis, &u.Status,
-		&u.KZ000, &u.KZ022, &u.KZ029, &u.KZ044, &u.KZ056, &u.KZ032, &u.KZ060, &u.KZ065, &u.KZ066, &u.KZ083, &u.Zahllast,
+		&u.KZ000, &u.KZ016, &u.KZ022, &u.KZ029, &u.KZ044, &u.KZ056, &u.KZ032, &u.KZ060, &u.KZ065, &u.KZ066, &u.KZ083, &u.Zahllast,
 		&u.EingereichtAm, &u.ErstelltAm,
 	)
 }
@@ -654,15 +654,15 @@ func (r *EARepository) GetUVA(ctx context.Context, id, eegID uuid.UUID) (*domain
 func (r *EARepository) UpsertUVA(ctx context.Context, u *domain.EAUVAPeriode) error {
 	q := `INSERT INTO ea_uva_perioden
 	        (eeg_id, jahr, periodentyp, periode_nr, datum_von, datum_bis, status,
-	         kz_000, kz_022, kz_029, kz_044, kz_056, kz_032, kz_060, kz_065, kz_066, kz_083, zahllast)
-	      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+	         kz_000, kz_016, kz_022, kz_029, kz_044, kz_056, kz_032, kz_060, kz_065, kz_066, kz_083, zahllast)
+	      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
 	      ON CONFLICT (eeg_id, jahr, periodentyp, periode_nr) DO UPDATE SET
-	        kz_000=$8, kz_022=$9, kz_029=$10, kz_044=$11, kz_056=$12, kz_032=$13,
-	        kz_060=$14, kz_065=$15, kz_066=$16, kz_083=$17, zahllast=$18
+	        kz_000=$8, kz_016=$9, kz_022=$10, kz_029=$11, kz_044=$12, kz_056=$13, kz_032=$14,
+	        kz_060=$15, kz_065=$16, kz_066=$17, kz_083=$18, zahllast=$19
 	      RETURNING id, erstellt_am`
 	return r.db.QueryRow(ctx, q,
 		u.EegID, u.Jahr, u.Periodentyp, u.PeriodeNr, u.DatumVon, u.DatumBis, u.Status,
-		u.KZ000, u.KZ022, u.KZ029, u.KZ044, u.KZ056, u.KZ032, u.KZ060, u.KZ065, u.KZ066, u.KZ083, u.Zahllast,
+		u.KZ000, u.KZ016, u.KZ022, u.KZ029, u.KZ044, u.KZ056, u.KZ032, u.KZ060, u.KZ065, u.KZ066, u.KZ083, u.Zahllast,
 	).Scan(&u.ID, &u.ErstelltAm)
 }
 
@@ -687,7 +687,8 @@ func (r *EARepository) DeleteUVA(ctx context.Context, id, eegID uuid.UUID) error
 // KZ mapping (per Austrian UStG and UVA form U30):
 //   UST_20  EINNAHME → KZ000+KZ022 (base), KZ056 (20% output tax)
 //   UST_10  EINNAHME → KZ000+KZ029 (base), KZ044 (10% output tax)
-//   KEINE   EINNAHME → KZ000 (exempt/Kleinunternehmer turnover, no output tax)
+//   KEINE   EINNAHME → KZ000 (gross turnover), plus KZ016 for KU-exempt turnover
+//                      (§ 6 Abs. 1 Z 27 UStG, no output tax)
 //   RC_20   AUSGABE  → KZ032 (Steuerschuld § 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV, self-assessed RC tax)
 //                      KZ060 (deductible as VST if full deduction right)
 //   RC_13   AUSGABE  → same as RC_20
@@ -696,7 +697,8 @@ func (r *EARepository) DeleteUVA(ctx context.Context, id, eegID uuid.UUID) error
 func (r *EARepository) CalcUVAKennzahlen(ctx context.Context, eegID uuid.UUID, von, bis time.Time) (*domain.EAUVAPeriode, error) {
 	// Kleinunternehmer (use_vat=false) have no Vorsteuerabzugsrecht:
 	//   - RC tax goes to KZ032 only (not KZ060)
-	//   - KEINE revenues are KU-exempt and not reported in the UVA
+	//   - KEINE revenues (KU-exempt turnover, § 6 Abs. 1 Z 27 UStG) are still reported
+	//     in KZ000 and KZ016, even in a UVA driven only by an RC obligation
 	var useVat bool
 	if err := r.db.QueryRow(ctx, "SELECT COALESCE(use_vat, false) FROM eegs WHERE id=$1", eegID).Scan(&useVat); err != nil {
 		return nil, fmt.Errorf("lookup use_vat: %w", err)
@@ -737,10 +739,13 @@ func (r *EARepository) CalcUVAKennzahlen(ctx context.Context, eegID uuid.UUID, v
 				u.KZ044 += ust
 			}
 		case "KEINE":
-			// KU-exempt revenues (§6 Abs. 1 Z 27 UStG) are not reported in a RC-only UVA.
-			// For USt-pflichtige EEGs, steuerfreie Umsätze still go into KZ000.
-			if richtung == "EINNAHME" && useVat {
+			if richtung == "EINNAHME" {
 				u.KZ000 += netto
+				if !useVat {
+					// KU-exempt revenues (§ 6 Abs. 1 Z 27 UStG) are reported in KZ016
+					// (a subset of KZ000), even in a UVA driven only by an RC obligation.
+					u.KZ016 += netto
+				}
 			}
 		case "RC_20", "RC_13":
 			if richtung == "AUSGABE" {
@@ -772,16 +777,16 @@ func (r *EARepository) CalcUVAKennzahlen(ctx context.Context, eegID uuid.UUID, v
 func (r *EARepository) GetSettings(ctx context.Context, eegID uuid.UUID) (*domain.EASettings, error) {
 	s := &domain.EASettings{EegID: eegID}
 	err := r.db.QueryRow(ctx,
-		`SELECT COALESCE(ea_uva_periodentyp,'QUARTAL'), COALESCE(ea_steuernummer,''), COALESCE(ea_finanzamt,'')
+		`SELECT COALESCE(ea_uva_periodentyp,'QUARTAL'), COALESCE(ea_steuernummer,''), COALESCE(ea_finanzamt,''), COALESCE(ea_finanzamt_iban,'')
 		 FROM eegs WHERE id=$1`, eegID,
-	).Scan(&s.UvaPeriodentyp, &s.Steuernummer, &s.Finanzamt)
+	).Scan(&s.UvaPeriodentyp, &s.Steuernummer, &s.Finanzamt, &s.FinanzamtIBAN)
 	return s, err
 }
 
 func (r *EARepository) UpdateSettings(ctx context.Context, s *domain.EASettings) error {
 	_, err := r.db.Exec(ctx,
-		`UPDATE eegs SET ea_uva_periodentyp=$1, ea_steuernummer=$2, ea_finanzamt=$3 WHERE id=$4`,
-		s.UvaPeriodentyp, nilStr(s.Steuernummer), nilStr(s.Finanzamt), s.EegID,
+		`UPDATE eegs SET ea_uva_periodentyp=$1, ea_steuernummer=$2, ea_finanzamt=$3, ea_finanzamt_iban=$4 WHERE id=$5`,
+		s.UvaPeriodentyp, nilStr(s.Steuernummer), nilStr(s.Finanzamt), nilStr(s.FinanzamtIBAN), s.EegID,
 	)
 	return err
 }

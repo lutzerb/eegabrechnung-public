@@ -105,6 +105,7 @@ type EAUVAPeriode struct {
 	DatumBis    time.Time  `json:"datum_bis"`
 	Status      string     `json:"status"` // entwurf | eingereicht
 	KZ000       float64    `json:"kz_000"`
+	KZ016       float64    `json:"kz_016"`   // Steuerfreie Kleinunternehmer-Umsätze § 6 Abs. 1 Z 27 UStG (Teilmenge von KZ000)
 	KZ022       float64    `json:"kz_022"`   // 20% Umsätze (Bemessungsgrundlage)
 	KZ029       float64    `json:"kz_029"`   // 10% Umsätze (Bemessungsgrundlage)
 	KZ044       float64    `json:"kz_044"`   // Steuer für KZ029 (10% output tax)
@@ -163,6 +164,7 @@ type EASettings struct {
 	UvaPeriodentyp  string    `json:"uva_periodentyp"` // MONAT | QUARTAL
 	Steuernummer    string    `json:"steuernummer,omitempty"`
 	Finanzamt       string    `json:"finanzamt,omitempty"`
+	FinanzamtIBAN   string    `json:"finanzamt_iban,omitempty"` // IBAN der zuständigen FA-Dienststelle (für SEPA-Finanzamtszahlung)
 }
 
 // EAImportPreviewRow is one row in the import preview.

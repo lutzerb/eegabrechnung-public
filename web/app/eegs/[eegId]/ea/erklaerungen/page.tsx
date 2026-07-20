@@ -8,6 +8,7 @@ import { useParams } from "next/navigation";
 interface U1Response {
   jahr: number;
   kz_000: number;
+  kz_016: number;
   kz_022: number;
   kz_029: number;
   kz_044: number;
@@ -189,6 +190,7 @@ export default function ErklaerунgenPage() {
                 <table className="w-full text-sm">
                   <tbody className="divide-y divide-slate-100">
                     <tr><td className="py-2 font-mono text-xs text-slate-400 w-20">KZ 000</td><td className="py-2 text-slate-600">Gesamtbetrag der Lieferungen, sonstigen Leistungen und Eigenverbrauch</td><td className="py-2 text-right tabular-nums">{fmt(u1.kz_000)}</td></tr>
+                    {u1.kz_016 !== 0 && <tr><td className="py-2 font-mono text-xs text-slate-400">KZ 016</td><td className="py-2 text-slate-600">davon Kleinunternehmer-Umsätze (§ 6 Abs. 1 Z 27 UStG)</td><td className="py-2 text-right tabular-nums">{fmt(u1.kz_016)}</td></tr>}
                     <tr><td className="py-2 font-mono text-xs text-slate-400">KZ 022</td><td className="py-2 text-slate-600">Lieferungen und sonstige Leistungen zu 20 %</td><td className="py-2 text-right tabular-nums">{fmt(u1.kz_022)}</td></tr>
                     <tr><td className="py-2 font-mono text-xs text-slate-400">KZ 056</td><td className="py-2 text-slate-600">Umsatzsteuer 20 %</td><td className="py-2 text-right tabular-nums">{fmt(u1.kz_056)}</td></tr>
                     {u1.kz_029 !== 0 && <tr><td className="py-2 font-mono text-xs text-slate-400">KZ 029</td><td className="py-2 text-slate-600">Lieferungen und sonstige Leistungen zu 10 %</td><td className="py-2 text-right tabular-nums">{fmt(u1.kz_029)}</td></tr>}

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 
 interface UVAKennzahlen {
   kz_000: number; // Gesamtbetrag Lieferungen/Leistungen
+  kz_016: number; // Kleinunternehmer-Umsätze § 6 Abs. 1 Z 27 UStG (Teilmenge von KZ 000)
   kz_022: number; // Umsätze zu 20 % (Bemessungsgrundlage)
   kz_029: number; // Umsätze zu 10 % (Bemessungsgrundlage)
   kz_044: number; // Umsatzsteuer 10 %
@@ -56,6 +57,7 @@ export default function UVAPage() {
   const [marking, setMarking] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [xmlLoading, setXmlLoading] = useState(false);
+  const [sepaLoading, setSepaLoading] = useState(false);
 
   const [newForm, setNewForm] = useState({ jahr: curYear, periodentyp: "QUARTAL", quartal: 1, monat: 1 });
   const [showCreate, setShowCreate] = useState(false);
@@ -122,6 +124,23 @@ export default function UVAPage() {
       a.click();
     } finally {
       setXmlLoading(false);
+    }
+  }
+
+  async function handleExportSEPA(id: string) {
+    setSepaLoading(true);
+    try {
+      const res = await fetch(`/api/eegs/${eegId}/ea/uva/${id}?action=export&format=sepa`);
+      if (!res.ok) { alert((await res.json().catch(() => null))?.error || "Exportfehler"); return; }
+      const blob = await res.blob();
+      const cd = res.headers.get("Content-Disposition") || "";
+      const m = cd.match(/filename="([^"]+)"/);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = m ? m[1] : `faz_${id}.xml`;
+      a.click();
+    } finally {
+      setSepaLoading(false);
     }
   }
 
@@ -257,6 +276,16 @@ export default function UVAPage() {
                   >
                     {xmlLoading ? "Exportiert…" : "XML (FinanzOnline)"}
                   </button>
+                  {kennzahlen && kennzahlen.zahllast > 0.005 && (
+                    <button
+                      onClick={() => selectedId && handleExportSEPA(selectedId)}
+                      disabled={sepaLoading}
+                      title="SEPA-Überweisung an das Finanzamt (Purp=TAXS), zum Import ins Online-Banking"
+                      className="px-3 py-1.5 text-xs font-medium text-slate-600 border border-slate-300 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      {sepaLoading ? "Exportiert…" : "SEPA-Zahlung (Finanzamt)"}
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -265,6 +294,7 @@ export default function UVAPage() {
                 <table className="w-full text-sm">
                   <tbody className="divide-y divide-slate-100">
                     <tr><td className="py-2 text-slate-600">KZ 000 – Gesamtbetrag der Lieferungen, sonstigen Leistungen und Eigenverbrauch</td><td className="py-2 text-right font-medium">{fmt(kennzahlen.kz_000)}</td></tr>
+                    {kennzahlen.kz_016 !== 0 && <tr><td className="py-2 text-slate-600">KZ 016 – davon Kleinunternehmer-Umsätze (§ 6 Abs. 1 Z 27 UStG)</td><td className="py-2 text-right font-medium">{fmt(kennzahlen.kz_016)}</td></tr>}
                     <tr><td className="py-2 text-slate-600">KZ 022 – Lieferungen und sonstige Leistungen zu 20 %</td><td className="py-2 text-right font-medium">{fmt(kennzahlen.kz_022)}</td></tr>
                     <tr><td className="py-2 text-slate-600">KZ 056 – Umsatzsteuer 20 %</td><td className="py-2 text-right font-medium">{fmt(kennzahlen.kz_056)}</td></tr>
                     {kennzahlen.kz_029 !== 0 && <tr><td className="py-2 text-slate-600">KZ 029 – Lieferungen und sonstige Leistungen zu 10 %</td><td className="py-2 text-right font-medium">{fmt(kennzahlen.kz_029)}</td></tr>}

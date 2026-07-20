@@ -9,6 +9,7 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  Customized,
 } from "recharts";
 import type { MonthlyEnergyRow, MemberStat, EnergySummaryRow } from "@/lib/api";
 
@@ -252,6 +253,74 @@ interface EnergySummaryChartProps {
   data: EnergySummaryRow[];
   granularity: "day" | "month" | "year" | "15min";
   forecastDailyTotals?: ForecastDayTotal[];
+  // Requested range ("YYYY-MM-DD"), used to fill in gaps for periods with no
+  // readings at all so missing days/months/etc. still show up (marked) on the
+  // x-axis instead of silently disappearing.
+  from?: string;
+  to?: string;
+}
+
+// Truncates a period ISO string to the key granularity buckets align on.
+function periodKeyFn(iso: string, granularity: "day" | "month" | "year" | "15min"): string {
+  if (granularity === "15min") return iso.slice(0, 16); // "YYYY-MM-DDTHH:MM"
+  if (granularity === "day") return iso.slice(0, 10);   // "YYYY-MM-DD"
+  if (granularity === "year") return iso.slice(0, 4);   // "YYYY"
+  return iso.slice(0, 7);                                // "YYYY-MM"
+}
+
+// Reconstructs a representative ISO instant for a period key, for reuse with the
+// existing labelFn helpers (dayLabel/monthLabel/intervalLabel all read UTC getters).
+function canonicalIso(key: string, granularity: "day" | "month" | "year" | "15min"): string {
+  if (granularity === "15min") return `${key}:00Z`;
+  if (granularity === "day") return `${key}T00:00:00Z`;
+  if (granularity === "year") return `${key}-01-01T00:00:00Z`;
+  return `${key}-01T00:00:00Z`;
+}
+
+// Enumerates every expected period key between from/to (inclusive) at the given
+// granularity, so gaps in the underlying data can be detected and marked.
+function enumeratePeriods(from: string, to: string, granularity: "day" | "month" | "year" | "15min"): string[] {
+  const fromD = new Date(`${from}T00:00:00Z`);
+  const toD = new Date(`${to}T00:00:00Z`);
+  if (Number.isNaN(fromD.getTime()) || Number.isNaN(toD.getTime()) || fromD > toD) return [];
+  const keys: string[] = [];
+
+  if (granularity === "year") {
+    for (let y = fromD.getUTCFullYear(); y <= toD.getUTCFullYear(); y++) keys.push(String(y));
+    return keys;
+  }
+  if (granularity === "month") {
+    let y = fromD.getUTCFullYear();
+    let m = fromD.getUTCMonth();
+    const endY = toD.getUTCFullYear();
+    const endM = toD.getUTCMonth();
+    while (y < endY || (y === endY && m <= endM)) {
+      keys.push(`${y}-${String(m + 1).padStart(2, "0")}`);
+      m++;
+      if (m > 11) { m = 0; y++; }
+    }
+    return keys;
+  }
+  if (granularity === "day") {
+    const cur = new Date(fromD);
+    while (cur.getTime() <= toD.getTime()) {
+      keys.push(cur.toISOString().slice(0, 10));
+      cur.setUTCDate(cur.getUTCDate() + 1);
+    }
+    return keys;
+  }
+  // 15min — walk every calendar day in range, 96 slots each
+  const cur = new Date(fromD);
+  while (cur.getTime() <= toD.getTime()) {
+    const dayStr = cur.toISOString().slice(0, 10);
+    for (let h = 0; h < 24; h++) {
+      for (let mm = 0; mm < 60; mm += 15) {
+        keys.push(`${dayStr}T${String(h).padStart(2, "0")}:${String(mm).padStart(2, "0")}`);
+      }
+    }
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return keys;
 }
 
 function EnergySummaryTooltip({ active, payload, label }: {
@@ -272,6 +341,19 @@ function EnergySummaryTooltip({ active, payload, label }: {
   const verbrauchProg   = val("Verbrauch Prognose");
   const erzeugungProg   = val("Erzeugung Prognose");
   const isForecast      = verbrauchProg > 0 || erzeugungProg > 0;
+  const isMissing       = val("Keine Daten") > 0;
+
+  if (isMissing) {
+    return (
+      <div className="bg-white border border-slate-200 rounded-lg shadow-sm px-3 py-2.5 text-xs min-w-44">
+        <p className="font-semibold text-slate-700 mb-1">{label}</p>
+        <p className="text-slate-400 flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-sm bg-slate-300 inline-block" />
+          Keine Messdaten für diesen Zeitraum
+        </p>
+      </div>
+    );
+  }
 
   if (isForecast) {
     return (
@@ -377,7 +459,41 @@ function makeForecastShape(color: string, patternId: string) {
 const forecastConsShape = makeForecastShape("#10b981", "eeg-fc-cons");
 const forecastGenShape  = makeForecastShape("#6366f1", "eeg-fc-gen");
 
-export function EnergySummaryChart({ data, granularity, forecastDailyTotals }: EnergySummaryChartProps) {
+// Gray cross-hatch marker for periods with no readings at all — visually
+// distinct from the (colored, single-direction) forecast hatch above.
+// The <pattern> it references is defined once in <MissingHatchDef />, not here —
+// one <Bar> per missing period would otherwise redefine the same id repeatedly,
+// which is invalid SVG and caused a stray misplaced square during re-renders.
+function MissingBarShape(props: { x?: number; y?: number; width?: number; height?: number; [k: string]: unknown }) {
+  const { x, y, width, height } = props;
+  // Recharts briefly reuses stale bar-rectangle nodes with a missing x (null,
+  // not undefined — so a destructuring default won't catch it) while
+  // reconciling a granularity switch (different category count). Bail out
+  // rather than let it fall back to x=0, which drew a stray square at the
+  // chart's left edge.
+  if (x == null || y == null || !width || !height || (width as number) <= 0 || (height as number) <= 0) {
+    return null;
+  }
+  return (
+    <rect
+      x={x} y={y} width={width} height={height}
+      fill="url(#eeg-missing-hatch)" stroke="#cbd5e1" strokeWidth={1} strokeDasharray="2 2" rx={2}
+    />
+  );
+}
+
+function MissingHatchDef() {
+  return (
+    <defs>
+      <pattern id="eeg-missing-hatch" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(-45)">
+        <rect width="6" height="6" fill="#f8fafc" />
+        <line x1="0" y1="0" x2="0" y2="6" stroke="#cbd5e1" strokeWidth="2" />
+      </pattern>
+    </defs>
+  );
+}
+
+export function EnergySummaryChart({ data, granularity, forecastDailyTotals, from, to }: EnergySummaryChartProps) {
   const mounted = useIsMounted();
   const [containerRef, width] = useContainerWidth();
   const labelFn =
@@ -400,13 +516,14 @@ export function EnergySummaryChart({ data, granularity, forecastDailyTotals }: E
 
   const historicalItems = data.map((r) => ({
     name:                  labelFn(r.period),
-    period:                r.period.slice(0, 10),
+    period:                periodKeyFn(r.period, granularity),
     "Ausgetauscht":        r.wh_self,
     "Restbedarf":          r.wh_restbedarf,
     "Einspeisung EEG":     r.wh_community,
     "Resteinspeisung":     r.wh_resteinspeisung,
     "Verbrauch Prognose":  0,
     "Erzeugung Prognose":  0,
+    "Keine Daten":         0,
   }));
 
   const forecastItems = hasForecast
@@ -421,16 +538,50 @@ export function EnergySummaryChart({ data, granularity, forecastDailyTotals }: E
           "Resteinspeisung":     0,
           "Verbrauch Prognose":  f.consumption_kwh,
           "Erzeugung Prognose":  f.generation_kwh,
+          "Keine Daten":         0,
         }))
     : [];
 
-  const chartData = [...historicalItems, ...forecastItems].sort((a, b) =>
-    a.period.localeCompare(b.period)
-  );
-
-  if (!mounted || chartData.length === 0) {
+  if (!mounted || (historicalItems.length === 0 && forecastItems.length === 0)) {
     return <EmptyChart label="Keine Messdaten für den gewählten Zeitraum." />;
   }
+
+  // Fill gaps: any expected period in [from, to] with neither real nor forecast
+  // data gets a marked placeholder bar so it still shows up on the x-axis.
+  const coveredKeys = new Set([
+    ...historicalItems.map((r) => r.period),
+    ...forecastItems.map((r) => r.period),
+  ]);
+  const maxCons = Math.max(
+    0,
+    ...historicalItems.map((r) => r["Ausgetauscht"] + r["Restbedarf"]),
+    ...forecastItems.map((r) => r["Verbrauch Prognose"])
+  );
+  const maxGen = Math.max(
+    0,
+    ...historicalItems.map((r) => r["Einspeisung EEG"] + r["Resteinspeisung"]),
+    ...forecastItems.map((r) => r["Erzeugung Prognose"])
+  );
+  const placeholderHeight = Math.max(maxCons, maxGen) * 0.12 || 1;
+
+  const missingItems = (from && to ? enumeratePeriods(from, to, granularity) : [])
+    .filter((key) => !coveredKeys.has(key))
+    .map((key) => ({
+      name:                  labelFn(canonicalIso(key, granularity)),
+      period:                key,
+      "Ausgetauscht":        0,
+      "Restbedarf":          0,
+      "Einspeisung EEG":     0,
+      "Resteinspeisung":     0,
+      "Verbrauch Prognose":  0,
+      "Erzeugung Prognose":  0,
+      "Keine Daten":         placeholderHeight,
+    }));
+
+  const chartData = [...historicalItems, ...forecastItems, ...missingItems].sort((a, b) =>
+    a.period.localeCompare(b.period)
+  );
+  const hasMissing = missingItems.length > 0;
 
   return (
     <div>
@@ -464,11 +615,18 @@ export function EnergySummaryChart({ data, granularity, forecastDailyTotals }: E
             </div>
           </>
         )}
+        {hasMissing && (
+          <div className="flex items-center gap-1.5">
+            <svg width="12" height="10"><rect width="12" height="10" fill="url(#eeg-missing-legend)" stroke="#cbd5e1" strokeWidth={1} strokeDasharray="2 2" rx={2} /><defs><pattern id="eeg-missing-legend" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(-45)"><rect width="6" height="6" fill="#f8fafc" /><line x1="0" y1="0" x2="0" y2="6" stroke="#cbd5e1" strokeWidth="2" /></pattern></defs></svg>
+            <span>Keine Daten <span className="text-slate-400">(Lücke)</span></span>
+          </div>
+        )}
       </div>
 
       <div ref={containerRef} style={{ width: "100%", height: 300 }}>
         {width > 0 && (
-          <BarChart width={width} height={300} data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+          <BarChart key={granularity} width={width} height={300} data={chartData} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
+            <Customized component={MissingHatchDef} />
             <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
             <XAxis orientation="bottom" type="category" scale="auto" height={30} mirror={false} dataKey="name" tick={{ fontSize: 12, fill: "#64748b" }} interval={xAxisInterval} />
             <YAxis
@@ -486,6 +644,9 @@ export function EnergySummaryChart({ data, granularity, forecastDailyTotals }: E
             <Bar dataKey="Resteinspeisung"     stackId="gen"  fill="#c4b5fd"  maxBarSize={40} minPointSize={0} isAnimationActive={false} />
             <Bar dataKey="Einspeisung EEG"     stackId="gen"  fill="#6366f1"  maxBarSize={40} radius={[3, 3, 0, 0]} minPointSize={0} isAnimationActive={false} />
             <Bar dataKey="Erzeugung Prognose"  stackId="gen"  shape={forecastGenShape as never} maxBarSize={40} minPointSize={0} isAnimationActive={false} />
+            {/* Gap markers — rendered in both stacks so a missing period shows a hatch on either side */}
+            <Bar dataKey="Keine Daten"         stackId="cons" shape={MissingBarShape as never} maxBarSize={40} minPointSize={0} isAnimationActive={false} legendType="none" />
+            <Bar dataKey="Keine Daten"         stackId="gen"  shape={MissingBarShape as never} maxBarSize={40} minPointSize={0} isAnimationActive={false} legendType="none" />
           </BarChart>
         )}
       </div>
