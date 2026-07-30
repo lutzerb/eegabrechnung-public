@@ -1820,7 +1820,7 @@ func (h *OnboardingHandler) ConfirmManualOnboarding(w http.ResponseWriter, r *ht
 	// Notify admins that the member confirmed
 	eeg, _ := h.eegRepo.GetByIDInternal(r.Context(), req.EegID)
 	if eeg != nil && !eeg.IsDemo {
-		go h.sendAdminNotificationEmail(r.Context(), req.EegID, req, eeg.Name)
+		go h.sendAdminNotificationEmail(context.WithoutCancel(r.Context()), req.EegID, req, eeg.Name)
 	}
 
 	jsonOK(w, map[string]any{"ok": true, "message": "Anmeldung bestätigt."})

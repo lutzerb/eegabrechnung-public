@@ -395,7 +395,7 @@ func (w *Worker) processInboundMessages(ctx context.Context, msgs []*types.Messa
 					notifProc.Status = "rejected"
 					notifProc.ErrorMsg = errMsg
 					if eeg, eegErr := w.eegRepo.GetByIDInternal(ctx, notifProc.EegID); eegErr == nil {
-						go w.sendEDAErrorNotification(ctx, notifProc, eeg)
+						go w.sendEDAErrorNotification(context.WithoutCancel(ctx), notifProc, eeg)
 					}
 				}
 			}
@@ -514,7 +514,7 @@ func (w *Worker) handleEDASendError(ctx context.Context, dbMsgID uuid.UUID, msg 
 			// Send error notification email to the EEG operator (non-blocking).
 			if proc, lookupErr := w.edaProcRepo.GetByID(ctx, *processIDPtr); lookupErr == nil {
 				if eeg, eegErr := w.eegRepo.GetByIDInternal(ctx, proc.EegID); eegErr == nil {
-					go w.sendEDAErrorNotification(ctx, proc, eeg)
+					go w.sendEDAErrorNotification(context.WithoutCancel(ctx), proc, eeg)
 				}
 			}
 		}
@@ -664,7 +664,7 @@ func (w *Worker) processCRMsg(ctx context.Context, msg *types.Message) (uuid.UUI
 			"stored_direction", mp.Energierichtung,
 			"detected_direction", detected,
 		)
-		go w.notifyDirectionMismatch(ctx, mp, detected)
+		go w.notifyDirectionMismatch(context.WithoutCancel(ctx), mp, detected)
 	}
 
 	// Resolve the correct meter_point_id PER READING TIMESTAMP rather than once for the
@@ -1022,7 +1022,7 @@ func (w *Worker) processCPDocument(ctx context.Context, msg *types.Message) (uui
 		proc.Status = newStatus
 		proc.ErrorMsg = errMsg
 		if eeg, eegErr := w.eegRepo.GetByIDInternal(ctx, proc.EegID); eegErr == nil {
-			go w.sendEDAErrorNotification(ctx, proc, eeg)
+			go w.sendEDAErrorNotification(context.WithoutCancel(ctx), proc, eeg)
 		}
 	}
 
@@ -1104,7 +1104,7 @@ func (w *Worker) processCMNotification(ctx context.Context, msgID uuid.UUID, msg
 				w.log.Info("CMNotification: ANTWORT_ECON code 182 — kein Smartmeter, sende Kundenbenachrichtigung",
 					"process_id", proc.ID, "zaehlpunkt", proc.Zaehlpunkt)
 				if proc.CustomerNotifiedAt == nil && proc.MeterPointID != nil && *proc.MeterPointID != uuid.Nil {
-					go w.sendSmartmeterInfoEmail(ctx, proc, result.PortalApprovalURL)
+					go w.sendSmartmeterInfoEmail(context.WithoutCancel(ctx), proc, result.PortalApprovalURL)
 				}
 				break
 			}
@@ -1178,7 +1178,7 @@ func (w *Worker) processCMNotification(ctx context.Context, msgID uuid.UUID, msg
 		proc.Status = newStatus
 		proc.ErrorMsg = errMsg
 		if eeg, eegErr := w.eegRepo.GetByIDInternal(ctx, proc.EegID); eegErr == nil {
-			go w.sendEDAErrorNotification(ctx, proc, eeg)
+			go w.sendEDAErrorNotification(context.WithoutCancel(ctx), proc, eeg)
 		}
 	}
 
@@ -1337,7 +1337,7 @@ func (w *Worker) processECMPList(ctx context.Context, msgID uuid.UUID, msg *type
 		}
 
 		// Send confirmation email to member.
-		go w.sendAnmeldungConfirmationEmail(ctx, mpID, proc.EegID, proc.Zaehlpunkt, confirmedDate)
+		go w.sendAnmeldungConfirmationEmail(context.WithoutCancel(ctx), mpID, proc.EegID, proc.Zaehlpunkt, confirmedDate)
 	}
 
 	w.log.Info("ECMPList: EDA process confirmed",
@@ -1706,7 +1706,7 @@ func (w *Worker) processCMRevoke(ctx context.Context, msg *types.Message) (uuid.
 		proc.Status = "completed"
 		proc.ErrorMsg = errMsg
 		if eeg, eegErr := w.eegRepo.GetByIDInternal(ctx, proc.EegID); eegErr == nil {
-			go w.sendEDAErrorNotification(ctx, proc, eeg)
+			go w.sendEDAErrorNotification(context.WithoutCancel(ctx), proc, eeg)
 		}
 	}
 
@@ -1764,7 +1764,7 @@ func (w *Worker) processCMRevokeUnsolicited(ctx context.Context, result *edaxml.
 				Status:      "completed",
 				ErrorMsg:    fmt.Sprintf("Vom Netzbetreiber aufgehoben (%s): %s", result.MessageCode, reason),
 			}
-			go w.sendEDAErrorNotification(ctx, syntheticProc, eeg)
+			go w.sendEDAErrorNotification(context.WithoutCancel(ctx), syntheticProc, eeg)
 		}
 	}
 
@@ -2066,7 +2066,7 @@ func (w *Worker) sendAnmeldungConfirmationEmail(ctx context.Context, meterPointI
 <p><a href="%s/portal" style="color: #1e40af;">%s/portal</a></p>`, w.webBaseURL, w.webBaseURL)
 	}
 
-	subject := fmt.Sprintf("Ihr Zählpunkt wurde von %s bestätigt", eeg.Name)
+	subject := fmt.Sprintf("Ihr Zählpunkt %s wurde von %s bestätigt", zaehlpunkt, eeg.Name)
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
