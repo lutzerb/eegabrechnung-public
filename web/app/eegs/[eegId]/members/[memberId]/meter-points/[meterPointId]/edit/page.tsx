@@ -8,6 +8,7 @@ import Link from "next/link";
 import { TeilnahmefaktorSection } from "./TeilnahmefaktorSection";
 import { ZaehlpunktAbmeldenSection } from "./ZaehlpunktAbmeldenSection";
 import { MeterPointStatusBadge } from "@/components/meter-point-status-badge";
+import { eegDisplayName } from "@/lib/eeg-display-name";
 
 interface Props {
   params: Promise<{ eegId: string; memberId: string; meterPointId: string }>;
@@ -122,7 +123,7 @@ export default async function EditMeterPointPage({ params, searchParams }: Props
         </Link>
         <span className="text-slate-400 mx-2">/</span>
         <Link href={`/eegs/${eegId}`} className="text-sm text-slate-500 hover:text-slate-700">
-          {eeg.name}
+          {eegDisplayName(eeg)}
         </Link>
         <span className="text-slate-400 mx-2">/</span>
         <Link href={`/eegs/${eegId}/members`} className="text-sm text-slate-500 hover:text-slate-700">

@@ -84,10 +84,8 @@ func main() {
 		tr = &noopTransport{log: log} // fallback; never used directly in MAIL mode
 	}
 
-	webBaseURL := getEnv("WEB_BASE_URL", "")
-
 	// Start the EDA worker.
-	worker := eda.NewWorker(pool, tr, transportMode, encKey, pollInterval, log, webBaseURL)
+	worker := eda.NewWorker(pool, tr, transportMode, encKey, pollInterval, log)
 
 	// Set up HTTP server for Ponton inbound handler (and health check).
 	r := chi.NewRouter()

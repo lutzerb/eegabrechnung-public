@@ -28,9 +28,9 @@ type User struct {
 // EDAMessage represents an EDA protocol message.
 type EDAMessage struct {
 	ID          uuid.UUID  `json:"id"`
-	MessageID   string     `json:"message_id"`   // external message-id from MaKo header
+	MessageID   string     `json:"message_id"` // external message-id from MaKo header
 	Direction   string     `json:"direction"`
-	Process     string     `json:"process"`      // EDA process code, e.g. EC_EINZEL_ANM, DATEN_CRMSG
+	Process     string     `json:"process"` // EDA process code, e.g. EC_EINZEL_ANM, DATEN_CRMSG
 	MessageType string     `json:"message_type"`
 	Subject     string     `json:"subject"`
 	Body        string     `json:"body,omitempty"`         // plain-text email body (MAIL transport)
@@ -48,46 +48,57 @@ type EEGStats struct {
 	MeterPointCount int        `json:"meter_point_count"`
 	InvoiceCount    int        `json:"invoice_count"`
 	BillingRunCount int        `json:"billing_run_count"`
-	TotalKwh        float64    `json:"total_kwh"`         // sum of consumption_kwh from invoices
-	TotalRevenue    float64    `json:"total_revenue"`     // sum of positive total_amount (consumer charges)
+	TotalKwh        float64    `json:"total_kwh"`     // sum of consumption_kwh from invoices
+	TotalRevenue    float64    `json:"total_revenue"` // sum of positive total_amount (consumer charges)
 	LastBillingRun  *time.Time `json:"last_billing_run,omitempty"`
 }
 
 // EEG represents an Energiegemeinschaft.
 type EEG struct {
-	ID                  uuid.UUID `json:"id"`
-	OrganizationID      uuid.UUID `json:"organization_id"`
-	GemeinschaftID      string    `json:"gemeinschaft_id"`
-	GemeinschaftTyp     string    `json:"gemeinschaft_typ"` // EEG, GEA or BEG
-	Netzbetreiber       string    `json:"netzbetreiber"`
-	Name                string    `json:"name"`
-	EnergyPrice         float64   `json:"energy_price"`          // consumer work price ct/kWh (net)
-	ProducerPrice       float64   `json:"producer_price"`        // producer feed-in price ct/kWh (net)
-	UseVat              bool      `json:"use_vat"`               // include VAT on invoices
-	VatPct              float64   `json:"vat_pct"`               // VAT percentage (e.g. 20)
-	MeterFeeEur           float64 `json:"meter_fee_eur"`            // flat fixed fee per member per period (not per meter point, despite the name)
-	FreeKwh               float64 `json:"free_kwh"`                 // complimentary kWh per member per period
-	DiscountPct           float64 `json:"discount_pct"`             // discount on consumption in %
-	ParticipationFeeEur   float64 `json:"participation_fee_eur"`    // fixed member participation fee per period
-	ZaehlpunktsGebuehrEur float64 `json:"zaehlpunkts_gebuehr_eur"`  // fee per active meter point per member per period
-	BillingPeriod         string  `json:"billing_period"`           // monthly | quarterly | semiannual | annual
-	InvoiceNumberPrefix string    `json:"invoice_number_prefix"`
-	InvoiceNumberDigits int       `json:"invoice_number_digits"`
-	InvoiceNumberStart  int       `json:"invoice_number_start"` // first invoice number for this EEG
-	InvoicePreText      string    `json:"invoice_pre_text"`
-	InvoicePostText     string    `json:"invoice_post_text"`
-	InvoiceFooterText   string    `json:"invoice_footer_text"`
-	// Controls the "Zahlungshinweis" paragraph on consumer invoices: sepa_lastschrift (default) | ueberweisung | none
+	ID              uuid.UUID `json:"id"`
+	OrganizationID  uuid.UUID `json:"organization_id"`
+	PortalBaseURL   string    `json:"-"` // organizations.portal_base_url of the owning org — not serialized, used server-side for building links in outbound emails
+	GemeinschaftID  string    `json:"gemeinschaft_id"`
+	GemeinschaftTyp string    `json:"gemeinschaft_typ"` // EEG, GEA or BEG
+	Netzbetreiber   string    `json:"netzbetreiber"`
+	Name            string    `json:"name"`
+	// Optional alias shown everywhere except legally binding documents (invoice
+	// Rechnungssteller block, SEPA XML/mandate, onboarding declaration) - those
+	// always use Name. Empty means "no alias", see DisplayNameOrName.
+	DisplayName           string  `json:"display_name"`
+	EnergyPrice           float64 `json:"energy_price"`            // consumer work price ct/kWh (net)
+	ProducerPrice         float64 `json:"producer_price"`          // producer feed-in price ct/kWh (net)
+	UseVat                bool    `json:"use_vat"`                 // include VAT on invoices
+	VatPct                float64 `json:"vat_pct"`                 // VAT percentage (e.g. 20)
+	MeterFeeEur           float64 `json:"meter_fee_eur"`           // flat fixed fee per member per period (not per meter point, despite the name)
+	FreeKwh               float64 `json:"free_kwh"`                // complimentary kWh per member per period
+	DiscountPct           float64 `json:"discount_pct"`            // discount on consumption in %
+	ParticipationFeeEur   float64 `json:"participation_fee_eur"`   // fixed member participation fee per period
+	ZaehlpunktsGebuehrEur float64 `json:"zaehlpunkts_gebuehr_eur"` // fee per active meter point per member per period
+	BillingPeriod         string  `json:"billing_period"`          // monthly | quarterly | semiannual | annual
+	InvoiceNumberPrefix   string  `json:"invoice_number_prefix"`
+	InvoiceNumberDigits   int     `json:"invoice_number_digits"`
+	InvoiceNumberStart    int     `json:"invoice_number_start"` // first invoice number for this EEG
+	InvoicePreText        string  `json:"invoice_pre_text"`
+	InvoicePostText       string  `json:"invoice_post_text"`
+	InvoiceFooterText     string  `json:"invoice_footer_text"`
+	// Controls the "Zahlungshinweis" paragraph on consumer invoices (and, when not
+	// "none", the Gutschrift's "Auszahlung" paragraph too): sepa_lastschrift
+	// (default) | ueberweisung | custom | none
 	InvoicePaymentNoticeMode string `json:"invoice_payment_notice_mode"`
+	// Free-text template used when InvoicePaymentNoticeMode == "custom". Supports
+	// {betrag}/{iban}/{eeg_iban}/{eeg_bic}/{datum} placeholders (same convention
+	// as OnboardingContractText's {iban}/{datum}).
+	InvoicePaymentNoticeText string `json:"invoice_payment_notice_text"`
 	// Controls how fixed fees (meter/participation fee, Zählpunktsgebühr) are charged:
 	// per_month (default: fee × started calendar months of the billing period) | per_invoice (once per billing run)
 	FeeBillingMode string `json:"fee_billing_mode"`
 	// Company logo path (stored as absolute filesystem path)
 	LogoPath string `json:"logo_path"`
 	// Credit note settings (for VAT-liable producers)
-	GenerateCreditNotes      bool   `json:"generate_credit_notes"`       // if true, pure producers with UID number get Gutschrift instead of Rechnung
-	CreditNoteNumberPrefix   string `json:"credit_note_number_prefix"`   // e.g. "GS"
-	CreditNoteNumberDigits   int    `json:"credit_note_number_digits"`   // e.g. 5
+	GenerateCreditNotes    bool   `json:"generate_credit_notes"`     // if true, pure producers with UID number get Gutschrift instead of Rechnung
+	CreditNoteNumberPrefix string `json:"credit_note_number_prefix"` // e.g. "GS"
+	CreditNoteNumberDigits int    `json:"credit_note_number_digits"` // e.g. 5
 	// SEPA banking details for payment file generation
 	IBAN           string `json:"iban"`             // EEG's own bank account IBAN
 	BIC            string `json:"bic"`              // EEG's bank BIC (optional)
@@ -104,14 +115,18 @@ type EEG struct {
 	DatevConsultantNr        string `json:"datev_consultant_nr"`        // DATEV Beraternummer (optional)
 	DatevClientNr            string `json:"datev_client_nr"`            // DATEV Mandantennummer (optional)
 	// Rechnungssteller (§11 UStG) — EEG address shown on invoices
-	Strasse    string `json:"strasse"`
-	Plz        string `json:"plz"`
-	Ort        string `json:"ort"`
-	UidNummer  string `json:"uid_nummer"` // EEG VAT ID (optional, not all EEGs are VAT-registered)
+	Strasse   string `json:"strasse"`
+	Plz       string `json:"plz"`
+	Ort       string `json:"ort"`
+	UidNummer string `json:"uid_nummer"` // EEG VAT ID (optional, not all EEGs are VAT-registered)
 	// Founding date — coverage tool will not flag days before this as missing
 	Gruendungsdatum *time.Time `json:"gruendungsdatum,omitempty"`
 	// Onboarding contract text shown to applicants (may include {iban} and {datum} placeholders)
 	OnboardingContractText string `json:"onboarding_contract_text"`
+	// ReferralOptions is the EEG-configurable list of "how did you hear about us" choices
+	// shown on the public onboarding form. "Sonstiges" is always additionally offered by
+	// the frontend and is not part of this list.
+	ReferralOptions []string `json:"referral_options"`
 	// Per-EEG EDA credentials (IMAP polling + SMTP send to edanet.at).
 	// Passwords are stored encrypted in the DB; the repository decrypts them for
 	// internal use (worker, mail send) but they are NEVER serialized to JSON
@@ -143,7 +158,7 @@ type EEG struct {
 	// SEPA Rulebook mandates ≥14 days. Configurable per EEG. Default: 14.
 	SepaPreNotificationDays int `json:"sepa_pre_notification_days"`
 	// IsDemo marks this EEG as a demo — emails and EDA messages are suppressed
-	IsDemo    bool      `json:"is_demo"`
+	IsDemo bool `json:"is_demo"`
 	// Auto-billing: create draft billing run automatically on a fixed day each month/quarter
 	AutoBillingEnabled    bool       `json:"auto_billing_enabled"`
 	AutoBillingDayOfMonth int        `json:"auto_billing_day_of_month"` // 1–28
@@ -157,7 +172,51 @@ type EEG struct {
 	EnergyImbalanceThresholdPromille float64 `json:"energy_imbalance_threshold_promille"`
 	// Portal: whether to show full energy data (total consumption/generation) in the member portal
 	PortalShowFullEnergy bool `json:"portal_show_full_energy"`
-	CreatedAt            time.Time `json:"created_at"`
+	// Invoice visual design: "standard" (default fpdf layout) or "individuell" (alternate
+	// Oikos-style layout, see internal/invoice/pdf_theme.go). The four fields below are only
+	// applied when InvoiceDesign == "individuell".
+	InvoiceDesign      string `json:"invoice_design"`
+	InvoiceAccentColor string `json:"invoice_accent_color"` // hex, e.g. "#c9b89a"
+	InvoiceLogoLeft    bool   `json:"invoice_logo_left"`
+	InvoiceFontFamily  string `json:"invoice_font_family"` // dejavu | roboto | opensans | ptserif
+	InvoiceFontSize    int    `json:"invoice_font_size"`   // pt, 8-12
+	// Column headers for the "individuell" design's energy breakdown table
+	// (see internal/invoice/pdf_theme.go's drawEnergyPeriodTable). Not used by
+	// the standard design (no equivalent table there).
+	InvoiceEnergyLabelZeitraumVon        string `json:"invoice_energy_label_zeitraum_von"`
+	InvoiceEnergyLabelZeitraumBis        string `json:"invoice_energy_label_zeitraum_bis"`
+	InvoiceEnergyLabelGesamtverbrauch    string `json:"invoice_energy_label_gesamtverbrauch"`
+	InvoiceEnergyLabelNetzbezug          string `json:"invoice_energy_label_netzbezug"`
+	InvoiceEnergyLabelCommunityVerbrauch string `json:"invoice_energy_label_community_verbrauch"`
+	// Column headers for the generation-side counterpart table (Gesamteinspeisung/
+	// Abnahme durch Energiegemeinschaft/Resteinspeisung, see drawGenerationPeriodTable)
+	// — rendered alongside the consumption table above when the member has generation.
+	InvoiceEnergyLabelGesamteinspeisung          string `json:"invoice_energy_label_gesamteinspeisung"`
+	InvoiceEnergyLabelAbnahmeEnergiegemeinschaft string `json:"invoice_energy_label_abnahme_energiegemeinschaft"`
+	InvoiceEnergyLabelResteinspeisung            string `json:"invoice_energy_label_resteinspeisung"`
+	// Whether the Fixgebühr/Teilnahmegebühr and Zählpunktsgebühr line items are
+	// shown even when their total is 0,00 € — applies to both invoice designs.
+	InvoiceShowZeroFees bool `json:"invoice_show_zero_fees"`
+	// Line/row spacing scale factor for the "individuell" design (see
+	// InvoiceTheme.RowSpacing / theme.h() in pdf_theme.go); 1.0 = unscaled.
+	InvoiceRowSpacing float64 `json:"invoice_row_spacing"`
+	// ExtraMetersEnabled toggles the Zusatzzähler feature (manually-read submeters,
+	// e.g. Wärmepumpe) for this EEG. Default false — the UI only shows the extra-meter
+	// management pages/cards when this is on.
+	ExtraMetersEnabled bool      `json:"extra_meters_enabled"`
+	CreatedAt          time.Time `json:"created_at"`
+}
+
+// DisplayNameOrName returns the EEG's alias if set, otherwise falls back to
+// its legal Name. Use this for anything shown to users (navigation, lists,
+// emails, portal) - never for legally binding documents (invoice
+// Rechnungssteller block, SEPA XML/mandate, onboarding declaration), which
+// must keep using Name directly.
+func (e EEG) DisplayNameOrName() string {
+	if e.DisplayName != "" {
+		return e.DisplayName
+	}
+	return e.Name
 }
 
 // Member represents a member of an EEG.
@@ -169,24 +228,28 @@ type EEG struct {
 //
 //   - Producer credit notes (Gutschrift, not yet implemented): VAT is
 //     determined by the member's properties:
-//     - UidNummer present           → Reverse Charge (0% + RC text)
-//     - BusinessRole == "landwirt_pauschaliert" → 13% + § 22 UStG text
-//     - BusinessRole == "gemeinde_hoheitlich"   → 0% + sovereignty text
-//     - otherwise (Privatperson / Kleinunternehmer) → 0% + § 6 exemption text
+//
+//   - UidNummer present           → Reverse Charge (0% + RC text)
+//
+//   - BusinessRole == "landwirt_pauschaliert" → 13% + § 22 UStG text
+//
+//   - BusinessRole == "gemeinde_hoheitlich"   → 0% + sovereignty text
+//
+//   - otherwise (Privatperson / Kleinunternehmer) → 0% + § 6 exemption text
 //
 //   - UseVat / VatPct on the member are reserved for future manual overrides
 //     on credit notes and are not applied to consumer invoices.
 type Member struct {
-	ID           uuid.UUID `json:"id"`
-	EegID        uuid.UUID `json:"eeg_id"`
-	MitgliedsNr  string    `json:"mitglieds_nr"`
-	Name1        string    `json:"name1"`
-	Name2        string    `json:"name2"`
-	Email        string    `json:"email"`
-	IBAN         string    `json:"iban"`
-	Strasse      string    `json:"strasse"`
-	Plz          string    `json:"plz"`
-	Ort          string    `json:"ort"`
+	ID          uuid.UUID `json:"id"`
+	EegID       uuid.UUID `json:"eeg_id"`
+	MitgliedsNr string    `json:"mitglieds_nr"`
+	Name1       string    `json:"name1"`
+	Name2       string    `json:"name2"`
+	Email       string    `json:"email"`
+	IBAN        string    `json:"iban"`
+	Strasse     string    `json:"strasse"`
+	Plz         string    `json:"plz"`
+	Ort         string    `json:"ort"`
 	// BusinessRole classifies the member for VAT purposes on credit notes.
 	// Valid values: "privat", "kleinunternehmer", "verein", "landwirt_pauschaliert",
 	// "unternehmen", "gemeinde_bga", "gemeinde_hoheitlich"
@@ -196,8 +259,8 @@ type Member struct {
 	UidNummer string `json:"uid_nummer"`
 	// UseVat / VatPct: reserved for future manual override on credit notes.
 	// NOT applied to consumer invoices (those use only the EEG's settings).
-	UseVat    *bool    `json:"use_vat"`
-	VatPct    *float64 `json:"vat_pct"`
+	UseVat *bool    `json:"use_vat"`
+	VatPct *float64 `json:"vat_pct"`
 	// Status tracks the member's lifecycle: ACTIVE | REGISTERED | NEW | INACTIVE
 	Status         string     `json:"status"`
 	BeitrittsDatum *time.Time `json:"beitritts_datum,omitempty"`
@@ -206,7 +269,7 @@ type Member struct {
 	SepaMandateSignedAt *time.Time `json:"sepa_mandate_signed_at,omitempty"`
 	SepaMandateSignedIP string     `json:"sepa_mandate_signed_ip,omitempty"`
 	SepaMandateText     string     `json:"sepa_mandate_text,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
+	CreatedAt           time.Time  `json:"created_at"`
 }
 
 // SepaMandateHistoryEntry is an archived snapshot of a member's SEPA mandate,
@@ -325,36 +388,62 @@ type EEGMeterParticipation struct {
 	CreatedAt           time.Time  `json:"created_at"`
 }
 
+// ExtraMeter is a manually-read submeter (e.g. Wärmepumpe, Werkstatt) that is
+// NOT a Netzbetreiber smart meter and never receives EDA/Zählpunkt data.
+// Billed as its own line item using cumulative counter readings (see ExtraMeterReading).
+type ExtraMeter struct {
+	ID        uuid.UUID `json:"id"`
+	EegID     uuid.UUID `json:"eeg_id"`
+	MemberID  uuid.UUID `json:"member_id"`
+	Label     string    `json:"label"`
+	Status    string    `json:"status"` // ACTIVE | INACTIVE
+	Notes     string    `json:"notes"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// ExtraMeterReading is one manually-entered Zählerstand (cumulative counter value)
+// for an ExtraMeter. Consumption for a billing period is the difference between
+// the readings bracketing the period.
+type ExtraMeterReading struct {
+	ID           uuid.UUID  `json:"id"`
+	ExtraMeterID uuid.UUID  `json:"extra_meter_id"`
+	ReadingDate  time.Time  `json:"reading_date"`
+	CounterValue float64    `json:"counter_value"` // kWh, cumulative
+	Notes        string     `json:"notes"`
+	CreatedBy    *uuid.UUID `json:"created_by,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+}
+
 // Invoice represents a billing invoice for a member.
 type Invoice struct {
-	ID             uuid.UUID  `json:"id"`
-	MemberID       uuid.UUID  `json:"member_id"`
-	EegID          uuid.UUID  `json:"eeg_id"`
-	PeriodStart    time.Time  `json:"period_start"`
-	PeriodEnd      time.Time  `json:"period_end"`
-	TotalKwh       float64    `json:"total_kwh"`        // consumption kWh (for display/stats)
-	TotalAmount    float64    `json:"total_amount"`     // gross saldo incl. VAT (may be negative for producers)
-	NetAmount      float64    `json:"net_amount"`       // net amount before VAT
-	VatAmount      float64    `json:"vat_amount"`       // total VAT (consumption + generation)
-	VatPctApplied  float64    `json:"vat_pct_applied"`  // EEG-level VAT rate (consumption side)
-	ConsumptionKwh float64    `json:"consumption_kwh"` // community kWh consumed
-	GenerationKwh  float64    `json:"generation_kwh"`  // community kWh generated/fed in
+	ID             uuid.UUID `json:"id"`
+	MemberID       uuid.UUID `json:"member_id"`
+	EegID          uuid.UUID `json:"eeg_id"`
+	PeriodStart    time.Time `json:"period_start"`
+	PeriodEnd      time.Time `json:"period_end"`
+	TotalKwh       float64   `json:"total_kwh"`       // consumption kWh (for display/stats)
+	TotalAmount    float64   `json:"total_amount"`    // gross saldo incl. VAT (may be negative for producers)
+	NetAmount      float64   `json:"net_amount"`      // net amount before VAT
+	VatAmount      float64   `json:"vat_amount"`      // total VAT (consumption + generation)
+	VatPctApplied  float64   `json:"vat_pct_applied"` // EEG-level VAT rate (consumption side)
+	ConsumptionKwh float64   `json:"consumption_kwh"` // community kWh consumed
+	GenerationKwh  float64   `json:"generation_kwh"`  // community kWh generated/fed in
 	// Split net amounts — stored separately to enable per-account EA import bookings
 	ConsumptionNetAmount float64 `json:"consumption_net_amount"` // net Bezug (consumption charge before VAT)
 	GenerationNetAmount  float64 `json:"generation_net_amount"`  // net Einspeisung (generation credit before VAT)
 	// Split VAT — consumption uses EEG-level rate, generation uses member-specific rate
-	ConsumptionVatPct    float64 `json:"consumption_vat_pct"`
-	ConsumptionVatAmount float64 `json:"consumption_vat_amount"`
-	GenerationVatPct     float64 `json:"generation_vat_pct"`
-	GenerationVatAmount  float64 `json:"generation_vat_amount"`
-	PdfPath        string     `json:"pdf_path"`
-	StornoPdfPath  string     `json:"storno_pdf_path"` // set when invoice is formally cancelled (storno document)
-	SentAt         *time.Time `json:"sent_at,omitempty"`
-	InvoiceNumber  *int       `json:"invoice_number,omitempty"`
-	Status         string     `json:"status"`
-	DocumentType   string     `json:"document_type"` // "invoice" or "credit_note"
-	BillingRunID   *uuid.UUID `json:"billing_run_id,omitempty"`
-	CreatedAt      time.Time  `json:"created_at"`
+	ConsumptionVatPct    float64    `json:"consumption_vat_pct"`
+	ConsumptionVatAmount float64    `json:"consumption_vat_amount"`
+	GenerationVatPct     float64    `json:"generation_vat_pct"`
+	GenerationVatAmount  float64    `json:"generation_vat_amount"`
+	PdfPath              string     `json:"pdf_path"`
+	StornoPdfPath        string     `json:"storno_pdf_path"` // set when invoice is formally cancelled (storno document)
+	SentAt               *time.Time `json:"sent_at,omitempty"`
+	InvoiceNumber        *int       `json:"invoice_number,omitempty"`
+	Status               string     `json:"status"`
+	DocumentType         string     `json:"document_type"` // "invoice" or "credit_note"
+	BillingRunID         *uuid.UUID `json:"billing_run_id,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
 	// Payment tracking
 	PaidAt *time.Time `json:"paid_at,omitempty"`
 	// SEPA return (Rücklastschrift) tracking
@@ -416,13 +505,13 @@ type AnnualReportMember struct {
 
 // EnergySummaryRow holds raw energy metrics aggregated from energy_readings for a time bucket.
 type EnergySummaryRow struct {
-	Period              time.Time `json:"period"`
-	WhSelf              float64   `json:"wh_self"`               // EEG share consumed (CONSUMPTION wh_self)
-	WhCommunity         float64   `json:"wh_community"`          // EEG share fed in (GENERATION wh_community)
-	WhTotalConsumption  float64   `json:"wh_total_consumption"`  // total consumption (CONSUMPTION wh_total)
-	WhTotalGeneration   float64   `json:"wh_total_generation"`   // total generation (GENERATION wh_total)
-	WhRestbedarf        float64   `json:"wh_restbedarf"`         // grid demand = wh_total_consumption - wh_self
-	WhResteinspeisung   float64   `json:"wh_resteinspeisung"`    // grid export  = wh_total_generation - wh_community
+	Period             time.Time `json:"period"`
+	WhSelf             float64   `json:"wh_self"`              // EEG share consumed (CONSUMPTION wh_self)
+	WhCommunity        float64   `json:"wh_community"`         // EEG share fed in (GENERATION wh_community)
+	WhTotalConsumption float64   `json:"wh_total_consumption"` // total consumption (CONSUMPTION wh_total)
+	WhTotalGeneration  float64   `json:"wh_total_generation"`  // total generation (GENERATION wh_total)
+	WhRestbedarf       float64   `json:"wh_restbedarf"`        // grid demand = wh_total_consumption - wh_self
+	WhResteinspeisung  float64   `json:"wh_resteinspeisung"`   // grid export  = wh_total_generation - wh_community
 }
 
 // EDAProcess tracks an open EDA protocol process (Anmeldung, Abmeldung, Teilnahmefaktor).
@@ -438,10 +527,10 @@ type EDAProcess struct {
 	ParticipationFactor *float64   `json:"participation_factor,omitempty"`
 	ShareType           string     `json:"share_type"` // GC, RC_R, RC_L, CC, NONE, MULTI
 	// ECMPList-specific fields (EC_PRTFACT_CHG)
-	ECDisModel      string     `json:"ec_dis_model"`           // S = statisch, D = dynamisch
-	DateTo          *time.Time `json:"date_to,omitempty"`      // ECMPList DateTo
-	EnergyDirection string     `json:"energy_direction"`       // CONSUMPTION or GENERATION
-	ECShare         *float64   `json:"ec_share,omitempty"`     // optional share % in static model
+	ECDisModel              string     `json:"ec_dis_model"`       // S = statisch, D = dynamisch
+	DateTo                  *time.Time `json:"date_to,omitempty"`  // ECMPList DateTo
+	EnergyDirection         string     `json:"energy_direction"`   // CONSUMPTION or GENERATION
+	ECShare                 *float64   `json:"ec_share,omitempty"` // optional share % in static model
 	InitiatedAt             time.Time  `json:"initiated_at"`
 	DeadlineAt              *time.Time `json:"deadline_at,omitempty"` // 2 months for ANM (EAG §16e)
 	CompletedAt             *time.Time `json:"completed_at,omitempty"`
@@ -470,8 +559,8 @@ type Job struct {
 // OnboardingMeterPoint is a meter point entry in an onboarding request.
 type OnboardingMeterPoint struct {
 	Zaehlpunkt          string  `json:"zaehlpunkt"`
-	Direction           string  `json:"direction"`                     // CONSUMPTION or GENERATION
-	GenerationType      string  `json:"generation_type,omitempty"`     // PV | Windkraft | Wasserkraft | Biomasse | Sonstige — only for GENERATION
+	Direction           string  `json:"direction"`                      // CONSUMPTION or GENERATION
+	GenerationType      string  `json:"generation_type,omitempty"`      // PV | Windkraft | Wasserkraft | Biomasse | Sonstige — only for GENERATION
 	ParticipationFactor float64 `json:"participation_factor,omitempty"` // 0..100; 0 means default (100)
 }
 
@@ -501,6 +590,8 @@ type OnboardingRequest struct {
 	MagicToken          string                 `json:"-"`
 	MagicTokenExpiresAt time.Time              `json:"-"`
 	AdminNotes          string                 `json:"admin_notes"`
+	ReferralSource      string                 `json:"referral_source"`      // optional: how the applicant heard about the EEG
+	ReferralSourceNote  string                 `json:"referral_source_note"` // optional free text, only meaningful when ReferralSource == "Sonstiges"
 	ConvertedMemberID   *uuid.UUID             `json:"converted_member_id,omitempty"`
 	ReminderSentAt      *time.Time             `json:"reminder_sent_at,omitempty"`
 	CreatedAt           time.Time              `json:"created_at"`

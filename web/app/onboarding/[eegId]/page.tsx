@@ -18,9 +18,11 @@ export default async function OnboardingPage({ params, searchParams }: Props) {
   const { eegId } = await params;
   const { ev } = await searchParams;
   let eegName = "Energiegemeinschaft";
+  let legalName = eegName;
   let eegFound = true;
   let contractText = "";
   let documents: PublicDocument[] = [];
+  let referralOptions: string[] = [];
 
   try {
     const res = await fetch(
@@ -29,9 +31,11 @@ export default async function OnboardingPage({ params, searchParams }: Props) {
     );
     if (res.ok) {
       const data = await res.json();
-      eegName = data.name || eegName;
+      eegName = data.display_name || data.name || eegName;
+      legalName = data.name || legalName;
       contractText = data.onboarding_contract_text || "";
       documents = data.documents || [];
+      referralOptions = data.referral_options || [];
     } else {
       eegFound = false;
     }
@@ -132,8 +136,10 @@ export default async function OnboardingPage({ params, searchParams }: Props) {
         <OnboardingForm
           eegId={eegId}
           eegName={eegName}
+          legalName={legalName}
           contractText={contractText}
           documents={documents}
+          referralOptions={referralOptions}
           verifiedEmail={verifiedEmail}
           verifiedName1={verifiedName1}
           verifiedName2={verifiedName2}

@@ -110,7 +110,7 @@ func (g *GapChecker) sendGapEmail(ctx context.Context, eeg *domain.EEG, gaps []r
 	}
 
 	subject := fmt.Sprintf("[Datenlücke] %d Zählpunkt(e) ohne Readings — %s",
-		len(gaps), eeg.Name)
+		len(gaps), eeg.DisplayNameOrName())
 
 	rows := ""
 	for _, gap := range gaps {
@@ -152,7 +152,7 @@ func (g *GapChecker) sendGapEmail(ctx context.Context, eeg *domain.EEG, gaps []r
   bis wieder aktuelle Readings vorhanden sind.
 </p>
 </body></html>`,
-		eeg.Name, len(gaps), eeg.GapAlertThresholdDays, rows)
+		eeg.DisplayNameOrName(), len(gaps), eeg.GapAlertThresholdDays, rows)
 
 	g.sendHTMLEmail(ctx, eeg, "gap_alert", subject, body)
 }

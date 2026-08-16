@@ -6,9 +6,11 @@ import { useRouter } from "next/navigation";
 interface Props {
   eegId: string;
   eegName: string;
+  displayName?: string;
 }
 
-export function DeleteEEGSection({ eegId, eegName }: Props) {
+export function DeleteEEGSection({ eegId, eegName, displayName }: Props) {
+  const hasAlias = !!displayName && displayName !== eegName;
   const router = useRouter();
   const [confirmName, setConfirmName] = useState("");
   const [confirmPhrase, setConfirmPhrase] = useState("");
@@ -60,6 +62,11 @@ export function DeleteEEGSection({ eegId, eegName }: Props) {
             1. EEG-Namen zur Bestätigung eingeben:{" "}
             <span className="font-mono text-slate-900">{eegName}</span>
           </label>
+          {hasAlias && (
+            <p className="text-xs text-slate-500 mb-1">
+              Hinweis: Angezeigter Name ist „{displayName}", zur Bestätigung ist aber der rechtliche Name „{eegName}" einzugeben.
+            </p>
+          )}
           <input
             type="text"
             value={confirmName}

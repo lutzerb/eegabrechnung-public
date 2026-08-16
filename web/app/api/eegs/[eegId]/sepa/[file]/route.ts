@@ -42,14 +42,14 @@ export async function GET(req: NextRequest, context: Params) {
   }
 
   const xml = await upstream.arrayBuffer();
-  const filename =
-    upstream.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ||
-    `${file}_${eegId}.xml`;
+  const contentDisposition =
+    upstream.headers.get("Content-Disposition") ||
+    `attachment; filename="${file}_${eegId}.xml"`;
 
   return new NextResponse(xml, {
     headers: {
       "Content-Type": "application/xml; charset=UTF-8",
-      "Content-Disposition": `attachment; filename="${filename}"`,
+      "Content-Disposition": contentDisposition,
     },
   });
 }

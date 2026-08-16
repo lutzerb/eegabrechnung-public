@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { filenameFromContentDisposition } from "@/lib/download";
 
 interface UVAKennzahlen {
   kz_000: number; // Gesamtbetrag Lieferungen/Leistungen
@@ -116,11 +117,13 @@ export default function UVAPage() {
       const res = await fetch(`/api/eegs/${eegId}/ea/uva/${id}?action=export&format=xml`);
       if (!res.ok) { alert("Exportfehler"); return; }
       const blob = await res.blob();
-      const cd = res.headers.get("Content-Disposition") || "";
-      const m = cd.match(/filename="([^"]+)"/);
+      const filename = filenameFromContentDisposition(
+        res.headers.get("Content-Disposition"),
+        `uva_${id}.xml`
+      );
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = m ? m[1] : `uva_${id}.xml`;
+      a.download = filename;
       a.click();
     } finally {
       setXmlLoading(false);
@@ -133,11 +136,13 @@ export default function UVAPage() {
       const res = await fetch(`/api/eegs/${eegId}/ea/uva/${id}?action=export&format=sepa`);
       if (!res.ok) { alert((await res.json().catch(() => null))?.error || "Exportfehler"); return; }
       const blob = await res.blob();
-      const cd = res.headers.get("Content-Disposition") || "";
-      const m = cd.match(/filename="([^"]+)"/);
+      const filename = filenameFromContentDisposition(
+        res.headers.get("Content-Disposition"),
+        `faz_${id}.xml`
+      );
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = m ? m[1] : `faz_${id}.xml`;
+      a.download = filename;
       a.click();
     } finally {
       setSepaLoading(false);

@@ -40,6 +40,7 @@ export default async function PortalDashboardPage() {
       documents={documentsData || []}
       meterPoints={meterPointsData || []}
       showFullEnergy={meData.eeg?.portal_show_full_energy !== false}
+      hasPassword={meData.has_password === true}
     />
   );
 }

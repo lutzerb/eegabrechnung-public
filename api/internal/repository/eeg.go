@@ -39,12 +39,12 @@ func (r *EEGRepository) encrypt(pt string) (string, error) {
 	return crypto.Encrypt(r.encKey, pt)
 }
 
-const eegCols = `id, organization_id, gemeinschaft_id, gemeinschaft_typ, netzbetreiber, name,
+const eegCols = `e.id, organization_id, gemeinschaft_id, gemeinschaft_typ, netzbetreiber, e.name, e.display_name,
 	energy_price, producer_price, use_vat, vat_pct,
 	meter_fee_eur, free_kwh, discount_pct, participation_fee_eur, zaehlpunkts_gebuehr_eur,
 	billing_period,
 	invoice_number_prefix, invoice_number_digits, invoice_number_start,
-	invoice_pre_text, invoice_post_text, invoice_footer_text, invoice_payment_notice_mode, fee_billing_mode,
+	invoice_pre_text, invoice_post_text, invoice_footer_text, invoice_payment_notice_mode, invoice_payment_notice_text, fee_billing_mode,
 	logo_path,
 	generate_credit_notes, credit_note_number_prefix, credit_note_number_digits,
 	iban, bic, sepa_creditor_id,
@@ -54,16 +54,24 @@ const eegCols = `id, organization_id, gemeinschaft_id, gemeinschaft_typ, netzbet
 	strasse, plz, ort, uid_nummer,
 	gruendungsdatum,
 	onboarding_contract_text,
+	referral_options,
 	sepa_pre_notification_days,
 	is_demo,
 	auto_billing_enabled, auto_billing_day_of_month, auto_billing_period, auto_billing_last_run_at,
 	gap_alert_enabled, gap_alert_threshold_days,
 	energy_imbalance_threshold_promille,
 	portal_show_full_energy,
+	invoice_design, invoice_accent_color, invoice_logo_left, invoice_font_family, invoice_font_size,
+	invoice_energy_label_zeitraum_von, invoice_energy_label_zeitraum_bis, invoice_energy_label_gesamtverbrauch,
+	invoice_energy_label_netzbezug, invoice_energy_label_community_verbrauch, invoice_show_zero_fees,
+	invoice_energy_label_gesamteinspeisung, invoice_energy_label_abnahme_energiegemeinschaft, invoice_energy_label_resteinspeisung,
+	invoice_row_spacing,
+	extra_meters_enabled,
 	eda_imap_host, eda_imap_user, eda_imap_password_enc,
 	eda_smtp_host, eda_smtp_user, eda_smtp_password_enc, eda_smtp_from,
 	smtp_host, smtp_user, smtp_password_enc, smtp_from,
-	created_at`
+	e.created_at,
+	organizations.portal_base_url`
 
 func (r *EEGRepository) scanEEG(row interface{ Scan(...any) error }, e *domain.EEG) error {
 	// Use *string for all nullable credential columns.
@@ -74,12 +82,12 @@ func (r *EEGRepository) scanEEG(row interface{ Scan(...any) error }, e *domain.E
 	var autoBillingDayOfMonth *int
 	var autoBillingPeriod *string
 	err := row.Scan(
-		&e.ID, &e.OrganizationID, &e.GemeinschaftID, &e.GemeinschaftTyp, &e.Netzbetreiber, &e.Name,
+		&e.ID, &e.OrganizationID, &e.GemeinschaftID, &e.GemeinschaftTyp, &e.Netzbetreiber, &e.Name, &e.DisplayName,
 		&e.EnergyPrice, &e.ProducerPrice, &e.UseVat, &e.VatPct,
 		&e.MeterFeeEur, &e.FreeKwh, &e.DiscountPct, &e.ParticipationFeeEur, &e.ZaehlpunktsGebuehrEur,
 		&e.BillingPeriod,
 		&e.InvoiceNumberPrefix, &e.InvoiceNumberDigits, &e.InvoiceNumberStart,
-		&e.InvoicePreText, &e.InvoicePostText, &e.InvoiceFooterText, &e.InvoicePaymentNoticeMode, &e.FeeBillingMode,
+		&e.InvoicePreText, &e.InvoicePostText, &e.InvoiceFooterText, &e.InvoicePaymentNoticeMode, &e.InvoicePaymentNoticeText, &e.FeeBillingMode,
 		&e.LogoPath,
 		&e.GenerateCreditNotes, &e.CreditNoteNumberPrefix, &e.CreditNoteNumberDigits,
 		&e.IBAN, &e.BIC, &e.SepaCreditorID,
@@ -89,16 +97,24 @@ func (r *EEGRepository) scanEEG(row interface{ Scan(...any) error }, e *domain.E
 		&e.Strasse, &e.Plz, &e.Ort, &e.UidNummer,
 		&e.Gruendungsdatum,
 		&e.OnboardingContractText,
+		&e.ReferralOptions,
 		&e.SepaPreNotificationDays,
 		&e.IsDemo,
 		&e.AutoBillingEnabled, &autoBillingDayOfMonth, &autoBillingPeriod, &e.AutoBillingLastRunAt,
 		&e.GapAlertEnabled, &e.GapAlertThresholdDays,
 		&e.EnergyImbalanceThresholdPromille,
 		&e.PortalShowFullEnergy,
+		&e.InvoiceDesign, &e.InvoiceAccentColor, &e.InvoiceLogoLeft, &e.InvoiceFontFamily, &e.InvoiceFontSize,
+		&e.InvoiceEnergyLabelZeitraumVon, &e.InvoiceEnergyLabelZeitraumBis, &e.InvoiceEnergyLabelGesamtverbrauch,
+		&e.InvoiceEnergyLabelNetzbezug, &e.InvoiceEnergyLabelCommunityVerbrauch, &e.InvoiceShowZeroFees,
+		&e.InvoiceEnergyLabelGesamteinspeisung, &e.InvoiceEnergyLabelAbnahmeEnergiegemeinschaft, &e.InvoiceEnergyLabelResteinspeisung,
+		&e.InvoiceRowSpacing,
+		&e.ExtraMetersEnabled,
 		&edaImapHost, &edaImapUser, &edaImapPwEnc,
 		&edaSmtpHost, &edaSmtpUser, &edaSmtpPwEnc, &edaSmtpFrom,
 		&smtpHost, &smtpUser, &smtpPwEnc, &smtpFrom,
 		&e.CreatedAt,
+		&e.PortalBaseURL,
 	)
 	if err != nil {
 		return err
@@ -140,7 +156,7 @@ func (r *EEGRepository) scanEEG(row interface{ Scan(...any) error }, e *domain.E
 
 func (r *EEGRepository) Create(ctx context.Context, eeg *domain.EEG) error {
 	q := `INSERT INTO eegs
-	        (organization_id, gemeinschaft_id, gemeinschaft_typ, netzbetreiber, name, energy_price, producer_price,
+	        (organization_id, gemeinschaft_id, gemeinschaft_typ, netzbetreiber, name, display_name, energy_price, producer_price,
 	         use_vat, vat_pct, meter_fee_eur, free_kwh, discount_pct,
 	         participation_fee_eur, billing_period,
 	         invoice_number_prefix, invoice_number_digits, invoice_number_start,
@@ -149,8 +165,10 @@ func (r *EEGRepository) Create(ctx context.Context, eeg *domain.EEG) error {
 	         generate_credit_notes, credit_note_number_prefix, credit_note_number_digits,
 	         iban, bic, sepa_creditor_id,
 	         eda_marktpartner_id, eda_netzbetreiber_id, zaehlpunkts_gebuehr_eur,
-	         invoice_payment_notice_mode, eda_dis_model, fee_billing_mode)
-	      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
+	         invoice_payment_notice_mode, eda_dis_model, fee_billing_mode,
+	         eda_transition_date, gruendungsdatum, strasse, plz, ort, uid_nummer,
+	         onboarding_contract_text, datev_consultant_nr, datev_client_nr)
+	      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43)
 	      RETURNING id, created_at`
 	if eeg.BillingPeriod == "" {
 		eeg.BillingPeriod = "monthly"
@@ -183,7 +201,7 @@ func (r *EEGRepository) Create(ctx context.Context, eeg *domain.EEG) error {
 		eeg.FeeBillingMode = "per_month"
 	}
 	return r.db.QueryRow(ctx, q,
-		eeg.OrganizationID, eeg.GemeinschaftID, eeg.GemeinschaftTyp, eeg.Netzbetreiber, eeg.Name, eeg.EnergyPrice, eeg.ProducerPrice,
+		eeg.OrganizationID, eeg.GemeinschaftID, eeg.GemeinschaftTyp, eeg.Netzbetreiber, eeg.Name, eeg.DisplayName, eeg.EnergyPrice, eeg.ProducerPrice,
 		eeg.UseVat, eeg.VatPct, eeg.MeterFeeEur, eeg.FreeKwh, eeg.DiscountPct,
 		eeg.ParticipationFeeEur, eeg.BillingPeriod,
 		eeg.InvoiceNumberPrefix, eeg.InvoiceNumberDigits, eeg.InvoiceNumberStart,
@@ -193,6 +211,8 @@ func (r *EEGRepository) Create(ctx context.Context, eeg *domain.EEG) error {
 		eeg.IBAN, eeg.BIC, eeg.SepaCreditorID,
 		eeg.EdaMarktpartnerID, eeg.EdaNetzbetreiberID, eeg.ZaehlpunktsGebuehrEur,
 		eeg.InvoicePaymentNoticeMode, eeg.EdaDisModel, eeg.FeeBillingMode,
+		eeg.EdaTransitionDate, eeg.Gruendungsdatum, eeg.Strasse, eeg.Plz, eeg.Ort, eeg.UidNummer,
+		eeg.OnboardingContractText, eeg.DatevConsultantNr, eeg.DatevClientNr,
 	).Scan(&eeg.ID, &eeg.CreatedAt)
 }
 
@@ -238,12 +258,35 @@ func (r *EEGRepository) Update(ctx context.Context, eeg *domain.EEG) error {
 	        invoice_payment_notice_mode=$61,
 	        eda_dis_model=$62,
 	        fee_billing_mode=$63,
-	        energy_imbalance_threshold_promille=$64
+	        energy_imbalance_threshold_promille=$64,
+	        invoice_design=$65,
+	        invoice_accent_color=$66,
+	        invoice_logo_left=$67,
+	        invoice_font_family=$68,
+	        invoice_font_size=$69,
+	        invoice_payment_notice_text=$70,
+	        referral_options=$71,
+	        invoice_energy_label_zeitraum_von=$72,
+	        invoice_energy_label_zeitraum_bis=$73,
+	        invoice_energy_label_gesamtverbrauch=$74,
+	        invoice_energy_label_netzbezug=$75,
+	        invoice_energy_label_community_verbrauch=$76,
+	        invoice_show_zero_fees=$77,
+	        invoice_row_spacing=$78,
+	        display_name=$79,
+	        invoice_energy_label_gesamteinspeisung=$80,
+	        invoice_energy_label_abnahme_energiegemeinschaft=$81,
+	        invoice_energy_label_resteinspeisung=$82,
+	        extra_meters_enabled=$83
 	      WHERE id=$50 AND organization_id=$51`
 	// Note: logo_path and auto_billing_last_run_at are not updated via this method.
 	days := eeg.SepaPreNotificationDays
 	if days <= 0 {
 		days = 14
+	}
+	referralOptions := eeg.ReferralOptions
+	if referralOptions == nil {
+		referralOptions = []string{}
 	}
 	_, err = r.db.Exec(ctx, q,
 		eeg.GemeinschaftID, eeg.Netzbetreiber, eeg.Name,
@@ -274,13 +317,32 @@ func (r *EEGRepository) Update(ctx context.Context, eeg *domain.EEG) error {
 		eeg.EdaDisModel,
 		eeg.FeeBillingMode,
 		eeg.EnergyImbalanceThresholdPromille,
+		eeg.InvoiceDesign,
+		eeg.InvoiceAccentColor,
+		eeg.InvoiceLogoLeft,
+		eeg.InvoiceFontFamily,
+		eeg.InvoiceFontSize,
+		eeg.InvoicePaymentNoticeText,
+		referralOptions,
+		eeg.InvoiceEnergyLabelZeitraumVon,
+		eeg.InvoiceEnergyLabelZeitraumBis,
+		eeg.InvoiceEnergyLabelGesamtverbrauch,
+		eeg.InvoiceEnergyLabelNetzbezug,
+		eeg.InvoiceEnergyLabelCommunityVerbrauch,
+		eeg.InvoiceShowZeroFees,
+		eeg.InvoiceRowSpacing,
+		eeg.DisplayName,
+		eeg.InvoiceEnergyLabelGesamteinspeisung,
+		eeg.InvoiceEnergyLabelAbnahmeEnergiegemeinschaft,
+		eeg.InvoiceEnergyLabelResteinspeisung,
+		eeg.ExtraMetersEnabled,
 	)
 	return err
 }
 
 // ListGapAlertEEGs returns all EEGs with gap_alert_enabled = true.
 func (r *EEGRepository) ListGapAlertEEGs(ctx context.Context) ([]*domain.EEG, error) {
-	q := `SELECT ` + eegCols + ` FROM eegs WHERE gap_alert_enabled = true`
+	q := `SELECT ` + eegCols + ` FROM eegs e JOIN organizations ON organizations.id = e.organization_id WHERE gap_alert_enabled = true`
 	rows, err := r.db.Query(ctx, q)
 	if err != nil {
 		return nil, err
@@ -299,7 +361,7 @@ func (r *EEGRepository) ListGapAlertEEGs(ctx context.Context) ([]*domain.EEG, er
 
 // ListAutoBillingEEGs returns all EEGs with auto_billing_enabled = true.
 func (r *EEGRepository) ListAutoBillingEEGs(ctx context.Context) ([]*domain.EEG, error) {
-	q := `SELECT ` + eegCols + ` FROM eegs WHERE auto_billing_enabled = true`
+	q := `SELECT ` + eegCols + ` FROM eegs e JOIN organizations ON organizations.id = e.organization_id WHERE auto_billing_enabled = true`
 	rows, err := r.db.Query(ctx, q)
 	if err != nil {
 		return nil, err
@@ -329,9 +391,10 @@ func (r *EEGRepository) UpdateAutoBillingLastRun(ctx context.Context, eegID uuid
 // Used by the EDA worker to poll per-EEG mailboxes.
 func (r *EEGRepository) ListEEGsWithIMAPCredentials(ctx context.Context) ([]*domain.EEG, error) {
 	q := `SELECT ` + eegCols + `
-	      FROM eegs
+	      FROM eegs e
+	      JOIN organizations ON organizations.id = e.organization_id
 	      WHERE eda_imap_host IS NOT NULL AND eda_imap_user IS NOT NULL AND eda_imap_password_enc IS NOT NULL
-	      ORDER BY name`
+	      ORDER BY e.name`
 	rows, err := r.db.Query(ctx, q)
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
@@ -355,7 +418,7 @@ func (r *EEGRepository) UpdateLogo(ctx context.Context, id uuid.UUID, logoPath s
 }
 
 func (r *EEGRepository) List(ctx context.Context, orgID uuid.UUID) ([]domain.EEG, error) {
-	q := `SELECT ` + eegCols + ` FROM eegs WHERE organization_id=$1 ORDER BY created_at DESC`
+	q := `SELECT ` + eegCols + ` FROM eegs e JOIN organizations ON organizations.id = e.organization_id WHERE organization_id=$1 ORDER BY e.created_at DESC`
 	rows, err := r.db.Query(ctx, q, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
@@ -373,14 +436,18 @@ func (r *EEGRepository) List(ctx context.Context, orgID uuid.UUID) ([]domain.EEG
 	return eegs, rows.Err()
 }
 
-// ListForUser returns only EEGs that are assigned to the given user.
-func (r *EEGRepository) ListForUser(ctx context.Context, userID uuid.UUID) ([]domain.EEG, error) {
+// ListForUser returns only EEGs that are assigned to the given user, scoped to
+// orgID as defense-in-depth — without this, a bug that mis-scopes
+// user_eeg_assignments (e.g. cross-org assignment created by mistake) would leak
+// another organization's EEGs into this list.
+func (r *EEGRepository) ListForUser(ctx context.Context, userID, orgID uuid.UUID) ([]domain.EEG, error) {
 	q := `SELECT ` + eegCols + `
 	      FROM eegs e
 	      INNER JOIN user_eeg_assignments a ON a.eeg_id = e.id
-	      WHERE a.user_id = $1
+	      JOIN organizations ON organizations.id = e.organization_id
+	      WHERE a.user_id = $1 AND e.organization_id = $2
 	      ORDER BY e.name`
-	rows, err := r.db.Query(ctx, q, userID)
+	rows, err := r.db.Query(ctx, q, userID, orgID)
 	if err != nil {
 		return nil, fmt.Errorf("query: %w", err)
 	}
@@ -397,7 +464,7 @@ func (r *EEGRepository) ListForUser(ctx context.Context, userID uuid.UUID) ([]do
 }
 
 func (r *EEGRepository) GetByID(ctx context.Context, id, orgID uuid.UUID) (*domain.EEG, error) {
-	q := `SELECT ` + eegCols + ` FROM eegs WHERE id=$1 AND organization_id=$2`
+	q := `SELECT ` + eegCols + ` FROM eegs e JOIN organizations ON organizations.id = e.organization_id WHERE e.id=$1 AND organization_id=$2`
 	var e domain.EEG
 	if err := r.scanEEG(r.db.QueryRow(ctx, q, id, orgID), &e); err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
@@ -405,14 +472,17 @@ func (r *EEGRepository) GetByID(ctx context.Context, id, orgID uuid.UUID) (*doma
 	return &e, nil
 }
 
-// GetByIDForUser fetches an EEG only when it is explicitly assigned to the user.
-func (r *EEGRepository) GetByIDForUser(ctx context.Context, id, userID uuid.UUID) (*domain.EEG, error) {
+// GetByIDForUser fetches an EEG only when it is explicitly assigned to the user and
+// belongs to orgID (defense-in-depth — see ListForUser for why the org check matters
+// even though user_eeg_assignments should never span organizations).
+func (r *EEGRepository) GetByIDForUser(ctx context.Context, id, userID, orgID uuid.UUID) (*domain.EEG, error) {
 	q := `SELECT ` + eegCols + `
 	      FROM eegs e
 	      INNER JOIN user_eeg_assignments a ON a.eeg_id = e.id
-	      WHERE e.id = $1 AND a.user_id = $2`
+	      JOIN organizations ON organizations.id = e.organization_id
+	      WHERE e.id = $1 AND a.user_id = $2 AND e.organization_id = $3`
 	var e domain.EEG
-	if err := r.scanEEG(r.db.QueryRow(ctx, q, id, userID), &e); err != nil {
+	if err := r.scanEEG(r.db.QueryRow(ctx, q, id, userID, orgID), &e); err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
 	}
 	return &e, nil
@@ -420,7 +490,7 @@ func (r *EEGRepository) GetByIDForUser(ctx context.Context, id, userID uuid.UUID
 
 // GetByIDInternal fetches an EEG without org scoping — for internal service use only.
 func (r *EEGRepository) GetByIDInternal(ctx context.Context, id uuid.UUID) (*domain.EEG, error) {
-	q := `SELECT ` + eegCols + ` FROM eegs WHERE id=$1`
+	q := `SELECT ` + eegCols + ` FROM eegs e JOIN organizations ON organizations.id = e.organization_id WHERE e.id=$1`
 	var e domain.EEG
 	if err := r.scanEEG(r.db.QueryRow(ctx, q, id), &e); err != nil {
 		return nil, fmt.Errorf("scan: %w", err)
@@ -429,7 +499,7 @@ func (r *EEGRepository) GetByIDInternal(ctx context.Context, id uuid.UUID) (*dom
 }
 
 func (r *EEGRepository) GetByGemeinschaftID(ctx context.Context, gemeinschaftID string) (*domain.EEG, error) {
-	q := `SELECT ` + eegCols + ` FROM eegs WHERE gemeinschaft_id=$1`
+	q := `SELECT ` + eegCols + ` FROM eegs e JOIN organizations ON organizations.id = e.organization_id WHERE gemeinschaft_id=$1`
 	var e domain.EEG
 	if err := r.scanEEG(r.db.QueryRow(ctx, q, gemeinschaftID), &e); err != nil {
 		return nil, fmt.Errorf("scan: %w", err)

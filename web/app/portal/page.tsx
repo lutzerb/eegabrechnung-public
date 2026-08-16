@@ -1,26 +1,59 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 
 interface EegChoice {
   eeg_id: string;
   eeg_name: string;
 }
 
+type Mode = "magiclink" | "password";
 type Step = "email" | "choose" | "sent";
 
 export default function PortalLoginPage() {
+  const router = useRouter();
+  const [mode, setMode] = useState<Mode>("magiclink");
   const [step, setStep] = useState<Step>("email");
   const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [choices, setChoices] = useState<EegChoice[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function switchMode(next: Mode) {
+    setMode(next);
+    setStep("email");
+    setError(null);
+    setChoices([]);
+    setPassword("");
+  }
 
   async function handleEmailSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     try {
+      if (mode === "password") {
+        const res = await fetch("/api/portal/login-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError((data as { error?: string }).error || "E-Mail oder Passwort ungültig.");
+          return;
+        }
+        if (data.choices && data.choices.length > 1) {
+          setChoices(data.choices);
+          setStep("choose");
+          return;
+        }
+        router.push("/portal/dashboard");
+        return;
+      }
+
       const res = await fetch("/api/portal/request-link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -49,6 +82,21 @@ export default function PortalLoginPage() {
     setLoading(true);
     setError(null);
     try {
+      if (mode === "password") {
+        const res = await fetch("/api/portal/login-password", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password, eeg_id: eegId }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setError((data as { error?: string }).error || "E-Mail oder Passwort ungültig.");
+          return;
+        }
+        router.push("/portal/dashboard");
+        return;
+      }
+
       const res = await fetch("/api/portal/request-link", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -99,7 +147,9 @@ export default function PortalLoginPage() {
             <h1 className="text-xl font-bold text-slate-900">Energiegemeinschaft wählen</h1>
             <p className="text-slate-500 text-sm mt-1">
               Ihre E-Mail-Adresse ist in mehreren Energiegemeinschaften hinterlegt.<br />
-              Für welche möchten Sie den Login-Link anfordern?
+              {mode === "password"
+                ? "Für welche möchten Sie sich anmelden?"
+                : "Für welche möchten Sie den Login-Link anfordern?"}
             </p>
           </div>
           {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
@@ -139,7 +189,9 @@ export default function PortalLoginPage() {
           </div>
           <h1 className="text-xl font-bold text-slate-900">Mitglieder-Portal</h1>
           <p className="text-slate-500 text-sm mt-1">
-            Geben Sie Ihre E-Mail-Adresse ein. Wir senden Ihnen einen Login-Link.
+            {mode === "password"
+              ? "Melden Sie sich mit E-Mail-Adresse und Passwort an."
+              : "Geben Sie Ihre E-Mail-Adresse ein. Wir senden Ihnen einen Login-Link."}
           </p>
         </div>
         <form onSubmit={handleEmailSubmit} className="space-y-4">
@@ -154,15 +206,36 @@ export default function PortalLoginPage() {
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
+          {mode === "password" && (
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Passwort</label>
+              <input
+                type="password"
+                value={password}
+                onChange={e => setPassword(e.target.value)}
+                required
+                placeholder="••••••••"
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          )}
           {error && <p className="text-sm text-red-600">{error}</p>}
           <button
             type="submit"
             disabled={loading}
             className="w-full py-2 px-4 bg-blue-700 text-white text-sm font-medium rounded-lg hover:bg-blue-800 transition-colors disabled:opacity-60"
           >
-            {loading ? "Senden…" : "Login-Link anfordern"}
+            {loading
+              ? "Wird gesendet…"
+              : mode === "password" ? "Anmelden" : "Login-Link anfordern"}
           </button>
         </form>
+        <button
+          onClick={() => switchMode(mode === "password" ? "magiclink" : "password")}
+          className="mt-4 text-xs text-blue-700 hover:text-blue-900 w-full text-center"
+        >
+          {mode === "password" ? "Mit Magic Link anmelden" : "Mit Passwort anmelden"}
+        </button>
       </div>
     </div>
   );

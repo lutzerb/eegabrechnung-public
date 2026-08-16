@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getEEG, getStats, listMembers, listEDAProcesses, listBillingRuns, countSepaReturns, listGapAlerts, type EEGStats } from "@/lib/api";
 import Link from "next/link";
+import { eegDisplayName } from "@/lib/eeg-display-name";
 
 interface Props {
   params: Promise<{ eegId: string }>;
@@ -222,13 +223,13 @@ export default async function EEGOverviewPage({ params }: Props) {
         </Link>
         <span className="text-slate-400 mx-2">/</span>
         <span className="text-sm text-slate-900 font-medium">
-          {eeg?.name || eegId}
+          {eeg ? eegDisplayName(eeg) : eegId}
         </span>
       </div>
 
       {/* Header */}
       <div className="mb-8">
-        <h1 className="text-2xl font-bold text-slate-900">{eeg?.name}</h1>
+        <h1 className="text-2xl font-bold text-slate-900">{eeg && eegDisplayName(eeg)}</h1>
         <div className="flex gap-4 mt-2 flex-wrap">
           <span className="text-sm text-slate-500">
             <span className="font-medium">Gemeinschafts-ID:</span>{" "}

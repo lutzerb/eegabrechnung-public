@@ -269,8 +269,8 @@ func (h *MemberEmailHandler) SendCampaign(w http.ResponseWriter, r *http.Request
 					continue
 				}
 			}
-			personalizedSubject := applyEmailPlaceholders(subject, m, eeg.Name)
-			personalizedBody := applyEmailPlaceholders(htmlBody, m, eeg.Name)
+			personalizedSubject := applyEmailPlaceholders(subject, m, eeg.DisplayNameOrName())
+			personalizedBody := applyEmailPlaceholders(htmlBody, m, eeg.DisplayNameOrName())
 			memID := m.ID
 			if err := h.sendHTMLEmail(context.Background(), smtpCfg, eeg.ID, &memID, m.Email, eeg.Name, personalizedSubject, personalizedBody, attachments); err != nil {
 				slog.Error("failed to send campaign email", "member_id", m.ID, "error", err)

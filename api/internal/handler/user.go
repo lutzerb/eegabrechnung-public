@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/lutzerb/eegabrechnung/internal/auth"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type UserHandler struct {
@@ -109,13 +108,13 @@ func (h *UserHandler) CreateUser(w http.ResponseWriter, r *http.Request) {
 		req.Role = "user"
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
 		jsonError(w, "failed to hash password", http.StatusInternalServerError)
 		return
 	}
 
-	user, err := h.userRepo.Create(r.Context(), claims.OrganizationID, req.Email, string(hash), req.Name, req.Role)
+	user, err := h.userRepo.Create(r.Context(), claims.OrganizationID, req.Email, hash, req.Name, req.Role)
 	if err != nil {
 		jsonError(w, "failed to create user: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -181,12 +180,12 @@ func (h *UserHandler) UpdateUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if req.Password != "" {
-		hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+		hash, err := auth.HashPassword(req.Password)
 		if err != nil {
 			jsonError(w, "failed to hash password", http.StatusInternalServerError)
 			return
 		}
-		if err := h.userRepo.SetPassword(r.Context(), userID, string(hash)); err != nil {
+		if err := h.userRepo.SetPassword(r.Context(), userID, hash); err != nil {
 			jsonError(w, "failed to update password: "+err.Error(), http.StatusInternalServerError)
 			return
 		}

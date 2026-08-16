@@ -6,6 +6,7 @@ export interface EEG {
   gemeinschaft_typ: string; // "EEG" | "GEA" | "BEG"
   netzbetreiber: string;
   name: string;
+  display_name?: string; // optional alias shown everywhere except legal documents (invoices, SEPA, onboarding declaration); empty = fall back to name
   energy_price: number;        // ct/kWh
   producer_price: number;      // ct/kWh
   use_vat: boolean;
@@ -22,7 +23,8 @@ export interface EEG {
   invoice_pre_text: string;
   invoice_post_text: string;
   invoice_footer_text: string;
-  invoice_payment_notice_mode: string; // sepa_lastschrift | ueberweisung | none
+  invoice_payment_notice_mode: string; // sepa_lastschrift | ueberweisung | custom | none
+  invoice_payment_notice_text: string; // used when invoice_payment_notice_mode === "custom"; placeholders: {betrag} {iban} {eeg_iban} {eeg_bic} {datum}
   fee_billing_mode: string; // per_month | per_invoice
   logo_path: string;
   generate_credit_notes: boolean;
@@ -50,6 +52,7 @@ export interface EEG {
   uid_nummer: string;
   gruendungsdatum?: string; // ISO date string YYYY-MM-DD
   onboarding_contract_text?: string;
+  referral_options?: string[];
   is_demo?: boolean;
   // Auto-billing
   auto_billing_enabled?: boolean;
@@ -63,6 +66,24 @@ export interface EEG {
   energy_imbalance_threshold_promille?: number; // ‰, default 1
   // Member portal
   portal_show_full_energy?: boolean;
+  // Invoice visual design ("standard" | "individuell")
+  invoice_design?: string;
+  invoice_accent_color?: string; // hex, e.g. "#c9b89a"
+  invoice_logo_left?: boolean;
+  invoice_font_family?: string; // dejavu | roboto | opensans | ptserif
+  invoice_font_size?: number;   // pt, 8-12
+  invoice_row_spacing?: number; // scale factor, 0.7-1.3, default 1.0
+  invoice_energy_label_zeitraum_von?: string;
+  invoice_energy_label_zeitraum_bis?: string;
+  invoice_energy_label_gesamtverbrauch?: string;
+  invoice_energy_label_netzbezug?: string;
+  invoice_energy_label_community_verbrauch?: string;
+  invoice_energy_label_gesamteinspeisung?: string;
+  invoice_energy_label_abnahme_energiegemeinschaft?: string;
+  invoice_energy_label_resteinspeisung?: string;
+  invoice_show_zero_fees?: boolean;
+  // Zusatzzähler feature toggle — manually-read submeters (e.g. Wärmepumpe), default off
+  extra_meters_enabled?: boolean;
   created_at?: string;
   // Per-EEG EDA credentials (passwords omitted from API responses)
   eda_imap_host?: string;
@@ -117,6 +138,7 @@ export interface CreateEEGRequest {
 
 export interface UpdateEEGRequest {
   name?: string;
+  display_name?: string;
   netzbetreiber?: string;
   energy_price: number;
   producer_price: number;
@@ -135,6 +157,7 @@ export interface UpdateEEGRequest {
   invoice_post_text?: string;
   invoice_footer_text?: string;
   invoice_payment_notice_mode?: string;
+  invoice_payment_notice_text?: string;
   fee_billing_mode?: string;
   generate_credit_notes?: boolean;
   credit_note_number_prefix?: string;
@@ -159,6 +182,7 @@ export interface UpdateEEGRequest {
   ort?: string;
   uid_nummer?: string;
   onboarding_contract_text?: string;
+  referral_options?: string[];
   // Per-EEG EDA credentials (send only when changing; empty = keep existing)
   eda_imap_host?: string;
   eda_imap_user?: string;
@@ -183,6 +207,23 @@ export interface UpdateEEGRequest {
   energy_imbalance_threshold_promille?: number;
   // Member portal
   portal_show_full_energy?: boolean;
+  // Invoice visual design
+  invoice_design?: string;
+  invoice_accent_color?: string;
+  invoice_logo_left?: boolean;
+  invoice_font_family?: string;
+  invoice_font_size?: number;
+  invoice_row_spacing?: number;
+  invoice_energy_label_zeitraum_von?: string;
+  invoice_energy_label_zeitraum_bis?: string;
+  invoice_energy_label_gesamtverbrauch?: string;
+  invoice_energy_label_netzbezug?: string;
+  invoice_energy_label_community_verbrauch?: string;
+  invoice_energy_label_gesamteinspeisung?: string;
+  invoice_energy_label_abnahme_energiegemeinschaft?: string;
+  invoice_energy_label_resteinspeisung?: string;
+  invoice_show_zero_fees?: boolean;
+  extra_meters_enabled?: boolean;
 }
 
 export interface MeterPoint {
@@ -972,6 +1013,18 @@ export async function listEDAProcesses(
   return apiFetch<EDAProcess[]>(`/eegs/${eegId}/eda/processes`, token);
 }
 
+export interface ActiveNetzbetreiber {
+  id: string;
+  name: string;
+}
+
+export async function listActiveNetzbetreiber(
+  token: string,
+  eegId: string
+): Promise<ActiveNetzbetreiber[]> {
+  return apiFetch<ActiveNetzbetreiber[]>(`/eegs/${eegId}/eda/netzbetreiber`, token);
+}
+
 // EDA Errors (dead-letter log)
 export interface EDAError {
   id: string;
@@ -1150,6 +1203,30 @@ export async function listTariffs(token: string, eegId: string): Promise<TariffS
 
 export async function listMemberTariffs(token: string, eegId: string, memberId: string): Promise<TariffSchedule[]> {
   return apiFetch<TariffSchedule[]>(`/eegs/${eegId}/members/${memberId}/tariffs`, token);
+}
+
+// Zusatzzähler — manually-read submeters (e.g. Wärmepumpe), not Netzbetreiber smart meters.
+export interface ExtraMeter {
+  id: string;
+  eeg_id: string;
+  member_id: string;
+  label: string;
+  status: "ACTIVE" | "INACTIVE";
+  notes: string;
+  created_at: string;
+}
+
+export interface ExtraMeterReading {
+  id: string;
+  extra_meter_id: string;
+  reading_date: string;
+  counter_value: number;
+  notes: string;
+  created_at: string;
+}
+
+export async function listExtraMeters(token: string, eegId: string, memberId: string): Promise<ExtraMeter[]> {
+  return apiFetch<ExtraMeter[]>(`/eegs/${eegId}/members/${memberId}/extra-meters`, token);
 }
 
 export async function getTariff(token: string, eegId: string, scheduleId: string): Promise<TariffSchedule> {

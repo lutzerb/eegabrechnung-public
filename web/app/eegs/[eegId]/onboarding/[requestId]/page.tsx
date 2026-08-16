@@ -34,6 +34,8 @@ interface OnboardingRequest {
   contract_accepted_at?: string;
   contract_ip: string;
   admin_notes: string;
+  referral_source: string;
+  referral_source_note: string;
   converted_member_id?: string;
   created_at: string;
   updated_at: string;
@@ -65,6 +67,7 @@ function formatDate(dateStr?: string): string {
       year: "numeric",
       hour: "2-digit",
       minute: "2-digit",
+      timeZone: "Europe/Vienna",
     });
   } catch {
     return dateStr;
@@ -78,6 +81,7 @@ function formatDateOnly(dateStr?: string): string {
       day: "2-digit",
       month: "2-digit",
       year: "numeric",
+      timeZone: "Europe/Vienna",
     });
   } catch {
     return dateStr;
@@ -197,6 +201,10 @@ export default async function OnboardingDetailPage({ params }: Props) {
           <Row label="USt-pflichtig" value={req.use_vat ? "Ja" : "Nein"} />
           {req.uid_nummer && <Row label="UID-Nummer" value={<span className="font-mono">{req.uid_nummer}</span>} />}
           <Row label="Gewünschter Beitritt" value={formatDateOnly(req.beitritts_datum)} />
+          <Row label="Aufmerksam geworden durch" value={req.referral_source} />
+          {req.referral_source === "Sonstiges" && (
+            <Row label="Details" value={req.referral_source_note} />
+          )}
         </dl>
       </div>
 

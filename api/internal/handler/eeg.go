@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,15 +15,16 @@ import (
 	"github.com/google/uuid"
 	"github.com/lutzerb/eegabrechnung/internal/auth"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
+	"github.com/lutzerb/eegabrechnung/internal/invoice"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
 	"github.com/xuri/excelize/v2"
 )
 
 type EEGHandler struct {
-	eegRepo         *repository.EEGRepository
-	memberRepo      *repository.MemberRepository
-	meterPointRepo  *repository.MeterPointRepository
-	participRepo    *repository.ParticipationRepository
+	eegRepo        *repository.EEGRepository
+	memberRepo     *repository.MemberRepository
+	meterPointRepo *repository.MeterPointRepository
+	participRepo   *repository.ParticipationRepository
 }
 
 func NewEEGHandler(eegRepo *repository.EEGRepository, memberRepo *repository.MemberRepository, meterPointRepo *repository.MeterPointRepository, participRepo *repository.ParticipationRepository) *EEGHandler {
@@ -31,7 +33,7 @@ func NewEEGHandler(eegRepo *repository.EEGRepository, memberRepo *repository.Mem
 
 func validInvoicePaymentNoticeMode(mode string) bool {
 	switch mode {
-	case "", "sepa_lastschrift", "ueberweisung", "none":
+	case "", "sepa_lastschrift", "ueberweisung", "custom", "none":
 		return true
 	default:
 		return false
@@ -56,6 +58,38 @@ func validEdaDisModel(model string) bool {
 	}
 }
 
+func validInvoiceDesign(design string) bool {
+	switch design {
+	case "", "standard", "individuell":
+		return true
+	default:
+		return false
+	}
+}
+
+func validInvoiceFontFamily(family string) bool {
+	switch family {
+	case "", "dejavu", "roboto", "opensans", "ptserif":
+		return true
+	default:
+		return false
+	}
+}
+
+var hexColorRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
+
+func validInvoiceAccentColor(color string) bool {
+	return color == "" || hexColorRe.MatchString(color)
+}
+
+func validInvoiceFontSize(size int) bool {
+	return size == 0 || (size >= 8 && size <= 12)
+}
+
+func validInvoiceRowSpacing(spacing float64) bool {
+	return spacing == 0 || (spacing >= 0.7 && spacing <= 1.3)
+}
+
 func publicLogoURL(eeg domain.EEG) string {
 	if eeg.LogoPath == "" {
 		return ""
@@ -78,38 +112,40 @@ func presentEEGs(eegs []domain.EEG) []domain.EEG {
 
 // eegRequest is shared by CreateEEG and UpdateEEG.
 type eegRequest struct {
-	GemeinschaftID         string     `json:"gemeinschaft_id"`
-	GemeinschaftTyp        string     `json:"gemeinschaft_typ"`
-	Netzbetreiber          string     `json:"netzbetreiber"`
-	Name                   string     `json:"name"`
-	EnergyPrice            float64    `json:"energy_price"`
-	ProducerPrice          float64    `json:"producer_price"`
-	UseVat                 bool       `json:"use_vat"`
-	VatPct                 float64    `json:"vat_pct"`
-	MeterFeeEur            float64    `json:"meter_fee_eur"`
-	FreeKwh                float64    `json:"free_kwh"`
-	DiscountPct            float64    `json:"discount_pct"`
-	ParticipationFeeEur    float64    `json:"participation_fee_eur"`
-	ZaehlpunktsGebuehrEur  float64    `json:"zaehlpunkts_gebuehr_eur"`
-	BillingPeriod          string     `json:"billing_period"`
-	InvoiceNumberPrefix    string     `json:"invoice_number_prefix"`
-	InvoiceNumberDigits    int        `json:"invoice_number_digits"`
-	InvoiceNumberStart     int        `json:"invoice_number_start"`
-	InvoicePreText         string     `json:"invoice_pre_text"`
-	InvoicePostText        string     `json:"invoice_post_text"`
-	InvoiceFooterText      string     `json:"invoice_footer_text"`
-	InvoicePaymentNoticeMode string   `json:"invoice_payment_notice_mode"`
-	FeeBillingMode         string     `json:"fee_billing_mode"`
-	GenerateCreditNotes    bool       `json:"generate_credit_notes"`
-	CreditNoteNumberPrefix string     `json:"credit_note_number_prefix"`
-	CreditNoteNumberDigits int        `json:"credit_note_number_digits"`
-	IBAN                   string     `json:"iban"`
-	BIC                    string     `json:"bic"`
-	SepaCreditorID         string     `json:"sepa_creditor_id"`
-	EdaTransitionDate      string     `json:"eda_transition_date,omitempty"`
-	EdaMarktpartnerID      string     `json:"eda_marktpartner_id"`
-	EdaNetzbetreiberID     string     `json:"eda_netzbetreiber_id"`
-	EdaDisModel            string     `json:"eda_dis_model"`
+	GemeinschaftID           string  `json:"gemeinschaft_id"`
+	GemeinschaftTyp          string  `json:"gemeinschaft_typ"`
+	Netzbetreiber            string  `json:"netzbetreiber"`
+	Name                     string  `json:"name"`
+	DisplayName              string  `json:"display_name"`
+	EnergyPrice              float64 `json:"energy_price"`
+	ProducerPrice            float64 `json:"producer_price"`
+	UseVat                   bool    `json:"use_vat"`
+	VatPct                   float64 `json:"vat_pct"`
+	MeterFeeEur              float64 `json:"meter_fee_eur"`
+	FreeKwh                  float64 `json:"free_kwh"`
+	DiscountPct              float64 `json:"discount_pct"`
+	ParticipationFeeEur      float64 `json:"participation_fee_eur"`
+	ZaehlpunktsGebuehrEur    float64 `json:"zaehlpunkts_gebuehr_eur"`
+	BillingPeriod            string  `json:"billing_period"`
+	InvoiceNumberPrefix      string  `json:"invoice_number_prefix"`
+	InvoiceNumberDigits      int     `json:"invoice_number_digits"`
+	InvoiceNumberStart       int     `json:"invoice_number_start"`
+	InvoicePreText           string  `json:"invoice_pre_text"`
+	InvoicePostText          string  `json:"invoice_post_text"`
+	InvoiceFooterText        string  `json:"invoice_footer_text"`
+	InvoicePaymentNoticeMode string  `json:"invoice_payment_notice_mode"`
+	InvoicePaymentNoticeText string  `json:"invoice_payment_notice_text"`
+	FeeBillingMode           string  `json:"fee_billing_mode"`
+	GenerateCreditNotes      bool    `json:"generate_credit_notes"`
+	CreditNoteNumberPrefix   string  `json:"credit_note_number_prefix"`
+	CreditNoteNumberDigits   int     `json:"credit_note_number_digits"`
+	IBAN                     string  `json:"iban"`
+	BIC                      string  `json:"bic"`
+	SepaCreditorID           string  `json:"sepa_creditor_id"`
+	EdaTransitionDate        string  `json:"eda_transition_date,omitempty"`
+	EdaMarktpartnerID        string  `json:"eda_marktpartner_id"`
+	EdaNetzbetreiberID       string  `json:"eda_netzbetreiber_id"`
+	EdaDisModel              string  `json:"eda_dis_model"`
 	// Accounting / DATEV
 	AccountingRevenueAccount int    `json:"accounting_revenue_account"`
 	AccountingExpenseAccount int    `json:"accounting_expense_account"`
@@ -124,7 +160,8 @@ type eegRequest struct {
 	// Gründungsdatum (date-only, YYYY-MM-DD)
 	Gruendungsdatum string `json:"gruendungsdatum"`
 	// Onboarding
-	OnboardingContractText string `json:"onboarding_contract_text"`
+	OnboardingContractText string   `json:"onboarding_contract_text"`
+	ReferralOptions        []string `json:"referral_options"`
 	// Per-EEG EDA credentials (IMAP + SMTP for MaKo)
 	EDAIMAPHost     string `json:"eda_imap_host"`
 	EDAIMAPUser     string `json:"eda_imap_user"`
@@ -149,6 +186,25 @@ type eegRequest struct {
 	EnergyImbalanceThresholdPromille float64 `json:"energy_imbalance_threshold_promille"`
 	// Member portal
 	PortalShowFullEnergy bool `json:"portal_show_full_energy"`
+	// Invoice visual design ("standard" | "individuell") — see domain.EEG for field meaning
+	InvoiceDesign      string `json:"invoice_design"`
+	InvoiceAccentColor string `json:"invoice_accent_color"`
+	InvoiceLogoLeft    bool   `json:"invoice_logo_left"`
+	InvoiceFontFamily  string `json:"invoice_font_family"`
+	InvoiceFontSize    int    `json:"invoice_font_size"`
+	// Energy table labels + zero-fee display — see domain.EEG for field meaning
+	InvoiceEnergyLabelZeitraumVon                string  `json:"invoice_energy_label_zeitraum_von"`
+	InvoiceEnergyLabelZeitraumBis                string  `json:"invoice_energy_label_zeitraum_bis"`
+	InvoiceEnergyLabelGesamtverbrauch            string  `json:"invoice_energy_label_gesamtverbrauch"`
+	InvoiceEnergyLabelNetzbezug                  string  `json:"invoice_energy_label_netzbezug"`
+	InvoiceEnergyLabelCommunityVerbrauch         string  `json:"invoice_energy_label_community_verbrauch"`
+	InvoiceShowZeroFees                          bool    `json:"invoice_show_zero_fees"`
+	InvoiceRowSpacing                            float64 `json:"invoice_row_spacing"`
+	InvoiceEnergyLabelGesamteinspeisung          string  `json:"invoice_energy_label_gesamteinspeisung"`
+	InvoiceEnergyLabelAbnahmeEnergiegemeinschaft string  `json:"invoice_energy_label_abnahme_energiegemeinschaft"`
+	InvoiceEnergyLabelResteinspeisung            string  `json:"invoice_energy_label_resteinspeisung"`
+	// Zusatzzähler feature toggle — see domain.EEG for field meaning
+	ExtraMetersEnabled bool `json:"extra_meters_enabled"`
 }
 
 // memberWithMeterPoints is the response shape for ListMembers and GetMember.
@@ -260,7 +316,7 @@ func (h *EEGHandler) ListEEGs(w http.ResponseWriter, r *http.Request) {
 		eegs, err = h.eegRepo.List(r.Context(), claims.OrganizationID)
 	} else {
 		userID, _ := uuid.Parse(claims.RegisteredClaims.Subject)
-		eegs, err = h.eegRepo.ListForUser(r.Context(), userID)
+		eegs, err = h.eegRepo.ListForUser(r.Context(), userID, claims.OrganizationID)
 	}
 	if err != nil {
 		jsonError(w, "failed to list EEGs", http.StatusInternalServerError)
@@ -317,36 +373,61 @@ func (h *EEGHandler) CreateEEG(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid fee_billing_mode", http.StatusBadRequest)
 		return
 	}
+	if !validInvoiceDesign(req.InvoiceDesign) {
+		jsonError(w, "invalid invoice_design", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceFontFamily(req.InvoiceFontFamily) {
+		jsonError(w, "invalid invoice_font_family", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceAccentColor(req.InvoiceAccentColor) {
+		jsonError(w, "invalid invoice_accent_color", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceFontSize(req.InvoiceFontSize) {
+		jsonError(w, "invalid invoice_font_size", http.StatusBadRequest)
+		return
+	}
 
 	eeg := &domain.EEG{
-		OrganizationID:      claims.OrganizationID,
-		GemeinschaftID:      req.GemeinschaftID,
-		GemeinschaftTyp:     req.GemeinschaftTyp,
-		Netzbetreiber:       req.Netzbetreiber,
-		Name:                req.Name,
-		EnergyPrice:         req.EnergyPrice,
-		ProducerPrice:       req.ProducerPrice,
-		UseVat:              req.UseVat,
-		VatPct:              req.VatPct,
-		MeterFeeEur:         req.MeterFeeEur,
-		FreeKwh:             req.FreeKwh,
-		DiscountPct:         req.DiscountPct,
-		ParticipationFeeEur: req.ParticipationFeeEur,
-		ZaehlpunktsGebuehrEur: req.ZaehlpunktsGebuehrEur,
-		BillingPeriod:       req.BillingPeriod,
-		InvoiceNumberPrefix: req.InvoiceNumberPrefix,
-		InvoiceNumberDigits: req.InvoiceNumberDigits,
-		InvoicePreText:      req.InvoicePreText,
-		InvoicePostText:     req.InvoicePostText,
-		InvoiceFooterText:   req.InvoiceFooterText,
+		OrganizationID:           claims.OrganizationID,
+		GemeinschaftID:           req.GemeinschaftID,
+		GemeinschaftTyp:          req.GemeinschaftTyp,
+		Netzbetreiber:            req.Netzbetreiber,
+		Name:                     req.Name,
+		DisplayName:              req.DisplayName,
+		EnergyPrice:              req.EnergyPrice,
+		ProducerPrice:            req.ProducerPrice,
+		UseVat:                   req.UseVat,
+		VatPct:                   req.VatPct,
+		MeterFeeEur:              req.MeterFeeEur,
+		FreeKwh:                  req.FreeKwh,
+		DiscountPct:              req.DiscountPct,
+		ParticipationFeeEur:      req.ParticipationFeeEur,
+		ZaehlpunktsGebuehrEur:    req.ZaehlpunktsGebuehrEur,
+		BillingPeriod:            req.BillingPeriod,
+		InvoiceNumberPrefix:      req.InvoiceNumberPrefix,
+		InvoiceNumberDigits:      req.InvoiceNumberDigits,
+		InvoicePreText:           req.InvoicePreText,
+		InvoicePostText:          req.InvoicePostText,
+		InvoiceFooterText:        req.InvoiceFooterText,
 		InvoicePaymentNoticeMode: req.InvoicePaymentNoticeMode,
-		FeeBillingMode:     req.FeeBillingMode,
-		IBAN:               req.IBAN,
-		BIC:                req.BIC,
-		SepaCreditorID:     req.SepaCreditorID,
-		EdaMarktpartnerID:  req.EdaMarktpartnerID,
-		EdaNetzbetreiberID: req.EdaNetzbetreiberID,
-		EdaDisModel:        req.EdaDisModel,
+		InvoicePaymentNoticeText: req.InvoicePaymentNoticeText,
+		FeeBillingMode:           req.FeeBillingMode,
+		IBAN:                     req.IBAN,
+		BIC:                      req.BIC,
+		SepaCreditorID:           req.SepaCreditorID,
+		EdaMarktpartnerID:        req.EdaMarktpartnerID,
+		EdaNetzbetreiberID:       req.EdaNetzbetreiberID,
+		EdaDisModel:              req.EdaDisModel,
+		Strasse:                  req.Strasse,
+		Plz:                      req.Plz,
+		Ort:                      req.Ort,
+		UidNummer:                req.UidNummer,
+		OnboardingContractText:   req.OnboardingContractText,
+		DatevConsultantNr:        req.DatevConsultantNr,
+		DatevClientNr:            req.DatevClientNr,
 	}
 	if req.EdaTransitionDate != "" {
 		t, err := time.Parse("2006-01-02", req.EdaTransitionDate)
@@ -355,6 +436,14 @@ func (h *EEGHandler) CreateEEG(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		eeg.EdaTransitionDate = &t
+	}
+	if req.Gruendungsdatum != "" {
+		t, err := time.Parse("2006-01-02", req.Gruendungsdatum)
+		if err != nil {
+			jsonError(w, "ungültiges Gründungsdatum (Format: YYYY-MM-DD)", http.StatusBadRequest)
+			return
+		}
+		eeg.Gruendungsdatum = &t
 	}
 	if err := h.eegRepo.Create(r.Context(), eeg); err != nil {
 		jsonError(w, "failed to create EEG", http.StatusInternalServerError)
@@ -415,10 +504,31 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid fee_billing_mode", http.StatusBadRequest)
 		return
 	}
+	if !validInvoiceDesign(req.InvoiceDesign) {
+		jsonError(w, "invalid invoice_design", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceFontFamily(req.InvoiceFontFamily) {
+		jsonError(w, "invalid invoice_font_family", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceAccentColor(req.InvoiceAccentColor) {
+		jsonError(w, "invalid invoice_accent_color", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceFontSize(req.InvoiceFontSize) {
+		jsonError(w, "invalid invoice_font_size", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceRowSpacing(req.InvoiceRowSpacing) {
+		jsonError(w, "invalid invoice_row_spacing", http.StatusBadRequest)
+		return
+	}
 
 	if req.Name != "" {
 		existing.Name = req.Name
 	}
+	existing.DisplayName = strings.TrimSpace(req.DisplayName)
 	if req.Netzbetreiber != "" {
 		existing.Netzbetreiber = req.Netzbetreiber
 	}
@@ -452,6 +562,7 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 	if req.InvoicePaymentNoticeMode != "" {
 		existing.InvoicePaymentNoticeMode = req.InvoicePaymentNoticeMode
 	}
+	existing.InvoicePaymentNoticeText = req.InvoicePaymentNoticeText
 	if req.FeeBillingMode != "" {
 		existing.FeeBillingMode = req.FeeBillingMode
 	}
@@ -496,6 +607,13 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 	existing.Ort = req.Ort
 	existing.UidNummer = req.UidNummer
 	existing.OnboardingContractText = req.OnboardingContractText
+	referralOptions := make([]string, 0, len(req.ReferralOptions))
+	for _, opt := range req.ReferralOptions {
+		if trimmed := strings.TrimSpace(opt); trimmed != "" {
+			referralOptions = append(referralOptions, trimmed)
+		}
+	}
+	existing.ReferralOptions = referralOptions
 	// Credentials — only overwrite if non-empty in request (empty = keep existing)
 	if req.EDAIMAPHost != "" {
 		existing.EDAIMAPHost = req.EDAIMAPHost
@@ -580,6 +698,52 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 
 	// Member portal
 	existing.PortalShowFullEnergy = req.PortalShowFullEnergy
+
+	// Zusatzzähler feature toggle
+	existing.ExtraMetersEnabled = req.ExtraMetersEnabled
+
+	// Invoice design
+	if req.InvoiceDesign != "" {
+		existing.InvoiceDesign = req.InvoiceDesign
+	}
+	if req.InvoiceAccentColor != "" {
+		existing.InvoiceAccentColor = req.InvoiceAccentColor
+	}
+	existing.InvoiceLogoLeft = req.InvoiceLogoLeft
+	if req.InvoiceFontFamily != "" {
+		existing.InvoiceFontFamily = req.InvoiceFontFamily
+	}
+	if req.InvoiceFontSize > 0 {
+		existing.InvoiceFontSize = req.InvoiceFontSize
+	}
+	if req.InvoiceRowSpacing > 0 {
+		existing.InvoiceRowSpacing = req.InvoiceRowSpacing
+	}
+	if req.InvoiceEnergyLabelZeitraumVon != "" {
+		existing.InvoiceEnergyLabelZeitraumVon = req.InvoiceEnergyLabelZeitraumVon
+	}
+	if req.InvoiceEnergyLabelZeitraumBis != "" {
+		existing.InvoiceEnergyLabelZeitraumBis = req.InvoiceEnergyLabelZeitraumBis
+	}
+	if req.InvoiceEnergyLabelGesamtverbrauch != "" {
+		existing.InvoiceEnergyLabelGesamtverbrauch = req.InvoiceEnergyLabelGesamtverbrauch
+	}
+	if req.InvoiceEnergyLabelNetzbezug != "" {
+		existing.InvoiceEnergyLabelNetzbezug = req.InvoiceEnergyLabelNetzbezug
+	}
+	if req.InvoiceEnergyLabelCommunityVerbrauch != "" {
+		existing.InvoiceEnergyLabelCommunityVerbrauch = req.InvoiceEnergyLabelCommunityVerbrauch
+	}
+	if req.InvoiceEnergyLabelGesamteinspeisung != "" {
+		existing.InvoiceEnergyLabelGesamteinspeisung = req.InvoiceEnergyLabelGesamteinspeisung
+	}
+	if req.InvoiceEnergyLabelAbnahmeEnergiegemeinschaft != "" {
+		existing.InvoiceEnergyLabelAbnahmeEnergiegemeinschaft = req.InvoiceEnergyLabelAbnahmeEnergiegemeinschaft
+	}
+	if req.InvoiceEnergyLabelResteinspeisung != "" {
+		existing.InvoiceEnergyLabelResteinspeisung = req.InvoiceEnergyLabelResteinspeisung
+	}
+	existing.InvoiceShowZeroFees = req.InvoiceShowZeroFees
 
 	if err := h.eegRepo.Update(r.Context(), existing); err != nil {
 		jsonError(w, "failed to update EEG", http.StatusInternalServerError)
@@ -768,6 +932,119 @@ func (h *EEGHandler) GetLogo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", ct)
 	w.Header().Set("Cache-Control", "no-cache")
 	io.Copy(w, f) //nolint:errcheck
+}
+
+// previewDesignRequest is the body for PreviewInvoiceDesign — the same shape as
+// the invoice_design/invoice_accent_color/... fields on eegRequest, but never
+// persisted; it's applied ad-hoc to a fixture invoice for the live preview.
+type previewDesignRequest struct {
+	InvoiceDesign                                string  `json:"invoice_design"`
+	InvoiceAccentColor                           string  `json:"invoice_accent_color"`
+	InvoiceLogoLeft                              bool    `json:"invoice_logo_left"`
+	InvoiceFontFamily                            string  `json:"invoice_font_family"`
+	InvoiceFontSize                              int     `json:"invoice_font_size"`
+	InvoiceRowSpacing                            float64 `json:"invoice_row_spacing"`
+	InvoiceFooterText                            string  `json:"invoice_footer_text"`
+	InvoicePreText                               string  `json:"invoice_pre_text"`
+	InvoicePostText                              string  `json:"invoice_post_text"`
+	InvoiceEnergyLabelZeitraumVon                string  `json:"invoice_energy_label_zeitraum_von"`
+	InvoiceEnergyLabelZeitraumBis                string  `json:"invoice_energy_label_zeitraum_bis"`
+	InvoiceEnergyLabelGesamtverbrauch            string  `json:"invoice_energy_label_gesamtverbrauch"`
+	InvoiceEnergyLabelNetzbezug                  string  `json:"invoice_energy_label_netzbezug"`
+	InvoiceEnergyLabelCommunityVerbrauch         string  `json:"invoice_energy_label_community_verbrauch"`
+	InvoiceEnergyLabelGesamteinspeisung          string  `json:"invoice_energy_label_gesamteinspeisung"`
+	InvoiceEnergyLabelAbnahmeEnergiegemeinschaft string  `json:"invoice_energy_label_abnahme_energiegemeinschaft"`
+	InvoiceEnergyLabelResteinspeisung            string  `json:"invoice_energy_label_resteinspeisung"`
+}
+
+// PreviewInvoiceDesign godoc
+// @Summary     Preview invoice design
+// @Description Renders a sample invoice PDF with fixture data using the given (not necessarily saved) design parameters, and the EEG's real logo. Nothing is persisted.
+// @Tags        EEGs
+// @Accept      json
+// @Produce     application/pdf
+// @Param       eegID  path  string  true  "EEG UUID"
+// @Param       design body previewDesignRequest true "Design parameters to preview"
+// @Success     200  {file}    binary  "Sample PDF"
+// @Failure     400  {object}  map[string]string  "Bad request"
+// @Failure     401  {object}  map[string]string  "Unauthorized"
+// @Failure     500  {object}  map[string]string  "Internal error"
+// @Security    BearerAuth
+// @Router      /eegs/{eegID}/invoice-design/preview [post]
+func (h *EEGHandler) PreviewInvoiceDesign(w http.ResponseWriter, r *http.Request) {
+	_, eeg, ok := requireAdminEEGAccess(w, r, h.eegRepo)
+	if !ok {
+		return
+	}
+
+	var req previewDesignRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceDesign(req.InvoiceDesign) {
+		jsonError(w, "invalid invoice_design", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceFontFamily(req.InvoiceFontFamily) {
+		jsonError(w, "invalid invoice_font_family", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceAccentColor(req.InvoiceAccentColor) {
+		jsonError(w, "invalid invoice_accent_color", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceFontSize(req.InvoiceFontSize) {
+		jsonError(w, "invalid invoice_font_size", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceRowSpacing(req.InvoiceRowSpacing) {
+		jsonError(w, "invalid invoice_row_spacing", http.StatusBadRequest)
+		return
+	}
+
+	// Start from the REAL EEG record (name, address, UID, IBAN/BIC, logo, invoice
+	// texts, payment-notice config, ...) so the preview reflects the actual
+	// community — only the design knobs under test (still unsaved) are overridden.
+	// Member/invoice/energy data stays fictional (see SampleFixtureData).
+	previewEEG := *eeg
+	previewEEG.InvoiceDesign = req.InvoiceDesign
+	previewEEG.InvoiceAccentColor = req.InvoiceAccentColor
+	previewEEG.InvoiceLogoLeft = req.InvoiceLogoLeft
+	previewEEG.InvoiceFontFamily = req.InvoiceFontFamily
+	previewEEG.InvoiceFontSize = req.InvoiceFontSize
+	previewEEG.InvoiceRowSpacing = req.InvoiceRowSpacing
+	previewEEG.InvoiceFooterText = req.InvoiceFooterText
+	previewEEG.InvoicePreText = req.InvoicePreText
+	previewEEG.InvoicePostText = req.InvoicePostText
+	previewEEG.InvoiceEnergyLabelZeitraumVon = req.InvoiceEnergyLabelZeitraumVon
+	previewEEG.InvoiceEnergyLabelZeitraumBis = req.InvoiceEnergyLabelZeitraumBis
+	previewEEG.InvoiceEnergyLabelGesamtverbrauch = req.InvoiceEnergyLabelGesamtverbrauch
+	previewEEG.InvoiceEnergyLabelNetzbezug = req.InvoiceEnergyLabelNetzbezug
+	previewEEG.InvoiceEnergyLabelCommunityVerbrauch = req.InvoiceEnergyLabelCommunityVerbrauch
+	previewEEG.InvoiceEnergyLabelGesamteinspeisung = req.InvoiceEnergyLabelGesamteinspeisung
+	previewEEG.InvoiceEnergyLabelAbnahmeEnergiegemeinschaft = req.InvoiceEnergyLabelAbnahmeEnergiegemeinschaft
+	previewEEG.InvoiceEnergyLabelResteinspeisung = req.InvoiceEnergyLabelResteinspeisung
+
+	_, member, inv, vat, energyRows, generationRows := invoice.SampleFixtureData()
+	member.EegID = previewEEG.ID
+	inv.EegID = previewEEG.ID
+
+	var pdfData []byte
+	var err error
+	if req.InvoiceDesign == "individuell" {
+		pdfData, err = invoice.GeneratePDFThemed(inv, &previewEEG, member, vat, nil, energyRows, generationRows, invoice.ThemeFromEEG(&previewEEG))
+	} else {
+		pdfData, err = invoice.GeneratePDF(inv, &previewEEG, member, vat, nil)
+	}
+	if err != nil {
+		jsonError(w, "failed to render preview", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", `inline; filename="Rechnungsdesign_Vorschau.pdf"`)
+	w.Write(pdfData) //nolint:errcheck
 }
 
 // ExportStammdaten godoc

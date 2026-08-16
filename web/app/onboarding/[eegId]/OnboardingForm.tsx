@@ -28,6 +28,8 @@ interface FormData {
   uidNummer: string;
   beitrittsDatum: string;
   meterPoints: MeterPointEntry[];
+  referralSource: string;
+  referralSourceNote: string;
 }
 
 interface PublicDocument {
@@ -40,8 +42,13 @@ interface PublicDocument {
 interface Props {
   eegId: string;
   eegName: string;
+  // Legal name of the community — used only for the binding join declaration
+  // text and consent checkbox. eegName (the alias, falls back to the legal
+  // name) is used for all other display purposes on this page.
+  legalName: string;
   contractText?: string;
   documents?: PublicDocument[];
+  referralOptions?: string[];
   verifiedEmail?: string;
   verifiedName1?: string;
   verifiedName2?: string;
@@ -121,8 +128,10 @@ function FieldError({ msg }: { msg?: string }) {
 export default function OnboardingForm({
   eegId,
   eegName,
+  legalName,
   contractText: contractTextProp,
   documents = [],
+  referralOptions = [],
   verifiedEmail,
   verifiedName1,
   verifiedName2,
@@ -170,6 +179,8 @@ export default function OnboardingForm({
     uidNummer: "",
     beitrittsDatum: tomorrowISO,
     meterPoints: [{ zaehlpunkt: "", direction: "CONSUMPTION", generationType: "", participationFactor: 100 }],
+    referralSource: "",
+    referralSourceNote: "",
   });
 
   function updateField(field: keyof FormData, value: string | boolean) {
@@ -438,6 +449,9 @@ export default function OnboardingForm({
           beitritts_datum: formData.beitrittsDatum || undefined,
           meter_points: meterPointsToSend,
           contract_accepted: true,
+          referral_source: formData.referralSource,
+          referral_source_note:
+            formData.referralSource === "Sonstiges" ? formData.referralSourceNote.trim() : "",
         }),
       });
 
@@ -470,7 +484,7 @@ export default function OnboardingForm({
   const ibanDisplay = formData.iban || "(nicht angegeben)";
   const defaultContractText = `BEITRITTSERKLÄRUNG ZUR ENERGIEGEMEINSCHAFT
 
-Hiermit erkläre ich/wir den Beitritt zur Energiegemeinschaft ${eegName} gemäß den Bestimmungen des Erneuerbaren-Ausbau-Gesetzes (EAG).
+Hiermit erkläre ich/wir den Beitritt zur Energiegemeinschaft ${legalName} gemäß den Bestimmungen des Erneuerbaren-Ausbau-Gesetzes (EAG).
 
 Ich/Wir bestätige/n:
 • Die angegebenen Stammdaten (Name, Adresse, Kontaktdaten) sind korrekt.
@@ -733,6 +747,37 @@ Datum der elektronischen Unterzeichnung: ${today}`;
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Wie sind Sie auf uns aufmerksam geworden? (optional)
+              </label>
+              <select
+                value={formData.referralSource}
+                onChange={(e) => updateField("referralSource", e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+              >
+                <option value="">Bitte wählen…</option>
+                {referralOptions.map((opt) => (
+                  <option key={opt} value={opt}>
+                    {opt}
+                  </option>
+                ))}
+                <option value="Sonstiges">Sonstiges</option>
+              </select>
+            </div>
+            {formData.referralSource === "Sonstiges" && (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Wie genau? (optional)
+                </label>
+                <input
+                  type="text"
+                  value={formData.referralSourceNote}
+                  onChange={(e) => updateField("referralSourceNote", e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1141,7 +1186,7 @@ Datum der elektronischen Unterzeichnung: ${today}`;
             <span className="text-sm text-slate-700">
               Ich bestätige die Richtigkeit meiner Angaben und stimme dem
               Beitritt zur Energiegemeinschaft{" "}
-              <strong>{eegName}</strong> zu. Ich habe die
+              <strong>{legalName}</strong> zu. Ich habe die
               Beitrittserklärung gelesen und akzeptiere diese.{" "}
               <span className="text-red-500">*</span>
             </span>

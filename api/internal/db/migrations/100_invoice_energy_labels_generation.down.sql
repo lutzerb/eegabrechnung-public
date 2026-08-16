@@ -1,0 +1,3 @@
+ALTER TABLE eegs DROP COLUMN invoice_energy_label_resteinspeisung;
+ALTER TABLE eegs DROP COLUMN invoice_energy_label_abnahme_energiegemeinschaft;
+ALTER TABLE eegs DROP COLUMN invoice_energy_label_gesamteinspeisung;

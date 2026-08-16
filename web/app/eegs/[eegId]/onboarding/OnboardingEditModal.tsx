@@ -31,6 +31,8 @@ interface OnboardingRequest {
   meter_points: MeterPoint[];
   beitritts_datum?: string;
   admin_notes: string;
+  referral_source?: string;
+  referral_source_note?: string;
 }
 
 interface Props {
@@ -95,6 +97,8 @@ export default function OnboardingEditModal({ eegId, req, onClose, onSuccess }: 
   const [useVat, setUseVat] = useState(req.use_vat || false);
   const [beitrittsDatum, setBeitrittsDatum] = useState(formatDateForInput(req.beitritts_datum));
   const [adminNotes, setAdminNotes] = useState(req.admin_notes || "");
+  const [referralSource, setReferralSource] = useState(req.referral_source || "");
+  const [referralSourceNote, setReferralSourceNote] = useState(req.referral_source_note || "");
   const [meterPoints, setMeterPoints] = useState<MeterPoint[]>(
     req.meter_points && req.meter_points.length > 0
       ? req.meter_points
@@ -149,6 +153,8 @@ export default function OnboardingEditModal({ eegId, req, onClose, onSuccess }: 
         meter_points: meterPoints.filter((mp) => mp.zaehlpunkt.trim() !== ""),
         admin_notes: adminNotes,
         beitritts_datum: beitrittsDatum || "",
+        referral_source: referralSource,
+        referral_source_note: referralSource === "Sonstiges" ? referralSourceNote : "",
       };
 
       const res = await fetch(`/api/eegs/${eegId}/onboarding/${req.id}`, {
@@ -238,6 +244,27 @@ export default function OnboardingEditModal({ eegId, req, onClose, onSuccess }: 
                   className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
+              <div className="col-span-2">
+                <label className="block text-xs text-slate-500 mb-1">Aufmerksam geworden durch</label>
+                <input
+                  type="text"
+                  value={referralSource}
+                  onChange={(e) => setReferralSource(e.target.value)}
+                  placeholder="z.B. Empfehlung von einem Mitglied, Internet, Zeitung, Sonstiges"
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              {referralSource === "Sonstiges" && (
+                <div className="col-span-2">
+                  <label className="block text-xs text-slate-500 mb-1">Details zu &quot;Sonstiges&quot;</label>
+                  <input
+                    type="text"
+                    value={referralSourceNote}
+                    onChange={(e) => setReferralSourceNote(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-xs text-slate-500 mb-1">Mitgliedstyp</label>
                 <select

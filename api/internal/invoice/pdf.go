@@ -30,6 +30,16 @@ type MeterPointKwh struct {
 	Kwh        float64
 }
 
+// ExtraMeterLine is one manually-read Zusatzzähler (submeter) billed on the invoice —
+// the Kwh delta between two counter readings, priced at the same ct/kWh as the
+// member's normal Bezug.
+type ExtraMeterLine struct {
+	Label   string
+	Kwh     float64
+	PriceCt float64
+	Amount  float64
+}
+
 //go:embed fonts/DejaVuSans.ttf
 var dejaVuSans []byte
 
@@ -88,9 +98,9 @@ type VATOptions struct {
 	// MeterFeeEur/ParticipationFeeEur/ZaehlpunktsGebuehrEur are per-month unit values;
 	// FeeMonths is the multiplier (per_month fee billing: started calendar months of
 	// the period; per_invoice: always 1). ZaehlpunktsGebuehrTotal already includes it.
-	MeterFeeEur        float64
+	MeterFeeEur         float64
 	ParticipationFeeEur float64
-	FeeMonths          int
+	FeeMonths           int
 
 	// EnergyNet is the energy-only Bezug amount (excludes all fixed fees below) — used for the
 	// "Bezug Strom" line item so it doesn't silently absorb fixed fees.
@@ -102,6 +112,10 @@ type VATOptions struct {
 	ZaehlpunktsGebuehrEur   float64
 	ZaehlpunktsGebuehrCount int
 	ZaehlpunktsGebuehrTotal float64
+
+	// Zusatzzähler (manually-read submeters, e.g. Wärmepumpe) — one line each, only
+	// shown when non-empty. Already folded into ConsumptionNet/NetAmount.
+	ExtraMeterLines []ExtraMeterLine
 }
 
 // germanMonth returns the German name for a month (no umlauts needed — all ASCII here).
@@ -157,6 +171,25 @@ func formatAmount(v float64) string {
 		formatted = "-" + formatted
 	}
 	return formatted + " €"
+}
+
+// renderPaymentNoticeTemplate substitutes {betrag}/{iban}/{eeg_iban}/{eeg_bic}/{datum}
+// in a custom Zahlungshinweis/Auszahlung template (invoice_payment_notice_mode
+// == "custom"), same {placeholder} convention as domain.EEG.OnboardingContractText's
+// {iban}/{datum}. Pass a zero time.Time when there's no natural due/collection date
+// for the caller (e.g. a Gutschrift payout) — {datum} is then substituted with "".
+func renderPaymentNoticeTemplate(tmpl string, betrag float64, iban, eegIban, eegBic string, datum time.Time) string {
+	text := tmpl
+	text = strings.ReplaceAll(text, "{betrag}", formatAmount(betrag))
+	text = strings.ReplaceAll(text, "{iban}", iban)
+	text = strings.ReplaceAll(text, "{eeg_iban}", eegIban)
+	text = strings.ReplaceAll(text, "{eeg_bic}", eegBic)
+	datumStr := ""
+	if !datum.IsZero() {
+		datumStr = datum.Format("02.01.2006")
+	}
+	text = strings.ReplaceAll(text, "{datum}", datumStr)
+	return text
 }
 
 // formatKwh formats kWh value with 3 decimal places and German decimal separator.
@@ -386,7 +419,7 @@ func drawBarChart(pdf *fpdf.Fpdf, data []MonthlyKwh) {
 	// Axes
 	pdf.SetDrawColor(140, 140, 140)
 	pdf.SetLineWidth(0.4)
-	pdf.Line(startX, startY, startX, startY+chartH)          // Y-axis
+	pdf.Line(startX, startY, startX, startY+chartH)               // Y-axis
 	pdf.Line(startX, startY+chartH, startX+chartW, startY+chartH) // X-axis
 
 	// Bars
@@ -668,17 +701,29 @@ func GenerateCreditNotePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.
 	pdf.Ln(2)
 
 	// ── Payment notice ───────────────────────────────────────────────────────
-	pdf.SetFont("DejaVu", "B", 10)
-	pdf.SetTextColor(40, 40, 40)
-	pdf.CellFormat(0, 5, "Auszahlung", "", 1, "L", false, 0, "")
-	pdf.SetFont("DejaVu", "", 10)
-	pdf.SetTextColor(0, 0, 0)
-	creditNotice := fmt.Sprintf("Der Gutschriftbetrag von %s wird automatisch auf Ihr Konto überwiesen.", formatAmount(payDisplay))
-	if member.IBAN != "" {
-		creditNotice = fmt.Sprintf("Der Gutschriftbetrag von %s wird automatisch auf Ihr Konto (IBAN: %s) überwiesen.", formatAmount(payDisplay), member.IBAN)
+	// Respects the same invoice_payment_notice_mode as GeneratePDF's Zahlungshinweis
+	// ("none" omits the section entirely; "custom" uses the free-text template).
+	// sepa_lastschrift/ueberweisung (or unset) both fall back to the default payout
+	// wording below — a Gutschrift payout doesn't have a debit-vs-transfer distinction
+	// the way a consumer invoice does.
+	if eeg.InvoicePaymentNoticeMode != "none" {
+		pdf.SetFont("DejaVu", "B", 10)
+		pdf.SetTextColor(40, 40, 40)
+		pdf.CellFormat(0, 5, "Auszahlung", "", 1, "L", false, 0, "")
+		pdf.SetFont("DejaVu", "", 10)
+		pdf.SetTextColor(0, 0, 0)
+		var creditNotice string
+		if eeg.InvoicePaymentNoticeMode == "custom" {
+			creditNotice = renderPaymentNoticeTemplate(eeg.InvoicePaymentNoticeText, payDisplay, member.IBAN, eeg.IBAN, eeg.BIC, time.Time{})
+		} else {
+			creditNotice = fmt.Sprintf("Der Gutschriftbetrag von %s wird automatisch auf Ihr Konto überwiesen.", formatAmount(payDisplay))
+			if member.IBAN != "" {
+				creditNotice = fmt.Sprintf("Der Gutschriftbetrag von %s wird automatisch auf Ihr Konto (IBAN: %s) überwiesen.", formatAmount(payDisplay), member.IBAN)
+			}
+		}
+		pdf.MultiCell(0, 5, creditNotice, "", "L", false)
+		pdf.Ln(4)
 	}
-	pdf.MultiCell(0, 5, creditNotice, "", "L", false)
-	pdf.Ln(4)
 
 	// ── Energy history bar chart ─────────────────────────────────────────────
 	if len(history) > 0 {
@@ -894,7 +939,7 @@ func GeneratePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, va
 		if feeMonths > 1 {
 			feeLabel = fmt.Sprintf("Messstellengebühr / Teilnahmegebühr (%d Monate)", feeMonths)
 		}
-		if feeTotal > 0 {
+		if feeTotal > 0 || eeg.InvoiceShowZeroFees {
 			pdf.CellFormat(colDesc, rowH, feeLabel, "1", 0, "L", false, 0, "")
 			pdf.CellFormat(colKwh, rowH, "", "1", 0, "R", false, 0, "")
 			pdf.CellFormat(colPrice, rowH, "", "1", 0, "R", false, 0, "")
@@ -924,7 +969,7 @@ func GeneratePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, va
 
 	// Zählpunktsgebühr — always its own line (single- and multi-month alike), unlike the
 	// Messstellengebühr/Teilnahmegebühr line above which is only broken out for multi-month.
-	if vat.ZaehlpunktsGebuehrTotal > 0 {
+	if vat.ZaehlpunktsGebuehrTotal > 0 || eeg.InvoiceShowZeroFees {
 		label := fmt.Sprintf("Zählpunktsgebühr (%d × %s)", vat.ZaehlpunktsGebuehrCount, formatAmount(vat.ZaehlpunktsGebuehrEur))
 		if vat.FeeMonths > 1 {
 			label = fmt.Sprintf("Zählpunktsgebühr (%d × %s × %d Monate)", vat.ZaehlpunktsGebuehrCount, formatAmount(vat.ZaehlpunktsGebuehrEur), vat.FeeMonths)
@@ -933,6 +978,15 @@ func GeneratePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, va
 		pdf.CellFormat(colKwh, rowH, "", "1", 0, "R", false, 0, "")
 		pdf.CellFormat(colPrice, rowH, "", "1", 0, "R", false, 0, "")
 		pdf.CellFormat(colAmount, rowH, formatAmount(vat.ZaehlpunktsGebuehrTotal), "1", 1, "R", false, 0, "")
+	}
+
+	// Zusatzzähler — manually-read submeters (e.g. Wärmepumpe), one line each.
+	for _, em := range vat.ExtraMeterLines {
+		label := fmt.Sprintf("%s (Zusatzzähler)", em.Label)
+		pdf.CellFormat(colDesc, rowH, label, "1", 0, "L", false, 0, "")
+		pdf.CellFormat(colKwh, rowH, formatKwh(em.Kwh), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(colPrice, rowH, fmt.Sprintf("%.4f ct", em.PriceCt), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(colAmount, rowH, formatAmount(em.Amount), "1", 1, "R", false, 0, "")
 	}
 
 	// ── VAT breakdown — Bezug and Einspeisung treated independently (Austrian law) ──
@@ -1038,7 +1092,14 @@ func GeneratePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, va
 		if vat.GenerationReverseCharge {
 			zahlBetrag += inv.GenerationVatAmount
 		}
-		if zahlBetrag < 0 {
+		if eeg.InvoicePaymentNoticeMode == "custom" {
+			noticeDays := eeg.SepaPreNotificationDays
+			if noticeDays <= 0 {
+				noticeDays = 14
+			}
+			datum := inv.CreatedAt.AddDate(0, 0, noticeDays)
+			notice = renderPaymentNoticeTemplate(eeg.InvoicePaymentNoticeText, math.Abs(zahlBetrag), member.IBAN, eeg.IBAN, eeg.BIC, datum)
+		} else if zahlBetrag < 0 {
 			// Negative saldo — EEG owes the member → credit transfer
 			credit := formatAmount(-zahlBetrag)
 			noticeDays := eeg.SepaPreNotificationDays

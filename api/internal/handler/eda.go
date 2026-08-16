@@ -14,6 +14,7 @@ import (
 	"github.com/lutzerb/eegabrechnung/internal/auth"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
 	edaxml "github.com/lutzerb/eegabrechnung/internal/eda/xml"
+	"github.com/lutzerb/eegabrechnung/internal/netzbetreiber"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
 )
 
@@ -75,6 +76,43 @@ func (h *EDAHandler) ListProcesses(w http.ResponseWriter, r *http.Request) {
 		ps = []domain.EDAProcess{}
 	}
 	jsonOK(w, ps)
+}
+
+// activeNetzbetreiberResponse is one entry of GET /eegs/{eegID}/eda/netzbetreiber.
+type activeNetzbetreiberResponse struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ListActiveNetzbetreiber godoc
+//
+//	@Summary		List currently active Netzbetreiber
+//	@Description	Derives the distinct set of Netzbetreiber from the EEG's currently active meter points (Zählpunkt prefix). Primarily useful for BEG communities, which can span multiple grid operators.
+//	@Tags			EDA
+//	@Produce		json
+//	@Param			eegID	path		string	true	"EEG ID (UUID)"
+//	@Success		200		{array}		activeNetzbetreiberResponse
+//	@Failure		400		{object}	map[string]string
+//	@Failure		500		{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/eegs/{eegID}/eda/netzbetreiber [get]
+func (h *EDAHandler) ListActiveNetzbetreiber(w http.ResponseWriter, r *http.Request) {
+	eegID, err := uuid.Parse(chi.URLParam(r, "eegID"))
+	if err != nil {
+		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+		return
+	}
+	mps, err := h.mpRepo.ListByEeg(r.Context(), eegID)
+	if err != nil {
+		jsonError(w, "failed to list meter points", http.StatusInternalServerError)
+		return
+	}
+	infos := netzbetreiber.ActiveFromMeterPoints(mps)
+	result := make([]activeNetzbetreiberResponse, len(infos))
+	for i, info := range infos {
+		result[i] = activeNetzbetreiberResponse{ID: info.ID, Name: info.Name}
+	}
+	jsonOK(w, result)
 }
 
 // anmeldungRequest is the body for POST /eda/anmeldung.
@@ -645,15 +683,8 @@ func (h *EDAHandler) PODList(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, "failed to list meter points", http.StatusInternalServerError)
 			return
 		}
-		seen := map[string]bool{}
-		for _, mp := range mps {
-			if mp.AbgemeldetAm == nil && len(mp.Zaehlpunkt) >= 8 {
-				nb := mp.Zaehlpunkt[:8]
-				if !seen[nb] {
-					seen[nb] = true
-					nbTargets = append(nbTargets, nb)
-				}
-			}
+		for _, info := range netzbetreiber.ActiveFromMeterPoints(mps) {
+			nbTargets = append(nbTargets, info.ID)
 		}
 		if len(nbTargets) == 0 && eeg.EdaNetzbetreiberID != "" {
 			nbTargets = []string{eeg.EdaNetzbetreiberID}

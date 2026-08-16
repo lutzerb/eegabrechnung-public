@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getUser, updateUser, getUserEEGs, setUserEEGs, listEEGs, type AdminUser, type EEG } from "@/lib/api";
 import Link from "next/link";
+import { eegDisplayName } from "@/lib/eeg-display-name";
 
 interface Props {
   params: Promise<{ userId: string }>;
@@ -153,7 +154,7 @@ export default async function EditUserPage({ params, searchParams }: Props) {
                       defaultChecked={assignedEEGIds.includes(eeg.id)}
                       className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                     />
-                    <span className="text-sm text-slate-700">{eeg.name}</span>
+                    <span className="text-sm text-slate-700">{eegDisplayName(eeg)}</span>
                     <span className="text-xs text-slate-400">{eeg.gemeinschaft_id}</span>
                   </label>
                 ))

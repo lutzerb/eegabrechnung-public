@@ -2,6 +2,7 @@ import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { listEEGs, getEEGStats, type EEG, type EEGStats } from "@/lib/api";
 import Link from "next/link";
+import { eegDisplayName } from "@/lib/eeg-display-name";
 
 function formatDate(dateStr: string | undefined): string {
   if (!dateStr) return "—";
@@ -143,7 +144,7 @@ export default async function DashboardPage() {
                   className="flex items-center justify-between px-6 py-4 hover:bg-slate-50 transition-colors"
                 >
                   <div>
-                    <p className="font-medium text-slate-900">{eeg.name}</p>
+                    <p className="font-medium text-slate-900">{eegDisplayName(eeg)}</p>
                     <p className="text-sm text-slate-500 mt-0.5">
                       {eeg.gemeinschaft_id} &middot; {eeg.netzbetreiber}
                     </p>

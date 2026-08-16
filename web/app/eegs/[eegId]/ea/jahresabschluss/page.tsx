@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { filenameFromContentDisposition } from "@/lib/download";
 
 interface SaldenEintrag {
   konto_id: string;
@@ -50,11 +51,13 @@ export default function JahresabschlussPage() {
       const res = await fetch(`/api/eegs/${eegId}/ea/jahresabschluss?jahr=${year}&format=xlsx`);
       if (!res.ok) { alert("Exportfehler"); return; }
       const blob = await res.blob();
-      const cd = res.headers.get("Content-Disposition") || "";
-      const m = cd.match(/filename="([^"]+)"/);
+      const filename = filenameFromContentDisposition(
+        res.headers.get("Content-Disposition"),
+        `jahresabschluss_${year}.xlsx`
+      );
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = m ? m[1] : `jahresabschluss_${year}.xlsx`;
+      a.download = filename;
       a.click();
     } finally {
       setExporting(false);

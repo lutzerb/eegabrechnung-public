@@ -394,10 +394,10 @@ func (r *ReadingRepository) GetMemberEnergy(ctx context.Context, memberID uuid.U
 // timestamp. Covered* report how many kWh fell inside any tariff entry, so the
 // caller can price the uncovered remainder with the flat fallback prices.
 type TOUSum struct {
-	ConsumptionEur         float64 // Σ wh_self × entry.energy_price / 100 (CONSUMPTION ZPs)
-	GenerationEur          float64 // Σ wh_community × entry.producer_price / 100 (GENERATION ZPs)
-	CoveredConsumptionKwh  float64
-	CoveredGenerationKwh   float64
+	ConsumptionEur        float64 // Σ wh_self × entry.energy_price / 100 (CONSUMPTION ZPs)
+	GenerationEur         float64 // Σ wh_community × entry.producer_price / 100 (GENERATION ZPs)
+	CoveredConsumptionKwh float64
+	CoveredGenerationKwh  float64
 }
 
 // SumTOUForMember prices a member's readings per tariff entry (true time-of-use):
@@ -470,6 +470,106 @@ func (r *ReadingRepository) MonthlySummaryForMember(ctx context.Context, memberI
 		months = append(months, m)
 	}
 	return months, rows.Err()
+}
+
+// MonthlyZPKwh holds one Zählpunkt's monthly consumption breakdown: WhTotal is
+// the meter's total Gesamtverbrauch (Netzbezug + community-covered), WhSelf is
+// the community-covered share already billed as "Bezug Strom" — the caller
+// derives Netzbezug = WhTotal - WhSelf. CONSUMPTION meter points only.
+type MonthlyZPKwh struct {
+	Zaehlpunkt string
+	Month      time.Time
+	WhSelf     float64
+	WhTotal    float64
+}
+
+// MonthlyEnergyByMeterPointForMember returns, for every CONSUMPTION meter point
+// of a member, the monthly WhSelf (community-covered consumption, matches
+// MonthlySummaryForMember's ConsumptionKwh) alongside WhTotal (Gesamtverbrauch) —
+// used to render the Netzbezug/Community-Verbrauch breakdown table on the
+// "individuell" invoice design (see invoice.EnergyPeriodRow).
+func (r *ReadingRepository) MonthlyEnergyByMeterPointForMember(ctx context.Context, memberID uuid.UUID, from, to time.Time) ([]MonthlyZPKwh, error) {
+	q := `
+		SELECT
+			mp.zaehlpunkt,
+			(date_trunc('month', er.ts AT TIME ZONE 'Europe/Vienna'))::timestamptz AS month,
+			COALESCE(SUM(er.wh_self), 0)  AS wh_self,
+			COALESCE(SUM(er.wh_total), 0) AS wh_total
+		FROM meter_points mp
+		JOIN energy_readings er ON er.meter_point_id = mp.id
+		WHERE mp.member_id = $1
+		  AND mp.energierichtung = 'CONSUMPTION'
+		  AND er.ts >= $2
+		  AND er.ts <= $3
+		  AND er.quality <> 'L3'
+		GROUP BY mp.zaehlpunkt, (date_trunc('month', er.ts AT TIME ZONE 'Europe/Vienna'))::timestamptz
+		ORDER BY mp.zaehlpunkt, month ASC
+	`
+	rows, err := r.db.Query(ctx, q, memberID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+	defer rows.Close()
+	var result []MonthlyZPKwh
+	for rows.Next() {
+		var m MonthlyZPKwh
+		if err := rows.Scan(&m.Zaehlpunkt, &m.Month, &m.WhSelf, &m.WhTotal); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		result = append(result, m)
+	}
+	return result, rows.Err()
+}
+
+// MonthlyGenerationZPKwh holds one Zählpunkt's monthly generation breakdown:
+// WhTotal is the meter's total Gesamteinspeisung (feed-in), WhCommunity is the
+// share absorbed/purchased by the energy community and already billed as
+// "Einspeisung Strom" — the caller derives Resteinspeisung = WhTotal -
+// WhCommunity. GENERATION meter points only.
+type MonthlyGenerationZPKwh struct {
+	Zaehlpunkt  string
+	Month       time.Time
+	WhCommunity float64
+	WhTotal     float64
+}
+
+// MonthlyGenerationByMeterPointForMember returns, for every GENERATION meter
+// point of a member, the monthly WhCommunity (community-absorbed generation,
+// matches MonthlySummaryForMember's GenerationKwh) alongside WhTotal
+// (Gesamteinspeisung) — used to render the Gesamteinspeisung/Abnahme durch
+// Energiegemeinschaft/Resteinspeisung breakdown table on the "individuell"
+// invoice design (see invoice.GenerationPeriodRow).
+func (r *ReadingRepository) MonthlyGenerationByMeterPointForMember(ctx context.Context, memberID uuid.UUID, from, to time.Time) ([]MonthlyGenerationZPKwh, error) {
+	q := `
+		SELECT
+			mp.zaehlpunkt,
+			(date_trunc('month', er.ts AT TIME ZONE 'Europe/Vienna'))::timestamptz AS month,
+			COALESCE(SUM(er.wh_community), 0) AS wh_community,
+			COALESCE(SUM(er.wh_total), 0)      AS wh_total
+		FROM meter_points mp
+		JOIN energy_readings er ON er.meter_point_id = mp.id
+		WHERE mp.member_id = $1
+		  AND mp.energierichtung = 'GENERATION'
+		  AND er.ts >= $2
+		  AND er.ts <= $3
+		  AND er.quality <> 'L3'
+		GROUP BY mp.zaehlpunkt, (date_trunc('month', er.ts AT TIME ZONE 'Europe/Vienna'))::timestamptz
+		ORDER BY mp.zaehlpunkt, month ASC
+	`
+	rows, err := r.db.Query(ctx, q, memberID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+	defer rows.Close()
+	var result []MonthlyGenerationZPKwh
+	for rows.Next() {
+		var m MonthlyGenerationZPKwh
+		if err := rows.Scan(&m.Zaehlpunkt, &m.Month, &m.WhCommunity, &m.WhTotal); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		result = append(result, m)
+	}
+	return result, rows.Err()
 }
 
 // MeterPointGapDetail holds the incomplete-days list for one meter point.

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
+import { eegDisplayName } from "@/lib/eeg-display-name";
 
 const PortalEnergyChart = dynamic(() => import("./PortalEnergyChart"), { ssr: false });
 
@@ -113,9 +114,10 @@ interface Props {
   documents: PortalDocument[];
   meterPoints: MeterPoint[];
   showFullEnergy: boolean;
+  hasPassword: boolean;
 }
 
-export default function PortalDashboardClient({ member, eeg, invoices, documents, meterPoints, showFullEnergy }: Props) {
+export default function PortalDashboardClient({ member, eeg, invoices, documents, meterPoints, showFullEnergy, hasPassword }: Props) {
   const [activeTab, setActiveTab] = useState<"energy" | "invoices" | "downloads" | "zaehlpunkte" | "profil">("energy");
   const [currentIban, setCurrentIban] = useState(member.iban || "");
   const [editingIban, setEditingIban] = useState(false);
@@ -129,6 +131,17 @@ export default function PortalDashboardClient({ member, eeg, invoices, documents
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailSuccess, setEmailSuccess] = useState<string | null>(null);
   const [emailSubmitting, setEmailSubmitting] = useState(false);
+  const [hasPasswordSet, setHasPasswordSet] = useState(hasPassword);
+  const [passwordHintDismissed, setPasswordHintDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(`portal_password_hint_dismissed_${member.id}`) === "1";
+  });
+  const [editingPassword, setEditingPassword] = useState(false);
+  const [newPassword, setNewPassword] = useState("");
+  const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+  const [passwordSubmitting, setPasswordSubmitting] = useState(false);
   const [changingFactor, setChangingFactor] = useState<string | null>(null);
   const [newFactor, setNewFactor] = useState<string>("");
   const [factorError, setFactorError] = useState<string | null>(null);
@@ -347,13 +360,62 @@ export default function PortalDashboardClient({ member, eeg, invoices, documents
     }
   }
 
+  async function handleSetPassword() {
+    if (newPassword.length < 8) {
+      setPasswordError("Das Passwort muss mindestens 8 Zeichen lang sein.");
+      return;
+    }
+    if (newPassword !== passwordConfirm) {
+      setPasswordError("Die Passwörter stimmen nicht überein.");
+      return;
+    }
+    setPasswordSubmitting(true);
+    setPasswordError(null);
+    setPasswordSuccess(null);
+    try {
+      const res = await fetch("/api/portal/set-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: newPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setPasswordError((data as { error?: string }).error || "Fehler beim Speichern des Passworts.");
+      } else {
+        setHasPasswordSet(true);
+        setPasswordSuccess("Passwort gespeichert. Sie können sich damit ab sofort auch ohne Magic Link anmelden.");
+        setEditingPassword(false);
+        setNewPassword("");
+        setPasswordConfirm("");
+      }
+    } catch {
+      setPasswordError("Netzwerkfehler. Bitte versuchen Sie es erneut.");
+    } finally {
+      setPasswordSubmitting(false);
+    }
+  }
+
+  function openPasswordSetup() {
+    setActiveTab("profil");
+    setEditingPassword(true);
+    setNewPassword("");
+    setPasswordConfirm("");
+    setPasswordError(null);
+    setPasswordSuccess(null);
+  }
+
+  function dismissPasswordHint() {
+    localStorage.setItem(`portal_password_hint_dismissed_${member.id}`, "1");
+    setPasswordHintDismissed(true);
+  }
+
   return (
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
       <header className="bg-white border-b border-slate-200 px-4 sm:px-8 py-4">
         <div className="max-w-4xl mx-auto flex items-center justify-between">
           <div>
-            <p className="text-xs text-slate-500">{eeg.name}</p>
+            <p className="text-xs text-slate-500">{eegDisplayName(eeg)}</p>
             <h1 className="text-lg font-bold text-slate-900">{memberName}</h1>
             {member.mitglieds_nr && (
               <p className="text-xs text-slate-400 font-mono">Mitgl.-Nr. {member.mitglieds_nr}</p>
@@ -413,9 +475,52 @@ export default function PortalDashboardClient({ member, eeg, invoices, documents
           </button>
         </div>
 
+        {!hasPasswordSet && !passwordHintDismissed && (
+          <div className="mb-6 flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-xl p-4">
+            <div className="flex-1">
+              <p className="text-sm font-medium text-blue-900">
+                Möchten Sie sich künftig auch mit einem Passwort anmelden?
+              </p>
+              <p className="text-xs text-blue-800 mt-1">
+                Dann müssen Sie nicht jedes Mal auf einen Magic-Link warten. Sie können jederzeit
+                weiterhin auch ohne Passwort einsteigen.
+              </p>
+              <div className="flex items-center gap-3 mt-3">
+                <button
+                  onClick={openPasswordSetup}
+                  className="px-3 py-1.5 bg-blue-700 text-white text-xs font-medium rounded-md hover:bg-blue-800 transition-colors"
+                >
+                  Jetzt einrichten
+                </button>
+                <button
+                  onClick={dismissPasswordHint}
+                  className="text-xs text-blue-700 hover:text-blue-900"
+                >
+                  Nicht jetzt
+                </button>
+              </div>
+            </div>
+            <button
+              onClick={dismissPasswordHint}
+              aria-label="Schließen"
+              className="text-blue-400 hover:text-blue-600 leading-none text-lg"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         {/* Energy Tab */}
         {activeTab === "energy" && (
           <div className="space-y-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+              <p>
+                Energiedaten sind in der Regel am nächsten Tag für den Vortag sichtbar.
+                In Ausnahmefällen (z.&nbsp;B. bei Verzögerungen des Netzbetreibers) kann es
+                mehrere Tage dauern, bis Daten verfügbar sind.
+              </p>
+            </div>
+
             {/* Period controls */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               {/* Mode tabs */}
@@ -700,6 +805,11 @@ export default function PortalDashboardClient({ member, eeg, invoices, documents
                 {emailSuccess}
               </div>
             )}
+            {passwordSuccess && (
+              <div className="p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-800">
+                {passwordSuccess}
+              </div>
+            )}
 
             <div className="bg-white rounded-xl border border-slate-200 p-5">
               <p className="font-medium text-slate-900 text-sm mb-1">E-Mail-Adresse</p>
@@ -798,6 +908,59 @@ export default function PortalDashboardClient({ member, eeg, invoices, documents
                     </button>
                   </div>
                   {ibanError && <p className="mt-2 text-xs text-red-600">{ibanError}</p>}
+                </div>
+              )}
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <p className="font-medium text-slate-900 text-sm mb-1">Passwort</p>
+              <p className="text-xs text-slate-500 mb-4">
+                {hasPasswordSet
+                  ? "Sie haben ein Passwort gesetzt und können sich damit zusätzlich zum Magic Link anmelden."
+                  : "Optional: Mit einem Passwort können Sie sich künftig auch ohne Magic Link anmelden. Der Magic-Link-Login funktioniert in jedem Fall weiterhin."}
+              </p>
+
+              {!editingPassword ? (
+                <button
+                  onClick={() => { setEditingPassword(true); setNewPassword(""); setPasswordConfirm(""); setPasswordError(null); setPasswordSuccess(null); }}
+                  className="px-3 py-1.5 text-xs font-medium bg-slate-100 text-slate-700 rounded-md hover:bg-slate-200 transition-colors"
+                >
+                  {hasPasswordSet ? "Passwort ändern" : "Passwort setzen"}
+                </button>
+              ) : (
+                <div className="pt-1 border-t border-slate-100">
+                  <p className="text-xs text-slate-500 mb-2 mt-3">Neues Passwort (mind. 8 Zeichen):</p>
+                  <input
+                    type="password"
+                    value={newPassword}
+                    onChange={e => setNewPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-slate-500 mb-2 mt-3">Passwort bestätigen:</p>
+                  <input
+                    type="password"
+                    value={passwordConfirm}
+                    onChange={e => setPasswordConfirm(e.target.value)}
+                    placeholder="••••••••"
+                    className="w-full px-3 py-1.5 border border-slate-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <div className="flex items-center gap-2 mt-3">
+                    <button
+                      onClick={handleSetPassword}
+                      disabled={passwordSubmitting || !newPassword || !passwordConfirm}
+                      className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                    >
+                      {passwordSubmitting ? "Wird gespeichert…" : "Speichern"}
+                    </button>
+                    <button
+                      onClick={() => { setEditingPassword(false); setPasswordError(null); }}
+                      className="px-3 py-1.5 text-xs text-slate-500 hover:text-slate-700"
+                    >
+                      Abbrechen
+                    </button>
+                  </div>
+                  {passwordError && <p className="mt-2 text-xs text-red-600">{passwordError}</p>}
                 </div>
               )}
             </div>

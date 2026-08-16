@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getEEG, listEDAMessages, listEDAProcesses, listEDAErrors, getEDAWorkerStatus, listMembers, type EDAMessage, type EDAProcess, type EDAError, type EDAWorkerStatus } from "@/lib/api";
+import { getEEG, listEDAMessages, listEDAProcesses, listEDAErrors, getEDAWorkerStatus, listMembers, listActiveNetzbetreiber, type EDAMessage, type EDAProcess, type EDAError, type EDAWorkerStatus, type ActiveNetzbetreiber } from "@/lib/api";
 import Link from "next/link";
 import { EDAActionForms, PollNowButton } from "@/components/eda-action-forms";
 import { EDAProcessesTable } from "@/components/eda-processes-table";
@@ -72,10 +72,11 @@ export default async function EDAPage({ params, searchParams }: Props) {
   let edaErrors: EDAError[] = [];
   let workerStatus: EDAWorkerStatus | null = null;
   let members: Awaited<ReturnType<typeof listMembers>> = [];
+  let activeNetzbetreiber: ActiveNetzbetreiber[] = [];
   let error: string | null = null;
 
   try {
-    const [eegResult, messageResult, processResult, errorResult, workerStatusResult, membersResult] = await Promise.all([
+    const [eegResult, messageResult, processResult, errorResult, workerStatusResult, membersResult, netzbetreiberResult] = await Promise.all([
       getEEG(session.accessToken!, eegId),
       listEDAMessages(session.accessToken!, eegId, {
         limit: messagePageSize,
@@ -88,6 +89,7 @@ export default async function EDAPage({ params, searchParams }: Props) {
       listEDAErrors(session.accessToken!, eegId).catch(() => []),
       getEDAWorkerStatus(session.accessToken!).catch(() => null),
       listMembers(session.accessToken!, eegId).catch(() => []),
+      listActiveNetzbetreiber(session.accessToken!, eegId).catch(() => []),
     ]);
     eeg = eegResult;
     messages = messageResult.messages;
@@ -96,6 +98,7 @@ export default async function EDAPage({ params, searchParams }: Props) {
     edaErrors = errorResult;
     workerStatus = workerStatusResult;
     members = membersResult;
+    activeNetzbetreiber = netzbetreiberResult;
   } catch (err: unknown) {
     error = (err as { message?: string }).message || "Fehler beim Laden.";
   }
@@ -221,6 +224,40 @@ export default async function EDAPage({ params, searchParams }: Props) {
                 <span className="font-medium text-slate-700">{formatDateShort(eeg.eda_transition_date)}</span>
                 {" "}— ab diesem Datum ersetzt der EDA-Empfang den XLSX-Import.
               </p>
+            )}
+          </div>
+
+          {/* Aktive Netzbetreiber */}
+          <div className="bg-white rounded-xl border border-slate-200 p-6">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold text-slate-900">Aktive Netzbetreiber</h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Aus den aktuell aktiven Zählpunkten abgeleitet.
+              </p>
+            </div>
+            {activeNetzbetreiber.length === 0 ? (
+              <p className="text-sm text-slate-400">Keine aktiven Zählpunkte vorhanden.</p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50">
+                      <th className="text-left px-4 py-2 font-medium text-slate-600">Name</th>
+                      <th className="text-left px-4 py-2 font-medium text-slate-600">Marktpartner-ID</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {[...activeNetzbetreiber]
+                      .sort((a, b) => a.name.localeCompare(b.name, "de-AT"))
+                      .map((nb) => (
+                        <tr key={nb.id}>
+                          <td className="px-4 py-2.5 text-slate-800">{nb.name}</td>
+                          <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{nb.id}</td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
             )}
           </div>
 

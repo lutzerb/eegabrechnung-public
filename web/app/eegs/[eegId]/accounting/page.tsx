@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { filenameFromContentDisposition } from "@/lib/download";
 
 export default function AccountingExportPage() {
   const params = useParams<{ eegId: string }>();
@@ -49,9 +50,10 @@ export default function AccountingExportPage() {
         return;
       }
       const blob = await res.blob();
-      const disposition = res.headers.get("Content-Disposition") || "";
-      const match = disposition.match(/filename="([^"]+)"/);
-      const filename = match ? match[1] : `export_${from}_${to}.${format === "datev" ? "csv" : "xlsx"}`;
+      const filename = filenameFromContentDisposition(
+        res.headers.get("Content-Disposition"),
+        `export_${from}_${to}.${format === "datev" ? "csv" : "xlsx"}`
+      );
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = filename;

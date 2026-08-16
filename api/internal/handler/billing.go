@@ -26,7 +26,6 @@ type BillingHandler struct {
 	memberRepo     *repository.MemberRepository
 	eegRepo        *repository.EEGRepository
 	emailLogRepo   *repository.EmailLogRepository
-	webBaseURL     string
 }
 
 func NewBillingHandler(
@@ -36,7 +35,6 @@ func NewBillingHandler(
 	memberRepo *repository.MemberRepository,
 	eegRepo *repository.EEGRepository,
 	emailLogRepo *repository.EmailLogRepository,
-	webBaseURL string,
 ) *BillingHandler {
 	return &BillingHandler{
 		billingSvc:     billingSvc,
@@ -45,7 +43,6 @@ func NewBillingHandler(
 		memberRepo:     memberRepo,
 		eegRepo:        eegRepo,
 		emailLogRepo:   emailLogRepo,
-		webBaseURL:     webBaseURL,
 	}
 }
 
@@ -150,11 +147,12 @@ func (h *BillingHandler) RunBilling(w http.ResponseWriter, r *http.Request) {
 	}
 
 	jsonOK(w, map[string]any{
-		"billing_run":       result.BillingRun,
-		"invoices_created":  len(result.Invoices),
-		"invoices":          result.Invoices,
-		"preview":           req.Preview,
-		"imbalance_warning": result.ImbalanceWarning,
+		"billing_run":          result.BillingRun,
+		"invoices_created":     len(result.Invoices),
+		"invoices":             result.Invoices,
+		"preview":              req.Preview,
+		"imbalance_warning":    result.ImbalanceWarning,
+		"extra_meter_warnings": result.ExtraMeterWarnings,
 	})
 }
 
@@ -375,7 +373,12 @@ func (h *BillingHandler) CancelBillingRun(w http.ResponseWriter, r *http.Request
 		if err != nil {
 			continue
 		}
-		pdfData, err := invoice.GenerateStornorechnung(inv, eeg, member)
+		var pdfData []byte
+		if eeg.InvoiceDesign == "individuell" {
+			pdfData, err = invoice.GenerateStornorechnungThemed(inv, eeg, member, invoice.ThemeFromEEG(eeg))
+		} else {
+			pdfData, err = invoice.GenerateStornorechnung(inv, eeg, member)
+		}
 		if err != nil {
 			continue
 		}
@@ -745,7 +748,7 @@ func (h *BillingHandler) ResendInvoice(w http.ResponseWriter, r *http.Request) {
 	}
 
 	smtpCfg := invoice.SMTPConfig{Host: eeg.SMTPHost, From: eeg.SMTPFrom, Username: eeg.SMTPUser, Password: eeg.SMTPPassword}
-	if err := invoice.SendInvoice(r.Context(), h.emailLogRepo, smtpCfg, member, eeg, inv, pdfData, h.webBaseURL); err != nil {
+	if err := invoice.SendInvoice(r.Context(), h.emailLogRepo, smtpCfg, member, eeg, inv, pdfData, eeg.PortalBaseURL); err != nil {
 		jsonError(w, "failed to send invoice: "+err.Error(), http.StatusInternalServerError)
 		return
 	}

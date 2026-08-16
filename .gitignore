@@ -63,11 +63,10 @@ docs/_run_build.py
 # Playwright test results
 test-results/
 
-# Generated CAMT.053 test fixtures (runtime output, not versioned)
-testdata/*_camt053_*.xml
-
-# Local GEA import test fixtures (not versioned)
-testdata/geatest/
+# Ad-hoc local test/reference files (not versioned) — files already tracked
+# before this rule was added stay tracked; this only stops new ones from being
+# accidentally committed.
+testdata/
 
 # Local code review notes (not versioned)
 CODE_REVIEW_LOCAL.md

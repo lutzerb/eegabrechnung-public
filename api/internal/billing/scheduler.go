@@ -174,7 +174,7 @@ func (s *Scheduler) sendSuccessEmail(ctx context.Context, eeg *domain.EEG, runID
 		return
 	}
 	subject := fmt.Sprintf("[Auto-Abrechnung] Entwurf erstellt für %s – %s bis %s",
-		eeg.Name, from.Format("01/2006"), to.Format("01/2006"))
+		eeg.DisplayNameOrName(), from.Format("01/2006"), to.Format("01/2006"))
 	body := fmt.Sprintf(`<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
 <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1e293b;">
@@ -192,7 +192,7 @@ func (s *Scheduler) sendSuccessEmail(ctx context.Context, eeg *domain.EEG, runID
 <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
 <p style="color: #94a3b8; font-size: 12px;">Diese Nachricht wurde automatisch generiert.</p>
 </body></html>`,
-		eeg.Name,
+		eeg.DisplayNameOrName(),
 		from.Format("02.01.2006"), to.Format("02.01.2006"),
 		invoiceCount, runID)
 	s.sendHTMLEmail(ctx, eeg, "auto_billing_success", subject, body)
@@ -203,7 +203,7 @@ func (s *Scheduler) sendWarningEmail(ctx context.Context, eeg *domain.EEG, from,
 		s.log.Warn("auto-billing: no SMTP configured — cannot send warning email", "eeg_id", eeg.ID)
 		return
 	}
-	subject := fmt.Sprintf("[Auto-Abrechnung] ABGEBROCHEN — fehlende Daten für %s", eeg.Name)
+	subject := fmt.Sprintf("[Auto-Abrechnung] ABGEBROCHEN — fehlende Daten für %s", eeg.DisplayNameOrName())
 	zpList := "<ul>"
 	for _, zp := range missingZPs {
 		zpList += fmt.Sprintf("<li><code>%s</code></li>", zp)
@@ -221,7 +221,7 @@ func (s *Scheduler) sendWarningEmail(ctx context.Context, eeg *domain.EEG, from,
 <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
 <p style="color: #94a3b8; font-size: 12px;">Diese Nachricht wurde automatisch generiert.</p>
 </body></html>`,
-		eeg.Name, from.Format("02.01.2006"), to.Format("02.01.2006"), zpList)
+		eeg.DisplayNameOrName(), from.Format("02.01.2006"), to.Format("02.01.2006"), zpList)
 	s.sendHTMLEmail(ctx, eeg, "auto_billing_warning", subject, body)
 }
 
@@ -229,7 +229,7 @@ func (s *Scheduler) sendErrorEmail(ctx context.Context, eeg *domain.EEG, from, t
 	if eeg.SMTPHost == "" || eeg.SMTPFrom == "" {
 		return
 	}
-	subject := fmt.Sprintf("[Auto-Abrechnung] FEHLER für %s", eeg.Name)
+	subject := fmt.Sprintf("[Auto-Abrechnung] FEHLER für %s", eeg.DisplayNameOrName())
 	body := fmt.Sprintf(`<!DOCTYPE html>
 <html><head><meta charset="utf-8"></head>
 <body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1e293b;">
@@ -240,7 +240,7 @@ func (s *Scheduler) sendErrorEmail(ctx context.Context, eeg *domain.EEG, from, t
 <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
 <p style="color: #94a3b8; font-size: 12px;">Diese Nachricht wurde automatisch generiert.</p>
 </body></html>`,
-		eeg.Name, from.Format("02.01.2006"), to.Format("02.01.2006"), runErr)
+		eeg.DisplayNameOrName(), from.Format("02.01.2006"), to.Format("02.01.2006"), runErr)
 	s.sendHTMLEmail(ctx, eeg, "auto_billing_error", subject, body)
 }
 

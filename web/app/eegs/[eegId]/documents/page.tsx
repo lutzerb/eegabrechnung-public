@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { getEEG } from "@/lib/api";
 import Link from "next/link";
 import DocumentManager, { Document } from "./DocumentManager";
+import { eegDisplayName } from "@/lib/eeg-display-name";
 
 const API = process.env.API_INTERNAL_URL || "http://localhost:8080";
 
@@ -56,7 +57,7 @@ export default async function DocumentsPage({ params }: Props) {
           href={`/eegs/${eegId}`}
           className="text-sm text-slate-500 hover:text-slate-700"
         >
-          {eeg.name}
+          {eegDisplayName(eeg)}
         </Link>
         <span className="text-slate-400 mx-2">/</span>
         <span className="text-sm text-slate-900 font-medium">Dokumente</span>

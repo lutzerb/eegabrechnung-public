@@ -290,15 +290,15 @@ func (h *ReportHandler) GetAnnualReport(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	data, err := generateAnnualReportXLSX(eeg.Name, date, from, to, members)
+	data, err := generateAnnualReportXLSX(eeg.DisplayNameOrName(), date, from, to, members)
 	if err != nil {
 		jsonError(w, "xlsx generation failed: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	filename := fmt.Sprintf("jahresbericht_%s_%s_bis_%s.xlsx",
-		eeg.Name, fromStr, toStr)
+		eeg.DisplayNameOrName(), fromStr, toStr)
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	setContentDisposition(w, "attachment", filename)
 	w.Write(data)
 }

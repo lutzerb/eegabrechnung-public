@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { filenameFromContentDisposition } from "@/lib/download";
 
 interface SaldenEintrag {
   konto_id: string;
@@ -56,11 +57,13 @@ export default function SaldenlistePage() {
       const res = await fetch(`/api/eegs/${eegId}/ea/saldenliste?von=${von}&bis=${bis}&format=xlsx`);
       if (!res.ok) { alert("Exportfehler"); return; }
       const blob = await res.blob();
-      const cd = res.headers.get("Content-Disposition") || "";
-      const m = cd.match(/filename="([^"]+)"/);
+      const filename = filenameFromContentDisposition(
+        res.headers.get("Content-Disposition"),
+        `saldenliste_${bis}.xlsx`
+      );
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = m ? m[1] : `saldenliste_${bis}.xlsx`;
+      a.download = filename;
       a.click();
     } finally {
       setExporting(false);

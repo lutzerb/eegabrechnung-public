@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { filenameFromContentDisposition } from "@/lib/download";
 
 export default function AnnualReportPage() {
   const params = useParams<{ eegId: string }>();
@@ -48,9 +49,10 @@ export default function AnnualReportPage() {
         return;
       }
       const blob = await res.blob();
-      const disposition = res.headers.get("Content-Disposition") || "";
-      const match = disposition.match(/filename="([^"]+)"/);
-      const filename = match ? match[1] : `jahresbericht_${fromStr}_${toStr}.xlsx`;
+      const filename = filenameFromContentDisposition(
+        res.headers.get("Content-Disposition"),
+        `jahresbericht_${fromStr}_${toStr}.xlsx`
+      );
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = filename;

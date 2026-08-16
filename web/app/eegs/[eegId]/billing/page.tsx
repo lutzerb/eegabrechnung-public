@@ -28,6 +28,7 @@ import { SepaDownloadButtons } from "@/components/sepa-download-buttons";
 import SepaReturnInvoiceActions from "@/components/sepa-return-invoice-actions";
 import Camt054Upload from "@/components/camt054-upload";
 import BillingCamt053Upload from "@/components/billing-camt053-upload";
+import { eegDisplayName } from "@/lib/eeg-display-name";
 
 interface Props {
   params: Promise<{ eegId: string }>;
@@ -566,7 +567,7 @@ export default async function BillingPage({ params, searchParams }: Props) {
         </Link>
         <span className="text-slate-400 mx-2">/</span>
         <Link href={`/eegs/${eegId}`} className="text-sm text-slate-500 hover:text-slate-700">
-          {eeg?.name || eegId}
+          {eeg ? eegDisplayName(eeg) : eegId}
         </Link>
         <span className="text-slate-400 mx-2">/</span>
         <span className="text-sm text-slate-900 font-medium">Abrechnung</span>
@@ -575,7 +576,7 @@ export default async function BillingPage({ params, searchParams }: Props) {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-900">Abrechnung</h1>
         <p className="text-slate-500 mt-1">
-          Abrechnungsläufe verwalten für {eeg?.name || "diese Energiegemeinschaft"}.
+          Abrechnungsläufe verwalten für {eeg ? eegDisplayName(eeg) : "diese Energiegemeinschaft"}.
         </p>
       </div>
 

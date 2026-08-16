@@ -39,7 +39,6 @@ type Worker struct {
 	encKey           []byte // AES-256 key for decrypting per-EEG credentials
 	pollInterval     time.Duration
 	log              *slog.Logger
-	webBaseURL       string // used to build portal link in member emails
 	meterPointRepo   *repository.MeterPointRepository
 	memberRepo       *repository.MemberRepository
 	readingRepo      *repository.ReadingRepository
@@ -56,7 +55,7 @@ type Worker struct {
 // is checked for new inbound messages. transportMode is stored for status reporting.
 // For MAIL mode, tr may be nil — per-EEG MailTransports are created dynamically from DB credentials.
 // encKey is the AES-256 key used to decrypt per-EEG credentials from the DB.
-func NewWorker(db *pgxpool.Pool, tr types.Transport, transportMode string, encKey []byte, pollInterval time.Duration, log *slog.Logger, webBaseURL string) *Worker {
+func NewWorker(db *pgxpool.Pool, tr types.Transport, transportMode string, encKey []byte, pollInterval time.Duration, log *slog.Logger) *Worker {
 	return &Worker{
 		db:               db,
 		transport:        tr,
@@ -64,7 +63,6 @@ func NewWorker(db *pgxpool.Pool, tr types.Transport, transportMode string, encKe
 		encKey:           encKey,
 		pollInterval:     pollInterval,
 		log:              log,
-		webBaseURL:       webBaseURL,
 		meterPointRepo:   repository.NewMeterPointRepository(db),
 		memberRepo:       repository.NewMemberRepository(db),
 		readingRepo:      repository.NewReadingRepository(db),
@@ -1814,7 +1812,7 @@ func (w *Worker) sendEDAErrorNotification(ctx context.Context, proc *domain.EDAP
 <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
 <p style="color: #94a3b8; font-size: 12px;">Diese Nachricht wurde automatisch generiert.</p>
 </body>
-</html>`, eeg.Name, proc.ProcessType, proc.Zaehlpunkt, proc.Status, errDetails, proc.ID)
+</html>`, eeg.DisplayNameOrName(), proc.ProcessType, proc.Zaehlpunkt, proc.Status, errDetails, proc.ID)
 
 	var msgBuilder strings.Builder
 	msgBuilder.WriteString(mailutil.Headers(eeg.SMTPFrom, eeg.SMTPFrom, subject))
@@ -1891,7 +1889,7 @@ func (w *Worker) notifyDirectionMismatch(ctx context.Context, mp *domain.MeterPo
 <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
 <p style="color: #94a3b8; font-size: 12px;">Diese Nachricht wurde automatisch generiert und wird pro Zählpunkt nur einmal versendet.</p>
 </body>
-</html>`, mp.Zaehlpunkt, eeg.Name, func() string {
+</html>`, mp.Zaehlpunkt, eeg.DisplayNameOrName(), func() string {
 		if memberName != "" {
 			return ", " + memberName
 		}
@@ -1965,7 +1963,7 @@ func (w *Worker) sendSmartmeterInfoEmail(ctx context.Context, proc *domain.EDAPr
 <p><a href="%s" style="color: #1e40af;">%s</a></p>`, portalApprovalURL, portalApprovalURL)
 	}
 
-	subject := fmt.Sprintf("Ihre Anmeldung bei %s – Hinweis zum intelligenten Messgerät", eeg.Name)
+	subject := fmt.Sprintf("Ihre Anmeldung bei %s – Hinweis zum intelligenten Messgerät", eeg.DisplayNameOrName())
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
@@ -1980,7 +1978,7 @@ func (w *Worker) sendSmartmeterInfoEmail(ctx context.Context, proc *domain.EDAPr
 <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
 <p style="color: #94a3b8; font-size: 12px;">Bei Fragen wenden Sie sich bitte direkt an die Energiegemeinschaft <strong>%s</strong>.</p>
 </body>
-</html>`, memberName, proc.Zaehlpunkt, eeg.Name, portalSection, eeg.Name)
+</html>`, memberName, proc.Zaehlpunkt, eeg.DisplayNameOrName(), portalSection, eeg.DisplayNameOrName())
 
 	var msgBuilder strings.Builder
 	msgBuilder.WriteString(mailutil.Headers(eeg.SMTPFrom, member.Email, subject))
@@ -2059,14 +2057,11 @@ func (w *Worker) sendAnmeldungConfirmationEmail(ctx context.Context, meterPointI
 		dateLine = fmt.Sprintf(`<p>Ihr Zählpunkt ist ab <strong>%s</strong> aktiv.</p>`, dateStr)
 	}
 
-	portalSection := ""
-	if w.webBaseURL != "" {
-		portalSection = fmt.Sprintf(`<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
+	portalSection := fmt.Sprintf(`<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
 <p>Im <strong>Mitglieder-Portal</strong> können Sie Ihre Energiedaten und Rechnungen jederzeit einsehen:</p>
-<p><a href="%s/portal" style="color: #1e40af;">%s/portal</a></p>`, w.webBaseURL, w.webBaseURL)
-	}
+<p><a href="%s/portal" style="color: #1e40af;">%s/portal</a></p>`, eeg.PortalBaseURL, eeg.PortalBaseURL)
 
-	subject := fmt.Sprintf("Ihr Zählpunkt %s wurde von %s bestätigt", zaehlpunkt, eeg.Name)
+	subject := fmt.Sprintf("Ihr Zählpunkt %s wurde von %s bestätigt", zaehlpunkt, eeg.DisplayNameOrName())
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
@@ -2080,7 +2075,7 @@ func (w *Worker) sendAnmeldungConfirmationEmail(ctx context.Context, meterPointI
 <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
 <p style="color: #94a3b8; font-size: 12px;">Bei Fragen wenden Sie sich bitte direkt an die Energiegemeinschaft.</p>
 </body>
-</html>`, member.Name1, zaehlpunkt, eeg.Name, dateLine, portalSection)
+</html>`, member.Name1, zaehlpunkt, eeg.DisplayNameOrName(), dateLine, portalSection)
 
 	var msgBuilder strings.Builder
 	msgBuilder.WriteString(mailutil.Headers(eeg.SMTPFrom, member.Email, subject))

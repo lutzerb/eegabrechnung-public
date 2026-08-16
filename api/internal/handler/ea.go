@@ -56,7 +56,7 @@ func (h *EAHandler) parseEegID(r *http.Request) (uuid.UUID, bool) {
 	if err != nil {
 		return uuid.Nil, false
 	}
-	if _, err := h.eegRepo.GetByIDForUser(r.Context(), id, userID); err != nil {
+	if _, err := h.eegRepo.GetByIDForUser(r.Context(), id, userID, claims.OrganizationID); err != nil {
 		return uuid.Nil, false
 	}
 	return id, true
@@ -78,10 +78,14 @@ func (h *EAHandler) ensureSeeded(w http.ResponseWriter, r *http.Request, eegID u
 }
 
 // filenameSafe replaces characters that are awkward in a download filename
-// (spaces, slashes, quotes) with underscores, for embedding e.g. an EEG name.
+// (spaces, slashes, quotes) with underscores and transliterates non-ASCII
+// characters (umlauts etc. via asciiFilename), for embedding e.g. an EEG name
+// into a FinanzOnline export filename. The result is pure ASCII, which keeps
+// the rune-counted length budget in uvaExportFilename/annualExportFilename
+// equal to the actual byte length FinanzOnline enforces.
 func filenameSafe(s string) string {
 	replacer := strings.NewReplacer(" ", "_", "/", "-", "\\", "-", "\"", "", "\n", "", "\r", "")
-	return replacer.Replace(strings.TrimSpace(s))
+	return asciiFilename(replacer.Replace(strings.TrimSpace(s)))
 }
 
 // finanzOnlineFilenameMaxLen is FinanzOnline's upload limit for the filename
@@ -766,7 +770,7 @@ func (h *EAHandler) GetBeleg(w http.ResponseWriter, r *http.Request) {
 		ct = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", ct)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`inline; filename="%s"`, beleg.Dateiname))
+	setContentDisposition(w, "inline", beleg.Dateiname)
 	io.Copy(w, f)
 }
 
@@ -1041,7 +1045,7 @@ func (h *EAHandler) ExportUVAXML(w http.ResponseWriter, r *http.Request) {
 		}
 		filename := uvaExportFilename(eegName, uva.DatumVon, uva.DatumBis)
 		w.Header().Set("Content-Type", "application/xml")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+		setContentDisposition(w, "attachment", filename)
 		w.Write(xmlData)
 		return
 	}
@@ -1077,7 +1081,7 @@ func (h *EAHandler) ExportUVAXML(w http.ResponseWriter, r *http.Request) {
 		filename := uvaExportFilename(eeg.Name, uva.DatumVon, uva.DatumBis)
 		filename = "FAZ_" + strings.TrimPrefix(filename, "UVA_")
 		w.Header().Set("Content-Type", "application/xml")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+		setContentDisposition(w, "attachment", filename)
 		w.Write(sepaData)
 		return
 	}
@@ -1451,7 +1455,7 @@ func (h *EAHandler) GetU1(w http.ResponseWriter, r *http.Request) {
 		}
 		filename := annualExportFilename("U1", eegName, jahr)
 		w.Header().Set("Content-Type", "application/xml")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+		setContentDisposition(w, "attachment", filename)
 		w.Write(xmlData)
 		return
 	}
@@ -1499,7 +1503,7 @@ func (h *EAHandler) GetK1(w http.ResponseWriter, r *http.Request) {
 		}
 		filename := annualExportFilename("KSt_Basis", eegName, jahr)
 		w.Header().Set("Content-Type", "application/xml")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+		setContentDisposition(w, "attachment", filename)
 		w.Write(xmlData)
 		return
 	}
@@ -1532,7 +1536,7 @@ func (h *EAHandler) GetK2(w http.ResponseWriter, r *http.Request) {
 		}
 		filename := annualExportFilename("KSt_K2", eegName, jahr)
 		w.Header().Set("Content-Type", "application/xml")
-		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+		setContentDisposition(w, "attachment", filename)
 		w.Write(xmlData)
 		return
 	}

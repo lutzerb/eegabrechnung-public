@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { filenameFromContentDisposition } from "@/lib/download";
 
 interface Props {
   eegId: string;
@@ -22,8 +23,10 @@ export function SepaDownloadButtons({ eegId, billingRunId }: Props) {
         return;
       }
       const blob = await res.blob();
-      const cd = res.headers.get("Content-Disposition");
-      const filename = cd?.match(/filename="([^"]+)"/)?.[1] ?? `${file}.xml`;
+      const filename = filenameFromContentDisposition(
+        res.headers.get("Content-Disposition"),
+        `${file}.xml`
+      );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;

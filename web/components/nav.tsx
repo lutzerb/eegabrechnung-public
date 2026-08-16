@@ -7,6 +7,7 @@ import type { Session } from "next-auth";
 import clsx from "clsx";
 import { useState, useEffect, useRef } from "react";
 import { SearchOverlay } from "@/components/search-overlay";
+import { eegDisplayName } from "@/lib/eeg-display-name";
 
 interface NavProps {
   session: Session;
@@ -15,6 +16,7 @@ interface NavProps {
 interface EEG {
   id: string;
   name: string;
+  display_name?: string;
 }
 
 interface NavChild {
@@ -235,7 +237,7 @@ function EEGSwitcher({ currentId, currentName, eegs, loading }: {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
                   </svg>
                 )}
-                <span className={clsx("truncate", eeg.id !== currentId && "ml-5")}>{eeg.name}</span>
+                <span className={clsx("truncate", eeg.id !== currentId && "ml-5")}>{eegDisplayName(eeg)}</span>
               </button>
             ))}
             <div className="border-t border-slate-100 mt-1 pt-1">
@@ -389,7 +391,7 @@ export default function Nav({ session }: NavProps) {
             {/* EEG switcher */}
             <EEGSwitcher
               currentId={currentEegId}
-              currentName={currentEeg?.name ?? (loadingEegs ? "..." : currentEegId.slice(0, 8) + "…")}
+              currentName={currentEeg ? eegDisplayName(currentEeg) : (loadingEegs ? "..." : currentEegId.slice(0, 8) + "…")}
               eegs={eegs}
               loading={loadingEegs}
             />

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { filenameFromContentDisposition } from "@/lib/download";
 
 // Annual U1 response — kz_* fields are live-computed from all buchungen for the year.
 interface U1Response {
@@ -125,11 +126,13 @@ export default function ErklaerунgenPage() {
       const res = await fetch(`/api/eegs/${eegId}/ea/erklaerungen/${type}?jahr=${year}&format=xml`);
       if (!res.ok) { alert("Exportfehler"); return; }
       const blob = await res.blob();
-      const cd = res.headers.get("Content-Disposition") || "";
-      const m = cd.match(/filename="([^"]+)"/);
+      const filename = filenameFromContentDisposition(
+        res.headers.get("Content-Disposition"),
+        `${type}_${year}.xml`
+      );
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = m ? m[1] : `${type}_${year}.xml`;
+      a.download = filename;
       a.click();
     } finally {
       setExp(false);

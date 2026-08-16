@@ -1,6 +1,6 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getEEG, getMember, listInvoices, listMemberTariffs, getMemberSepaMandateHistory } from "@/lib/api";
+import { getEEG, getMember, listInvoices, listMemberTariffs, getMemberSepaMandateHistory, listExtraMeters } from "@/lib/api";
 import { formatIBAN } from "@/lib/validation";
 import Link from "next/link";
 import { MeterPointStatusBadge } from "@/components/meter-point-status-badge";
@@ -101,6 +101,15 @@ export default async function MemberDetailPage({ params }: Props) {
     // non-fatal
   }
 
+  // Zusatzzähler (manually-read submeters) for this member — feature is off by default
+  let extraMeters: Awaited<ReturnType<typeof listExtraMeters>> = [];
+  if (eeg?.extra_meters_enabled) {
+    try {
+      extraMeters = await listExtraMeters(session.accessToken!, eegId, memberId);
+    } catch {
+      // non-fatal
+    }
+  }
 
   if (loadError || !member) {
     return (
@@ -290,6 +299,28 @@ export default async function MemberDetailPage({ params }: Props) {
           <p className="text-sm text-slate-400">Kein Individualtarif aktiv — verwendet EEG-Standard.</p>
         )}
       </div>
+
+      {/* Zusatzzähler — only shown when enabled in EEG-Einstellungen (Rechnungen-Tab) */}
+      {eeg?.extra_meters_enabled && (
+        <div className="bg-white rounded-xl border border-slate-200 p-6">
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-base font-semibold text-slate-900">Zusatzzähler</h2>
+            <Link
+              href={`/eegs/${eegId}/members/${memberId}/extra-meters`}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-amber-700 rounded-lg hover:bg-amber-800 transition-colors"
+            >
+              Zusatzzähler verwalten
+            </Link>
+          </div>
+          {extraMeters.length > 0 ? (
+            <p className="text-sm text-slate-600">
+              {extraMeters.filter((m) => m.status === "ACTIVE").length} aktiv von {extraMeters.length} insgesamt.
+            </p>
+          ) : (
+            <p className="text-sm text-slate-400">Keine Zusatzzähler erfasst — manuell abgelesene Nebenzähler (z.B. Wärmepumpe).</p>
+          )}
+        </div>
+      )}
 
       {/* Meter points */}
       <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">

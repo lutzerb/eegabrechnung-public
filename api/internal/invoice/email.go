@@ -27,7 +27,7 @@ func InvoiceSubject(inv *domain.Invoice, eeg *domain.EEG) string {
 	if inv.DocumentType == "credit_note" {
 		docLabel = "Gutschrift"
 	}
-	return fmt.Sprintf("Ihre %s – %s – %s", docLabel, eeg.Name,
+	return fmt.Sprintf("Ihre %s – %s – %s", docLabel, eeg.DisplayNameOrName(),
 		inv.PeriodStart.Format("02.01.2006")+" – "+inv.PeriodEnd.Format("02.01.2006"))
 }
 
@@ -69,7 +69,7 @@ func buildPlainBody(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member,
 	sb.WriteString(fmt.Sprintf("Sehr geehrte/r %s,\n\n", fullName))
 	sb.WriteString(fmt.Sprintf("anbei erhalten Sie Ihre %s für den Abrechnungszeitraum\n", docLabel))
 	sb.WriteString(fmt.Sprintf("%s.\n\n", periodRange))
-	sb.WriteString(fmt.Sprintf("Energiegemeinschaft:  %s\n", eeg.Name))
+	sb.WriteString(fmt.Sprintf("Energiegemeinschaft:  %s\n", eeg.DisplayNameOrName()))
 	sb.WriteString(fmt.Sprintf("Mitgliedsnummer:      %s\n", member.MitgliedsNr))
 	if inv.InvoiceNumber != nil {
 		prefix := eeg.InvoiceNumberPrefix
@@ -113,7 +113,7 @@ func buildPlainBody(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member,
 		sb.WriteString(fmt.Sprintf("Im Mitgliederportal (%s/portal) können Sie jederzeit Ihre Energiedaten und bisherigen Rechnungen einsehen.\n\n", webBaseURL))
 	}
 	sb.WriteString("Mit freundlichen Grüßen\n")
-	sb.WriteString(eeg.Name + "\n")
+	sb.WriteString(eeg.DisplayNameOrName() + "\n")
 	sb.WriteString("\n-- \nErstellt von eegabrechnung\n")
 	return sb.String()
 }

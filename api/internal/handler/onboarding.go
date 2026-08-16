@@ -32,7 +32,6 @@ type OnboardingHandler struct {
 	docRepo        *repository.EEGDocumentRepository
 	emailLogRepo   *repository.EmailLogRepository
 	db             *pgxpool.Pool
-	webBaseURL     string
 }
 
 // NewOnboardingHandler creates an OnboardingHandler.
@@ -44,7 +43,6 @@ func NewOnboardingHandler(
 	docRepo *repository.EEGDocumentRepository,
 	emailLogRepo *repository.EmailLogRepository,
 	db *pgxpool.Pool,
-	webBaseURL string,
 ) *OnboardingHandler {
 	return &OnboardingHandler{
 		onboardingRepo: onboardingRepo,
@@ -54,7 +52,6 @@ func NewOnboardingHandler(
 		docRepo:        docRepo,
 		emailLogRepo:   emailLogRepo,
 		db:             db,
-		webBaseURL:     webBaseURL,
 	}
 }
 
@@ -68,10 +65,15 @@ type publicDocumentItem struct {
 
 // publicEEGInfo is the limited EEG view returned for the public onboarding page.
 type publicEEGInfo struct {
-	ID                     uuid.UUID            `json:"id"`
+	ID uuid.UUID `json:"id"`
+	// Name is the legal name — required for the join declaration / SEPA mandate
+	// text. DisplayName is the alias (falls back to Name) for everything else,
+	// e.g. the page heading.
 	Name                   string               `json:"name"`
+	DisplayName            string               `json:"display_name"`
 	BillingPeriod          string               `json:"billing_period"`
 	OnboardingContractText string               `json:"onboarding_contract_text"`
+	ReferralOptions        []string             `json:"referral_options"`
 	Documents              []publicDocumentItem `json:"documents"`
 }
 
@@ -116,8 +118,10 @@ func (h *OnboardingHandler) GetPublicEEGInfo(w http.ResponseWriter, r *http.Requ
 	jsonOK(w, publicEEGInfo{
 		ID:                     eeg.ID,
 		Name:                   eeg.Name,
+		DisplayName:            eeg.DisplayNameOrName(),
 		BillingPeriod:          eeg.BillingPeriod,
 		OnboardingContractText: eeg.OnboardingContractText,
+		ReferralOptions:        eeg.ReferralOptions,
 		Documents:              pubDocs,
 	})
 }
@@ -137,9 +141,11 @@ type onboardingSubmitRequest struct {
 	BusinessRole     string                        `json:"business_role"`  // privat | kleinunternehmer | ...
 	UidNummer        string                        `json:"uid_nummer"`
 	UseVat           bool                          `json:"use_vat"`
-	MeterPoints      []domain.OnboardingMeterPoint `json:"meter_points"`
-	BeitrittsDatum   string                        `json:"beitritts_datum"` // optional YYYY-MM-DD
-	ContractAccepted bool                          `json:"contract_accepted"`
+	MeterPoints        []domain.OnboardingMeterPoint `json:"meter_points"`
+	BeitrittsDatum     string                        `json:"beitritts_datum"` // optional YYYY-MM-DD
+	ContractAccepted   bool                          `json:"contract_accepted"`
+	ReferralSource     string                        `json:"referral_source"`      // optional: how the applicant heard about the EEG
+	ReferralSourceNote string                        `json:"referral_source_note"` // optional free text, only meaningful when ReferralSource == "Sonstiges"
 }
 
 // SubmitOnboarding handles POST /api/v1/public/eegs/{eegID}/onboarding
@@ -266,6 +272,8 @@ func (h *OnboardingHandler) SubmitOnboarding(w http.ResponseWriter, r *http.Requ
 		BeitrittsDatum:     beitrittsDatum,
 		ContractAcceptedAt: &now,
 		ContractIP:         ip,
+		ReferralSource:     strings.TrimSpace(body.ReferralSource),
+		ReferralSourceNote: cleanText(body.ReferralSourceNote),
 	}
 
 	if req.MeterPoints == nil {
@@ -303,12 +311,12 @@ func (h *OnboardingHandler) SubmitOnboarding(w http.ResponseWriter, r *http.Requ
 
 	if !eeg.IsDemo {
 		// Send magic token email to applicant (non-fatal on error)
-		if err := h.sendMagicTokenEmail(req, eeg.Name); err != nil {
+		if err := h.sendMagicTokenEmail(req, eeg.DisplayNameOrName()); err != nil {
 			slog.Warn("failed to send onboarding magic token email", "error", err, "request_id", req.ID)
 		}
 
 		// Notify all EEG admins/assigned users (non-fatal on error)
-		if err := h.sendAdminNotificationEmail(r.Context(), eegID, req, eeg.Name); err != nil {
+		if err := h.sendAdminNotificationEmail(r.Context(), eegID, req, eeg.DisplayNameOrName()); err != nil {
 			slog.Warn("failed to send admin notification email", "error", err, "request_id", req.ID)
 		}
 	}
@@ -410,7 +418,7 @@ func (h *OnboardingHandler) ResendToken(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.sendMagicTokenEmail(req, eeg.Name); err != nil {
+	if err := h.sendMagicTokenEmail(req, eeg.DisplayNameOrName()); err != nil {
 		slog.Warn("failed to resend magic token email", "error", err, "request_id", req.ID)
 	}
 
@@ -470,8 +478,10 @@ type updateStatusRequest struct {
 	BusinessRole   string                        `json:"business_role"`
 	UidNummer      string                        `json:"uid_nummer"`
 	UseVat         bool                          `json:"use_vat"`
-	MeterPoints    []domain.OnboardingMeterPoint `json:"meter_points"`
-	BeitrittsDatum string                        `json:"beitritts_datum"` // YYYY-MM-DD or ""
+	MeterPoints        []domain.OnboardingMeterPoint `json:"meter_points"`
+	BeitrittsDatum     string                        `json:"beitritts_datum"` // YYYY-MM-DD or ""
+	ReferralSource     string                        `json:"referral_source"`
+	ReferralSourceNote string                        `json:"referral_source_note"`
 }
 
 // UpdateOnboardingStatus handles PATCH /api/v1/eegs/{eegID}/onboarding/{id} (auth required).
@@ -553,6 +563,8 @@ func (h *OnboardingHandler) UpdateOnboardingStatus(w http.ResponseWriter, r *htt
 			req.MeterPoints = body.MeterPoints
 		}
 		req.AdminNotes = body.AdminNotes
+		req.ReferralSource = strings.TrimSpace(body.ReferralSource)
+		req.ReferralSourceNote = cleanText(body.ReferralSourceNote)
 		if body.BeitrittsDatum != "" {
 			t, err := time.Parse("2006-01-02", body.BeitrittsDatum)
 			if err != nil {
@@ -844,7 +856,7 @@ func (h *OnboardingHandler) UpdateOnboardingStatus(w http.ResponseWriter, r *htt
 			if nb.Name == "" && len(req.MeterPoints) > 0 {
 				nb, _ = netzbetreiber.ByZaehlpunkt(req.MeterPoints[0].Zaehlpunkt)
 			}
-			if err := h.sendConversionEmail(req, eeg.Name, nb, body.CustomMessage, memberID); err != nil {
+			if err := h.sendConversionEmail(req, eeg.DisplayNameOrName(), nb, body.CustomMessage, memberID); err != nil {
 				slog.Warn("failed to send conversion email", "request_id", req.ID, "error", err)
 			}
 		}()
@@ -965,7 +977,7 @@ func (h *OnboardingHandler) sendAdminNotificationEmail(ctx context.Context, eegI
 		return nil
 	}
 
-	adminURL := fmt.Sprintf("%s/eegs/%s/onboarding/%s", h.webBaseURL, eegID, req.ID)
+	adminURL := fmt.Sprintf("%s/eegs/%s/onboarding/%s", eeg.PortalBaseURL, eegID, req.ID)
 	subject := fmt.Sprintf("Neuer Beitrittsantrag – %s", eegName)
 	fullName := strings.TrimSpace(req.Name1 + " " + req.Name2)
 
@@ -981,6 +993,7 @@ func (h *OnboardingHandler) sendAdminNotificationEmail(ctx context.Context, eegI
   <tr><td style="padding: 6px 12px 6px 0; color: #64748b;">E-Mail</td><td style="padding: 6px 0;">%s</td></tr>
   <tr><td style="padding: 6px 12px 6px 0; color: #64748b;">Typ</td><td style="padding: 6px 0;">%s</td></tr>
   <tr><td style="padding: 6px 12px 6px 0; color: #64748b;">Zählpunkte</td><td style="padding: 6px 0;">%d</td></tr>
+  %s
 </table>
 <p style="margin: 24px 0;">
   <a href="%s" style="background-color: #1e40af; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
@@ -1000,9 +1013,17 @@ func (h *OnboardingHandler) sendAdminNotificationEmail(ctx context.Context, eegI
 		memberTypeLabel = req.MemberType
 	}
 
+	referralValue := req.ReferralSource
+	if referralValue == "" {
+		referralValue = "—"
+	} else if req.ReferralSource == "Sonstiges" && req.ReferralSourceNote != "" {
+		referralValue = fmt.Sprintf("Sonstiges: %s", req.ReferralSourceNote)
+	}
+	referralRow := fmt.Sprintf(`<tr><td style="padding: 6px 12px 6px 0; color: #64748b;">Aufmerksam geworden durch</td><td style="padding: 6px 0;">%s</td></tr>`, referralValue)
+
 	for _, rcpt := range recipients {
 		htmlBody := fmt.Sprintf(htmlTemplate,
-			rcpt.name, eegName, fullName, req.Email, memberTypeLabel, len(req.MeterPoints),
+			rcpt.name, eegName, fullName, req.Email, memberTypeLabel, len(req.MeterPoints), referralRow,
 			adminURL, adminURL, adminURL,
 		)
 		var msg strings.Builder
@@ -1072,8 +1093,8 @@ func (h *OnboardingHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	verifyLink := fmt.Sprintf("%s/onboarding/%s?ev=%s", h.webBaseURL, eegID, token)
-	if eeg, _ := h.eegRepo.GetByIDInternal(r.Context(), eegID); eeg == nil || !eeg.IsDemo {
+	if eeg, _ := h.eegRepo.GetByIDInternal(r.Context(), eegID); eeg != nil && !eeg.IsDemo {
+		verifyLink := fmt.Sprintf("%s/onboarding/%s?ev=%s", eeg.PortalBaseURL, eegID, token)
 		go h.sendEmailVerificationLink(eegID, email, strings.TrimSpace(body.Name1), verifyLink)
 	}
 
@@ -1212,7 +1233,7 @@ func (h *OnboardingHandler) sendMagicTokenEmail(req *domain.OnboardingRequest, e
 	// Fetch onboarding documents (AGB etc.) for this EEG to include in the email.
 	docs, _ := h.docRepo.ListForOnboarding(context.Background(), req.EegID)
 
-	statusURL := fmt.Sprintf("%s/onboarding/status?token=%s", h.webBaseURL, req.MagicToken)
+	statusURL := fmt.Sprintf("%s/onboarding/status?token=%s", eeg.PortalBaseURL, req.MagicToken)
 	subject := fmt.Sprintf("Ihr Beitrittsantrag – %s", eegName)
 
 	// Build optional document/AGB section
@@ -1223,7 +1244,7 @@ func (h *OnboardingHandler) sendMagicTokenEmail(req *domain.OnboardingRequest, e
 		sb.WriteString(`<h3 style="color: #1e293b;">Dokumente</h3>`)
 		sb.WriteString(`<ul style="color: #475569; line-height: 1.8;">`)
 		for _, d := range docs {
-			docURL := fmt.Sprintf("%s/api/public/eegs/%s/documents/%s", h.webBaseURL, req.EegID, d.ID)
+			docURL := fmt.Sprintf("%s/api/public/eegs/%s/documents/%s", eeg.PortalBaseURL, req.EegID, d.ID)
 			sb.WriteString(fmt.Sprintf(`<li><a href="%s" style="color: #1e40af;">%s</a></li>`, docURL, d.Title))
 		}
 		sb.WriteString(`</ul>`)
@@ -1282,8 +1303,8 @@ func (h *OnboardingHandler) sendConversionEmail(req *domain.OnboardingRequest, e
 	if err != nil || eeg2.SMTPHost == "" {
 		return nil
 	}
-	statusURL := fmt.Sprintf("%s/onboarding/status?token=%s", h.webBaseURL, req.MagicToken)
-	portalURL := fmt.Sprintf("%s/portal", h.webBaseURL)
+	statusURL := fmt.Sprintf("%s/onboarding/status?token=%s", eeg2.PortalBaseURL, req.MagicToken)
+	portalURL := fmt.Sprintf("%s/portal", eeg2.PortalBaseURL)
 	subject := fmt.Sprintf("Willkommen in der %s – Nächste Schritte", eegName)
 
 	// Build Netzbetreiber portal block
@@ -1380,7 +1401,7 @@ func (h *OnboardingHandler) RunReminderCheck(ctx context.Context) {
 			if nb.Name == "" && len(req.MeterPoints) > 0 {
 				nb, _ = netzbetreiber.ByZaehlpunkt(req.MeterPoints[0].Zaehlpunkt)
 			}
-			if err := h.sendReminderEmail(&req, eeg.Name, nb); err != nil {
+			if err := h.sendReminderEmail(&req, eeg.DisplayNameOrName(), nb); err != nil {
 				slog.Warn("reminder check: send failed", "request_id", req.ID, "error", err)
 				continue
 			}
@@ -1425,7 +1446,7 @@ func (h *OnboardingHandler) sendReminderEmail(req *domain.OnboardingRequest, eeg
 		return nil
 	}
 
-	statusURL := fmt.Sprintf("%s/onboarding/status?token=%s", h.webBaseURL, req.MagicToken)
+	statusURL := fmt.Sprintf("%s/onboarding/status?token=%s", eeg.PortalBaseURL, req.MagicToken)
 	smtpCfg := invoice.SMTPConfig{Host: eeg.SMTPHost, From: eeg.SMTPFrom, Username: eeg.SMTPUser, Password: eeg.SMTPPassword}
 	adminEmail := eeg.SMTPFrom
 
@@ -1543,7 +1564,7 @@ func (h *OnboardingHandler) sendReminderEmail(req *domain.OnboardingRequest, eeg
 // sendAbandonedFormEmail reminds someone who entered their email on the onboarding
 // page but never submitted the actual membership form. Includes admin CC.
 func (h *OnboardingHandler) sendAbandonedFormEmail(a repository.AbandonedEmailVerification, eeg *domain.EEG) error {
-	onboardingURL := fmt.Sprintf("%s/onboarding/%s", h.webBaseURL, a.EegID)
+	onboardingURL := fmt.Sprintf("%s/onboarding/%s", eeg.PortalBaseURL, a.EegID)
 	adminEmail := eeg.SMTPFrom
 
 	greeting := a.Name1
@@ -1551,7 +1572,7 @@ func (h *OnboardingHandler) sendAbandonedFormEmail(a repository.AbandonedEmailVe
 		greeting = "Interessent/in"
 	}
 
-	subject := fmt.Sprintf("Ihre Anmeldung bei %s wurde nicht abgeschlossen", eeg.Name)
+	subject := fmt.Sprintf("Ihre Anmeldung bei %s wurde nicht abgeschlossen", eeg.DisplayNameOrName())
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
@@ -1570,7 +1591,7 @@ func (h *OnboardingHandler) sendAbandonedFormEmail(a repository.AbandonedEmailVe
 <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
 <p style="color: #94a3b8; font-size: 12px;">Diese Erinnerung wurde automatisch verschickt, da Ihre Anmeldung seit mehr als 3 Tagen offen ist.</p>
 </body>
-</html>`, greeting, eeg.Name, onboardingURL)
+</html>`, greeting, eeg.DisplayNameOrName(), onboardingURL)
 
 	recipients := []string{a.Email}
 	ccHeader := ""
@@ -1820,7 +1841,7 @@ func (h *OnboardingHandler) ConfirmManualOnboarding(w http.ResponseWriter, r *ht
 	// Notify admins that the member confirmed
 	eeg, _ := h.eegRepo.GetByIDInternal(r.Context(), req.EegID)
 	if eeg != nil && !eeg.IsDemo {
-		go h.sendAdminNotificationEmail(context.WithoutCancel(r.Context()), req.EegID, req, eeg.Name)
+		go h.sendAdminNotificationEmail(context.WithoutCancel(r.Context()), req.EegID, req, eeg.DisplayNameOrName())
 	}
 
 	jsonOK(w, map[string]any{"ok": true, "message": "Anmeldung bestätigt."})
@@ -1838,7 +1859,7 @@ func (h *OnboardingHandler) sendManualConfirmationEmail(req *domain.OnboardingRe
 
 	docs, _ := h.docRepo.ListForOnboarding(context.Background(), req.EegID)
 
-	confirmURL := fmt.Sprintf("%s/onboarding/confirm/%s", h.webBaseURL, req.MagicToken)
+	confirmURL := fmt.Sprintf("%s/onboarding/confirm/%s", eeg.PortalBaseURL, req.MagicToken)
 	subject := fmt.Sprintf("Ihre Anmeldung zur %s – bitte bestätigen", eeg.Name)
 
 	// Data summary table
@@ -1924,7 +1945,7 @@ func (h *OnboardingHandler) sendManualConfirmationEmail(req *domain.OnboardingRe
 		sb.WriteString(`<h3 style="color: #1e293b;">Dokumente</h3>`)
 		sb.WriteString(`<ul style="color: #475569; line-height: 1.8;">`)
 		for _, d := range docs {
-			docURL := fmt.Sprintf("%s/api/public/eegs/%s/documents/%s", h.webBaseURL, req.EegID, d.ID)
+			docURL := fmt.Sprintf("%s/api/public/eegs/%s/documents/%s", eeg.PortalBaseURL, req.EegID, d.ID)
 			sb.WriteString(fmt.Sprintf(`<li><a href="%s" style="color: #1e40af;">%s</a></li>`, docURL, d.Title))
 		}
 		sb.WriteString(`</ul>`)

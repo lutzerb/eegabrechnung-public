@@ -1,5 +1,6 @@
 import type { EEG } from "@/lib/api";
 import Link from "next/link";
+import { eegDisplayName } from "@/lib/eeg-display-name";
 
 interface EEGTableProps {
   eegs: EEG[];
@@ -68,8 +69,11 @@ export default function EEGTable({ eegs }: EEGTableProps) {
                   href={`/eegs/${eeg.id}`}
                   className="font-medium text-slate-900 hover:text-blue-700"
                 >
-                  {eeg.name}
+                  {eegDisplayName(eeg)}
                 </Link>
+                {eeg.display_name && eeg.display_name !== eeg.name && (
+                  <div className="text-xs text-slate-400 mt-0.5">{eeg.name}</div>
+                )}
               </td>
               <td className="px-6 py-4">
                 <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${

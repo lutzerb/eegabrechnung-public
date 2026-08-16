@@ -15,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/lutzerb/eegabrechnung/internal/auth"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
 	edaxml "github.com/lutzerb/eegabrechnung/internal/eda/xml"
 	"github.com/lutzerb/eegabrechnung/internal/invoice"
@@ -31,10 +32,10 @@ type MemberPortalHandler struct {
 	readingRepo    *repository.ReadingRepository
 	invoiceRepo    *repository.InvoiceRepository
 	eegRepo        *repository.EEGRepository
+	orgRepo        *repository.OrganizationRepository
 	edaProcRepo    *repository.EDAProcessRepository
 	jobRepo        *repository.JobRepository
 	emailLogRepo   *repository.EmailLogRepository
-	webBaseURL     string
 }
 
 // NewMemberPortalHandler creates a MemberPortalHandler.
@@ -46,10 +47,10 @@ func NewMemberPortalHandler(
 	readingRepo *repository.ReadingRepository,
 	invoiceRepo *repository.InvoiceRepository,
 	eegRepo *repository.EEGRepository,
+	orgRepo *repository.OrganizationRepository,
 	edaProcRepo *repository.EDAProcessRepository,
 	jobRepo *repository.JobRepository,
 	emailLogRepo *repository.EmailLogRepository,
-	webBaseURL string,
 ) *MemberPortalHandler {
 	return &MemberPortalHandler{
 		portalRepo:     portalRepo,
@@ -59,11 +60,24 @@ func NewMemberPortalHandler(
 		readingRepo:    readingRepo,
 		invoiceRepo:    invoiceRepo,
 		eegRepo:        eegRepo,
+		orgRepo:        orgRepo,
 		edaProcRepo:    edaProcRepo,
 		jobRepo:        jobRepo,
 		emailLogRepo:   emailLogRepo,
-		webBaseURL:     webBaseURL,
 	}
+}
+
+// resolveTenantOrg resolves the organization for the domain the browser used, from
+// the X-Tenant-Host header set by the Next.js proxy (the Go API's own inbound Host
+// header always reflects the internal Docker service name, not the original public
+// domain). Unknown/missing host is a hard failure — never fall back to searching
+// across all organizations, or member-email lookups leak across tenants.
+func (h *MemberPortalHandler) resolveTenantOrg(r *http.Request) (uuid.UUID, error) {
+	host := r.Header.Get("X-Tenant-Host")
+	if host == "" {
+		return uuid.Nil, fmt.Errorf("missing X-Tenant-Host header")
+	}
+	return h.orgRepo.GetOrgIDByHost(r.Context(), host)
 }
 
 // RequestLink handles POST /api/v1/public/portal/request-link
@@ -90,6 +104,12 @@ func (h *MemberPortalHandler) RequestLink(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	orgID, err := h.resolveTenantOrg(r)
+	if err != nil {
+		jsonError(w, "unknown domain", http.StatusBadRequest)
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 
 	// --- Case: specific EEG selected by the user ---
@@ -99,7 +119,7 @@ func (h *MemberPortalHandler) RequestLink(w http.ResponseWriter, r *http.Request
 			w.Write([]byte(`{"ok":true}`))
 			return
 		}
-		member, err := h.portalRepo.FindMemberByEmailAndEEG(r.Context(), req.Email, eegID)
+		member, err := h.portalRepo.FindMemberByEmailAndEEG(r.Context(), req.Email, eegID, orgID)
 		if err != nil || member == nil {
 			w.Write([]byte(`{"ok":true}`))
 			return
@@ -110,8 +130,8 @@ func (h *MemberPortalHandler) RequestLink(w http.ResponseWriter, r *http.Request
 			return
 		}
 		eeg, _ := h.eegRepo.GetByIDInternal(r.Context(), eegID)
-		if eeg == nil || !eeg.IsDemo {
-			portalLink := fmt.Sprintf("%s/portal/%s", h.webBaseURL, token)
+		if eeg != nil && !eeg.IsDemo {
+			portalLink := fmt.Sprintf("%s/portal/%s", eeg.PortalBaseURL, token)
 			go h.sendPortalLinkEmail(eegID, member.Email, member.Name1+" "+member.Name2, portalLink)
 		}
 		w.Write([]byte(`{"ok":true}`))
@@ -119,7 +139,7 @@ func (h *MemberPortalHandler) RequestLink(w http.ResponseWriter, r *http.Request
 	}
 
 	// --- Case: no EEG specified — look up all matching members ---
-	choices, err := h.portalRepo.FindMembersByEmail(r.Context(), req.Email)
+	choices, err := h.portalRepo.FindMembersByEmail(r.Context(), req.Email, orgID)
 	if err != nil || len(choices) == 0 {
 		w.Write([]byte(`{"ok":true}`))
 		return
@@ -134,7 +154,7 @@ func (h *MemberPortalHandler) RequestLink(w http.ResponseWriter, r *http.Request
 			return
 		}
 		if !c.IsDemo {
-			portalLink := fmt.Sprintf("%s/portal/%s", h.webBaseURL, token)
+			portalLink := fmt.Sprintf("%s/portal/%s", c.PortalBaseURL, token)
 			go h.sendPortalLinkEmail(c.EegID, c.Email, c.Name1+" "+c.Name2, portalLink)
 		}
 		w.Write([]byte(`{"ok":true}`))
@@ -235,6 +255,95 @@ func (h *MemberPortalHandler) ExchangeToken(w http.ResponseWriter, r *http.Reque
 	})
 }
 
+// LoginPassword handles POST /api/v1/public/portal/login-password
+// Body: {"email": "...", "password": "...", "eeg_id": "..."} — eeg_id is optional.
+// Password is checked against member_portal_credentials, which is keyed by email
+// (not member_id), so one password unlocks every EEG membership sharing that email —
+// same identity model as the magic-link flow's EEG-choice step. If the email has
+// more than one active membership and no eeg_id was given, returns a choices list
+// (same shape as RequestLink) for the frontend to disambiguate; the client then
+// resubmits with the chosen eeg_id and the same password. On success, returns the
+// same shape as ExchangeToken.
+func (h *MemberPortalHandler) LoginPassword(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+		EegID    string `json:"eeg_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Email == "" || req.Password == "" {
+		jsonError(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	const invalidMsg = "E-Mail oder Passwort ungültig."
+
+	orgID, err := h.resolveTenantOrg(r)
+	if err != nil {
+		jsonError(w, "unknown domain", http.StatusBadRequest)
+		return
+	}
+
+	hash, err := h.portalRepo.FindPasswordHash(r.Context(), req.Email)
+	if err != nil || hash == "" || !auth.CheckPassword(hash, req.Password) {
+		jsonError(w, invalidMsg, http.StatusUnauthorized)
+		return
+	}
+
+	choices, err := h.portalRepo.FindMembersByEmail(r.Context(), req.Email, orgID)
+	if err != nil || len(choices) == 0 {
+		jsonError(w, invalidMsg, http.StatusUnauthorized)
+		return
+	}
+
+	var chosen *repository.PortalMemberChoice
+	if req.EegID != "" {
+		eegID, err := uuid.Parse(req.EegID)
+		if err != nil {
+			jsonError(w, invalidMsg, http.StatusUnauthorized)
+			return
+		}
+		for i := range choices {
+			if choices[i].EegID == eegID {
+				chosen = &choices[i]
+				break
+			}
+		}
+		if chosen == nil {
+			jsonError(w, invalidMsg, http.StatusUnauthorized)
+			return
+		}
+	} else if len(choices) == 1 {
+		chosen = &choices[0]
+	} else {
+		type choiceItem struct {
+			EegID   string `json:"eeg_id"`
+			EegName string `json:"eeg_name"`
+		}
+		items := make([]choiceItem, len(choices))
+		for i, c := range choices {
+			items[i] = choiceItem{EegID: c.EegID.String(), EegName: c.EegName}
+		}
+		jsonOK(w, struct {
+			OK      bool         `json:"ok"`
+			Choices []choiceItem `json:"choices"`
+		}{OK: true, Choices: items})
+		return
+	}
+
+	sessionToken, err := h.portalRepo.CreateSessionForMember(r.Context(), chosen.MemberID, chosen.EegID)
+	if err != nil {
+		jsonError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"session_token": sessionToken,
+		"member_id":     chosen.MemberID.String(),
+		"eeg_id":        chosen.EegID.String(),
+	})
+}
+
 // portalAuth is a helper that validates the X-Portal-Session header and returns member/eeg IDs.
 func (h *MemberPortalHandler) portalAuth(r *http.Request) (memberID, eegID uuid.UUID, ok bool) {
 	token := r.Header.Get("X-Portal-Session")
@@ -276,11 +385,17 @@ func (h *MemberPortalHandler) GetMe(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "not found", http.StatusNotFound)
 		return
 	}
+	hasPassword, err := h.portalRepo.HasPassword(r.Context(), member.Email)
+	if err != nil {
+		jsonError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"member": member,
-		"eeg":    eeg,
+		"member":       member,
+		"eeg":          eeg,
+		"has_password": hasPassword,
 	})
 }
 
@@ -676,6 +791,50 @@ func (h *MemberPortalHandler) ChangeSepaMandate(w http.ResponseWriter, r *http.R
 	jsonOK(w, map[string]string{"iban": newIBAN, "signed_at": signedAt.Format(time.RFC3339)})
 }
 
+// SetPassword handles POST /api/v1/public/portal/set-password
+// Requires a valid portal session — which can only have been obtained via a prior
+// magic-link login — so no separate "current password" check is needed; the session
+// itself proves identity. Sets or replaces the member's portal password. Keyed by
+// email (not member_id): applies to every EEG membership sharing that email, not just
+// the one used to authenticate this request.
+func (h *MemberPortalHandler) SetPassword(w http.ResponseWriter, r *http.Request) {
+	memberID, _, ok := h.portalAuth(r)
+	if !ok {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	var req struct {
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if len(req.Password) < 8 {
+		jsonError(w, "Das Passwort muss mindestens 8 Zeichen lang sein.", http.StatusBadRequest)
+		return
+	}
+
+	member, err := h.memberRepo.GetByID(r.Context(), memberID)
+	if err != nil {
+		jsonError(w, "member not found", http.StatusNotFound)
+		return
+	}
+
+	hash, err := auth.HashPassword(req.Password)
+	if err != nil {
+		jsonError(w, "failed to hash password", http.StatusInternalServerError)
+		return
+	}
+	if err := h.portalRepo.SetPassword(r.Context(), member.Email, hash); err != nil {
+		jsonError(w, "failed to set password", http.StatusInternalServerError)
+		return
+	}
+
+	jsonOK(w, map[string]bool{"ok": true})
+}
+
 // RequestEmailChange handles POST /api/v1/public/portal/email-change
 // Body: {"email": "new@example.com"}
 // Sends a verification link to the NEW address; the change is only applied once the
@@ -729,7 +888,7 @@ func (h *MemberPortalHandler) RequestEmailChange(w http.ResponseWriter, r *http.
 	}
 
 	if eeg, err := h.eegRepo.GetByIDInternal(r.Context(), eegID); err == nil && eeg != nil && !eeg.IsDemo {
-		confirmLink := fmt.Sprintf("%s/portal/email-change/confirm?token=%s", h.webBaseURL, token)
+		confirmLink := fmt.Sprintf("%s/portal/email-change/confirm?token=%s", eeg.PortalBaseURL, token)
 		go h.sendEmailChangeVerificationLink(eegID, newEmail, member, confirmLink)
 	}
 

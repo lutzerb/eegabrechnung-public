@@ -324,6 +324,6 @@ func (h *EEGDocumentHandler) serveDocumentFile(w http.ResponseWriter, r *http.Re
 		mimeType = "application/octet-stream"
 	}
 	w.Header().Set("Content-Type", mimeType)
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, doc.Filename))
+	setContentDisposition(w, "attachment", doc.Filename)
 	io.Copy(w, f) //nolint:errcheck
 }

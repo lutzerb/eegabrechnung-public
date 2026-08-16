@@ -18,6 +18,7 @@ import type {
   Member,
 } from "@/lib/api";
 import MemberCombobox from "@/components/member-combobox";
+import { eegDisplayName } from "@/lib/eeg-display-name";
 
 interface Props {
   params: { eegId: string };
@@ -228,7 +229,7 @@ export default function ReportsPage() {
       ]);
       if (eegRes.ok) {
         const eeg = await eegRes.json();
-        setEegName(eeg.name || "");
+        setEegName(eegDisplayName(eeg) || "");
       }
       if (membersRes.ok) {
         const memberList: Member[] = await membersRes.json();

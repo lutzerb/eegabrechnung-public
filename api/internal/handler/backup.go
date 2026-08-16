@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -17,10 +18,39 @@ import (
 	"github.com/lutzerb/eegabrechnung/internal/repository"
 )
 
-// EEGBackup is the JSON envelope for a full EEG data export.
+// Backup section keys, shared between the ?sections= query param, the
+// EEGBackup.Included JSON field, and the frontend checkbox UI.
+const (
+	SectionMembers         = "members"
+	SectionMeterPoints     = "meter_points"
+	SectionTariffSchedules = "tariff_schedules"
+	SectionBillingRuns     = "billing_runs"
+	SectionInvoices        = "invoices"
+	SectionParticipations  = "participations"
+	SectionReadings        = "readings"
+)
+
+// AllBackupSections is the default/full set of sections, used when no
+// selection is given (Export) and as the legacy-file fallback (Restore).
+var AllBackupSections = []string{
+	SectionMembers, SectionMeterPoints, SectionTariffSchedules,
+	SectionBillingRuns, SectionInvoices, SectionParticipations, SectionReadings,
+}
+
+func isKnownSection(s string) bool {
+	for _, k := range AllBackupSections {
+		if s == k {
+			return true
+		}
+	}
+	return false
+}
+
+// EEGBackup is the JSON envelope for a full or partial EEG data export.
 type EEGBackup struct {
 	Version         string                         `json:"version"`
 	CreatedAt       time.Time                      `json:"created_at"`
+	Included        []string                       `json:"included,omitempty"`
 	EEG             domain.EEG                     `json:"eeg"`
 	Members         []domain.Member                `json:"members"`
 	MeterPoints     []domain.MeterPoint            `json:"meter_points"`
@@ -70,11 +100,12 @@ func NewBackupHandler(
 
 // Export handles GET /api/v1/eegs/{eegID}/backup
 //
-//	@Summary		Export full EEG data snapshot
-//	@Description	Exports a complete JSON snapshot of all EEG data including members, meter points, tariff schedules, billing runs, invoices, participations, and energy readings. The file is returned as a downloadable attachment.
+//	@Summary		Export full or partial EEG data snapshot
+//	@Description	Exports a JSON snapshot of EEG data. By default includes everything: members, meter points, tariff schedules, billing runs, invoices, participations, and energy readings. Pass ?sections=members,meter_points,... (comma-separated) to export only a subset. The file is returned as a downloadable attachment.
 //	@Tags			System
 //	@Produce		application/json
-//	@Param			eegID	path		string	true	"EEG UUID"
+//	@Param			eegID		path		string	true	"EEG UUID"
+//	@Param			sections	query		string	false	"Comma-separated list of sections to include (members,meter_points,tariff_schedules,billing_runs,invoices,participations,readings); omitted = all"
 //	@Success		200		{object}	EEGBackup
 //	@Failure		400		{object}	map[string]string
 //	@Failure		404		{object}	map[string]string
@@ -94,81 +125,128 @@ func (h *BackupHandler) Export(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	included := AllBackupSections
+	if raw := r.URL.Query().Get("sections"); raw != "" {
+		var sel []string
+		for _, tok := range strings.Split(raw, ",") {
+			tok = strings.TrimSpace(tok)
+			if tok == "" {
+				continue
+			}
+			if !isKnownSection(tok) {
+				jsonError(w, "invalid section: "+tok, http.StatusBadRequest)
+				return
+			}
+			sel = append(sel, tok)
+		}
+		if len(sel) == 0 {
+			jsonError(w, "at least one section required", http.StatusBadRequest)
+			return
+		}
+		included = sel
+	}
+	includedSet := make(map[string]bool, len(included))
+	for _, s := range included {
+		includedSet[s] = true
+	}
+
 	ctx := r.Context()
 
-	members, err := h.memberRepo.ListByEeg(ctx, eegID)
-	if err != nil {
-		jsonError(w, "failed to load members: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if members == nil {
-		members = []domain.Member{}
-	}
-
-	meterPoints, err := h.meterPointRepo.ListByEeg(ctx, eegID)
-	if err != nil {
-		jsonError(w, "failed to load meter points: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if meterPoints == nil {
-		meterPoints = []domain.MeterPoint{}
-	}
-
-	// Load tariff schedules with their entries (default + member-specific Individualtarife).
-	scheduleList, err := h.tariffRepo.ListAllByEeg(ctx, eegID)
-	if err != nil {
-		jsonError(w, "failed to load tariff schedules: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	tariffSchedules := make([]domain.TariffSchedule, 0, len(scheduleList))
-	for _, s := range scheduleList {
-		full, ferr := h.tariffRepo.GetWithEntries(ctx, s.ID)
-		if ferr != nil || full == nil {
-			tariffSchedules = append(tariffSchedules, s)
-			continue
+	members := []domain.Member{}
+	if includedSet[SectionMembers] {
+		members, err = h.memberRepo.ListByEeg(ctx, eegID)
+		if err != nil {
+			jsonError(w, "failed to load members: "+err.Error(), http.StatusInternalServerError)
+			return
 		}
-		tariffSchedules = append(tariffSchedules, *full)
+		if members == nil {
+			members = []domain.Member{}
+		}
 	}
 
-	billingRuns, err := h.billingRunRepo.ListByEeg(ctx, eegID)
-	if err != nil {
-		jsonError(w, "failed to load billing runs: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if billingRuns == nil {
-		billingRuns = []domain.BillingRun{}
-	}
-
-	invoices, err := h.invoiceRepo.ListByEeg(ctx, eegID)
-	if err != nil {
-		jsonError(w, "failed to load invoices: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if invoices == nil {
-		invoices = []domain.Invoice{}
+	meterPoints := []domain.MeterPoint{}
+	if includedSet[SectionMeterPoints] {
+		meterPoints, err = h.meterPointRepo.ListByEeg(ctx, eegID)
+		if err != nil {
+			jsonError(w, "failed to load meter points: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if meterPoints == nil {
+			meterPoints = []domain.MeterPoint{}
+		}
 	}
 
-	participations, err := h.participRepo.ListByEEG(ctx, eegID)
-	if err != nil {
-		jsonError(w, "failed to load participations: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-	if participations == nil {
-		participations = []domain.EEGMeterParticipation{}
+	tariffSchedules := []domain.TariffSchedule{}
+	if includedSet[SectionTariffSchedules] {
+		// Load tariff schedules with their entries (default + member-specific Individualtarife).
+		scheduleList, terr := h.tariffRepo.ListAllByEeg(ctx, eegID)
+		if terr != nil {
+			jsonError(w, "failed to load tariff schedules: "+terr.Error(), http.StatusInternalServerError)
+			return
+		}
+		tariffSchedules = make([]domain.TariffSchedule, 0, len(scheduleList))
+		for _, s := range scheduleList {
+			full, ferr := h.tariffRepo.GetWithEntries(ctx, s.ID)
+			if ferr != nil || full == nil {
+				tariffSchedules = append(tariffSchedules, s)
+				continue
+			}
+			tariffSchedules = append(tariffSchedules, *full)
+		}
 	}
 
-	readings, err := h.readingRepo.GetAllByEEG(ctx, eegID)
-	if err != nil {
-		jsonError(w, "failed to load readings: "+err.Error(), http.StatusInternalServerError)
-		return
+	billingRuns := []domain.BillingRun{}
+	if includedSet[SectionBillingRuns] {
+		billingRuns, err = h.billingRunRepo.ListByEeg(ctx, eegID)
+		if err != nil {
+			jsonError(w, "failed to load billing runs: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if billingRuns == nil {
+			billingRuns = []domain.BillingRun{}
+		}
 	}
-	if readings == nil {
-		readings = []domain.EnergyReading{}
+
+	invoices := []domain.Invoice{}
+	if includedSet[SectionInvoices] {
+		invoices, err = h.invoiceRepo.ListByEeg(ctx, eegID)
+		if err != nil {
+			jsonError(w, "failed to load invoices: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if invoices == nil {
+			invoices = []domain.Invoice{}
+		}
+	}
+
+	participations := []domain.EEGMeterParticipation{}
+	if includedSet[SectionParticipations] {
+		participations, err = h.participRepo.ListByEEG(ctx, eegID)
+		if err != nil {
+			jsonError(w, "failed to load participations: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if participations == nil {
+			participations = []domain.EEGMeterParticipation{}
+		}
+	}
+
+	readings := []domain.EnergyReading{}
+	if includedSet[SectionReadings] {
+		readings, err = h.readingRepo.GetAllByEEG(ctx, eegID)
+		if err != nil {
+			jsonError(w, "failed to load readings: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		if readings == nil {
+			readings = []domain.EnergyReading{}
+		}
 	}
 
 	backup := EEGBackup{
 		Version:         "1",
 		CreatedAt:       time.Now().UTC(),
+		Included:        included,
 		EEG:             *eeg,
 		Members:         members,
 		MeterPoints:     meterPoints,
@@ -181,7 +259,7 @@ func (h *BackupHandler) Export(w http.ResponseWriter, r *http.Request) {
 
 	filename := fmt.Sprintf("backup_%s_%s.json", eeg.Name, time.Now().Format("2006-01-02"))
 	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+	setContentDisposition(w, "attachment", filename)
 
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
@@ -196,16 +274,24 @@ func (h *BackupHandler) Export(w http.ResponseWriter, r *http.Request) {
 	)
 }
 
+// restoreSummary reports, per backup, which sections were actually written
+// (and how many rows) versus left untouched because they weren't included
+// in the uploaded backup file.
+type restoreSummary struct {
+	Restored map[string]int
+	Skipped  []string
+}
+
 // Restore handles POST /api/v1/eegs/{eegID}/restore
 //
 //	@Summary		Restore EEG data from a backup snapshot
-//	@Description	Restores all EEG data from a previously exported JSON backup file. The operation runs inside a single database transaction: existing data for the EEG is deleted in FK-safe order, then all records from the backup are re-inserted. The backup file must be uploaded as multipart/form-data with field name 'file'. Only backup version '1' is supported.
+//	@Description	Restores EEG data from a previously exported JSON backup file. Runs inside a single database transaction. Only the sections present in the backup's "included" list are touched — a partial backup (e.g. Stammdaten only, no readings/invoices) leaves the target EEG's other sections completely untouched instead of deleting them. Legacy backup files without an "included" field are treated as full backups (all sections), matching the previous behavior. The backup file must be uploaded as multipart/form-data with field name 'file'. Only backup version '1' is supported.
 //	@Tags			System
 //	@Accept			multipart/form-data
 //	@Produce		json
 //	@Param			eegID	path		string	true	"EEG UUID"
 //	@Param			file	formData	file	true	"JSON backup file (produced by the Export endpoint)"
-//	@Success		200		{object}	map[string]int	"counts of restored records"
+//	@Success		200		{object}	map[string]any	"restored: counts per restored section; skipped: sections left untouched"
 //	@Failure		400		{object}	map[string]string
 //	@Failure		404		{object}	map[string]string
 //	@Failure		500		{object}	map[string]string
@@ -250,8 +336,29 @@ func (h *BackupHandler) Restore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Legacy backups (no "included" field) are full backups - restore everything,
+	// matching the previous unconditional behavior.
+	included := backup.Included
+	if included == nil {
+		included = AllBackupSections
+	} else {
+		var known []string
+		for _, s := range included {
+			if isKnownSection(s) {
+				known = append(known, s)
+			}
+		}
+		included = known
+	}
+	includedSet := make(map[string]bool, len(included))
+	for _, s := range included {
+		includedSet[s] = true
+	}
+	isFull := len(includedSet) == len(AllBackupSections)
+
 	backupEEGID := backup.EEG.ID
-	if err := h.restoreInTx(r.Context(), eegID, backupEEGID, &backup); err != nil {
+	summary, err := h.restoreInTx(r.Context(), eegID, backupEEGID, &backup, includedSet, isFull)
+	if err != nil {
 		slog.Error("restore failed", "eeg_id", eegID, "error", err)
 		jsonError(w, "restore failed: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -259,40 +366,58 @@ func (h *BackupHandler) Restore(w http.ResponseWriter, r *http.Request) {
 
 	slog.Info("restore complete",
 		"eeg_id", eegID,
-		"members", len(backup.Members),
-		"meter_points", len(backup.MeterPoints),
-		"readings", len(backup.Readings),
-		"invoices", len(backup.Invoices),
+		"restored", summary.Restored,
+		"skipped", summary.Skipped,
 	)
 	jsonOK(w, map[string]any{
-		"members":      len(backup.Members),
-		"meter_points": len(backup.MeterPoints),
-		"readings":     len(backup.Readings),
-		"invoices":     len(backup.Invoices),
+		"restored": summary.Restored,
+		"skipped":  summary.Skipped,
 	})
 }
 
-func (h *BackupHandler) restoreInTx(ctx context.Context, targetEEGID, backupEEGID uuid.UUID, backup *EEGBackup) error {
+func (h *BackupHandler) restoreInTx(ctx context.Context, targetEEGID, backupEEGID uuid.UUID, backup *EEGBackup, included map[string]bool, isFull bool) (restoreSummary, error) {
+	summary := restoreSummary{Restored: map[string]int{}}
+	for _, s := range AllBackupSections {
+		if !included[s] {
+			summary.Skipped = append(summary.Skipped, s)
+		}
+	}
+
 	tx, err := h.pool.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("begin: %w", err)
+		return summary, fmt.Errorf("begin: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
-	// Delete existing EEG data in FK-safe order.
-	stmts := []string{
-		`DELETE FROM energy_readings WHERE meter_point_id IN (SELECT id FROM meter_points WHERE eeg_id = $1)`,
-		`DELETE FROM invoices WHERE eeg_id = $1`,
-		`DELETE FROM billing_runs WHERE eeg_id = $1`,
-		`DELETE FROM tariff_entries WHERE schedule_id IN (SELECT id FROM tariff_schedules WHERE eeg_id = $1)`,
-		`DELETE FROM tariff_schedules WHERE eeg_id = $1`,
-		`DELETE FROM eeg_meter_participations WHERE eeg_id = $1`,
-		`DELETE FROM meter_points WHERE eeg_id = $1`,
-		`DELETE FROM members WHERE eeg_id = $1`,
+	// Delete existing EEG data in FK-safe order, only for included sections.
+	// members/meter_points are only blind-deleted on a full restore: partial
+	// deletes would cascade into non-included sections (see restoreInTx doc).
+	var stmts []string
+	if included[SectionReadings] {
+		stmts = append(stmts, `DELETE FROM energy_readings WHERE meter_point_id IN (SELECT id FROM meter_points WHERE eeg_id = $1)`)
+	}
+	if included[SectionInvoices] {
+		stmts = append(stmts, `DELETE FROM invoices WHERE eeg_id = $1`)
+	}
+	if included[SectionBillingRuns] {
+		stmts = append(stmts, `DELETE FROM billing_runs WHERE eeg_id = $1`)
+	}
+	if included[SectionTariffSchedules] {
+		stmts = append(stmts, `DELETE FROM tariff_entries WHERE schedule_id IN (SELECT id FROM tariff_schedules WHERE eeg_id = $1)`)
+		stmts = append(stmts, `DELETE FROM tariff_schedules WHERE eeg_id = $1`)
+	}
+	if included[SectionParticipations] {
+		stmts = append(stmts, `DELETE FROM eeg_meter_participations WHERE eeg_id = $1`)
+	}
+	if included[SectionMeterPoints] && isFull {
+		stmts = append(stmts, `DELETE FROM meter_points WHERE eeg_id = $1`)
+	}
+	if included[SectionMembers] && isFull {
+		stmts = append(stmts, `DELETE FROM members WHERE eeg_id = $1`)
 	}
 	for _, stmt := range stmts {
 		if _, err := tx.Exec(ctx, stmt, targetEEGID); err != nil {
-			return fmt.Errorf("delete step failed: %w", err)
+			return summary, fmt.Errorf("delete step failed: %w", err)
 		}
 	}
 
@@ -325,7 +450,7 @@ func (h *BackupHandler) restoreInTx(ctx context.Context, targetEEGID, backupEEGI
 		targetEEGID,
 	)
 	if err != nil {
-		return fmt.Errorf("update EEG settings: %w", err)
+		return summary, fmt.Errorf("update EEG settings: %w", err)
 	}
 
 	// Remap helper: replace backupEEGID with targetEEGID.
@@ -336,139 +461,201 @@ func (h *BackupHandler) restoreInTx(ctx context.Context, targetEEGID, backupEEGI
 		return id
 	}
 
-	// Restore members.
-	for _, m := range backup.Members {
-		_, err = tx.Exec(ctx, `INSERT INTO members
-			(id, eeg_id, mitglieds_nr, name1, name2, email, iban, strasse, plz, ort,
-			 business_role, uid_nummer, use_vat, vat_pct, status, beitritt_datum, austritt_datum, created_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
-			m.ID, remap(m.EegID), m.MitgliedsNr, m.Name1, m.Name2, m.Email, m.IBAN,
-			m.Strasse, m.Plz, m.Ort, m.BusinessRole, m.UidNummer, m.UseVat, m.VatPct,
-			m.Status, m.BeitrittsDatum, m.AustrittsDatum, m.CreatedAt,
-		)
-		if err != nil {
-			return fmt.Errorf("insert member %s: %w", m.ID, err)
-		}
-	}
-
-	// Restore meter points.
-	for _, mp := range backup.MeterPoints {
-		_, err = tx.Exec(ctx, `INSERT INTO meter_points
-			(id, member_id, eeg_id, zaehlpunkt, energierichtung, verteilungsmodell,
-			 zugeteilte_menge_pct, status, registriert_seit, created_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
-			mp.ID, mp.MemberID, remap(mp.EegID), mp.Zaehlpunkt, mp.Energierichtung,
-			mp.Verteilungsmodell, mp.ZugeteilteMenugePct, mp.Status, mp.RegistriertSeit, mp.CreatedAt,
-		)
-		if err != nil {
-			return fmt.Errorf("insert meter_point %s: %w", mp.ID, err)
-		}
-		if mp.RegistriertSeit != nil {
-			if _, err := tx.Exec(ctx,
-				`INSERT INTO meter_point_registration_periods (eeg_id, zaehlpunkt, meter_point_id, registriert_seit, consent_id, source)
-				 SELECT $1, $2, $3, $4, $5, 'backfill'
-				 WHERE NOT EXISTS (
-				   SELECT 1 FROM meter_point_registration_periods
-				   WHERE eeg_id = $1 AND zaehlpunkt = $2 AND abgemeldet_am IS NULL
-				 )`,
-				remap(mp.EegID), mp.Zaehlpunkt, mp.ID, mp.RegistriertSeit, mp.ConsentID,
-			); err != nil {
-				return fmt.Errorf("open registration period for meter_point %s: %w", mp.ID, err)
+	// Restore members. On a full restore the rows were just deleted above, so a
+	// plain insert is correct. On a partial restore no delete ran (to avoid the
+	// members->meter_points/invoices/tariff_schedules cascade wiping non-included
+	// sections), so we upsert instead: members not present in the backup are left
+	// untouched, and existing created_at is preserved for members that are.
+	if included[SectionMembers] {
+		for _, m := range backup.Members {
+			if isFull {
+				_, err = tx.Exec(ctx, `INSERT INTO members
+					(id, eeg_id, mitglieds_nr, name1, name2, email, iban, strasse, plz, ort,
+					 business_role, uid_nummer, use_vat, vat_pct, status, beitritt_datum, austritt_datum, created_at)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+					m.ID, remap(m.EegID), m.MitgliedsNr, m.Name1, m.Name2, m.Email, m.IBAN,
+					m.Strasse, m.Plz, m.Ort, m.BusinessRole, m.UidNummer, m.UseVat, m.VatPct,
+					m.Status, m.BeitrittsDatum, m.AustrittsDatum, m.CreatedAt,
+				)
+			} else {
+				_, err = tx.Exec(ctx, `INSERT INTO members
+					(id, eeg_id, mitglieds_nr, name1, name2, email, iban, strasse, plz, ort,
+					 business_role, uid_nummer, use_vat, vat_pct, status, beitritt_datum, austritt_datum, created_at)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+					ON CONFLICT (id) DO UPDATE SET
+						eeg_id = EXCLUDED.eeg_id, mitglieds_nr = EXCLUDED.mitglieds_nr,
+						name1 = EXCLUDED.name1, name2 = EXCLUDED.name2, email = EXCLUDED.email,
+						iban = EXCLUDED.iban, strasse = EXCLUDED.strasse, plz = EXCLUDED.plz, ort = EXCLUDED.ort,
+						business_role = EXCLUDED.business_role, uid_nummer = EXCLUDED.uid_nummer,
+						use_vat = EXCLUDED.use_vat, vat_pct = EXCLUDED.vat_pct, status = EXCLUDED.status,
+						beitritt_datum = EXCLUDED.beitritt_datum, austritt_datum = EXCLUDED.austritt_datum`,
+					m.ID, remap(m.EegID), m.MitgliedsNr, m.Name1, m.Name2, m.Email, m.IBAN,
+					m.Strasse, m.Plz, m.Ort, m.BusinessRole, m.UidNummer, m.UseVat, m.VatPct,
+					m.Status, m.BeitrittsDatum, m.AustrittsDatum, m.CreatedAt,
+				)
+			}
+			if err != nil {
+				return summary, fmt.Errorf("insert member %s: %w", m.ID, err)
 			}
 		}
+		summary.Restored[SectionMembers] = len(backup.Members)
+	}
+
+	// Restore meter points. Same full-vs-partial split as members, for the same
+	// reason (meter_points cascades into energy_readings/eeg_meter_participations).
+	if included[SectionMeterPoints] {
+		for _, mp := range backup.MeterPoints {
+			if isFull {
+				_, err = tx.Exec(ctx, `INSERT INTO meter_points
+					(id, member_id, eeg_id, zaehlpunkt, energierichtung, verteilungsmodell,
+					 zugeteilte_menge_pct, status, registriert_seit, created_at)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+					mp.ID, mp.MemberID, remap(mp.EegID), mp.Zaehlpunkt, mp.Energierichtung,
+					mp.Verteilungsmodell, mp.ZugeteilteMenugePct, mp.Status, mp.RegistriertSeit, mp.CreatedAt,
+				)
+			} else {
+				_, err = tx.Exec(ctx, `INSERT INTO meter_points
+					(id, member_id, eeg_id, zaehlpunkt, energierichtung, verteilungsmodell,
+					 zugeteilte_menge_pct, status, registriert_seit, created_at)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+					ON CONFLICT (id) DO UPDATE SET
+						member_id = EXCLUDED.member_id, eeg_id = EXCLUDED.eeg_id, zaehlpunkt = EXCLUDED.zaehlpunkt,
+						energierichtung = EXCLUDED.energierichtung, verteilungsmodell = EXCLUDED.verteilungsmodell,
+						zugeteilte_menge_pct = EXCLUDED.zugeteilte_menge_pct, status = EXCLUDED.status,
+						registriert_seit = EXCLUDED.registriert_seit`,
+					mp.ID, mp.MemberID, remap(mp.EegID), mp.Zaehlpunkt, mp.Energierichtung,
+					mp.Verteilungsmodell, mp.ZugeteilteMenugePct, mp.Status, mp.RegistriertSeit, mp.CreatedAt,
+				)
+			}
+			if err != nil {
+				return summary, fmt.Errorf("insert meter_point %s: %w", mp.ID, err)
+			}
+			if mp.RegistriertSeit != nil {
+				if _, err := tx.Exec(ctx,
+					`INSERT INTO meter_point_registration_periods (eeg_id, zaehlpunkt, meter_point_id, registriert_seit, consent_id, source)
+					 SELECT $1, $2, $3, $4, $5, 'backfill'
+					 WHERE NOT EXISTS (
+					   SELECT 1 FROM meter_point_registration_periods
+					   WHERE eeg_id = $1 AND zaehlpunkt = $2 AND abgemeldet_am IS NULL
+					 )`,
+					remap(mp.EegID), mp.Zaehlpunkt, mp.ID, mp.RegistriertSeit, mp.ConsentID,
+				); err != nil {
+					return summary, fmt.Errorf("open registration period for meter_point %s: %w", mp.ID, err)
+				}
+			}
+		}
+		summary.Restored[SectionMeterPoints] = len(backup.MeterPoints)
 	}
 
 	// Restore tariff schedules and entries.
-	for _, s := range backup.TariffSchedules {
-		_, err = tx.Exec(ctx, `INSERT INTO tariff_schedules
-			(id, eeg_id, member_id, name, granularity, is_active, created_at,
-			 free_kwh_override, discount_pct_override, meter_fee_eur_override,
-			 participation_fee_eur_override, zaehlpunkts_gebuehr_eur_override)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
-			s.ID, remap(s.EegID), s.MemberID, s.Name, s.Granularity, s.IsActive, s.CreatedAt,
-			s.FreeKwhOverride, s.DiscountPctOverride, s.MeterFeeEurOverride,
-			s.ParticipationFeeEurOverride, s.ZaehlpunktsGebuehrOverride,
-		)
-		if err != nil {
-			return fmt.Errorf("insert tariff_schedule %s: %w", s.ID, err)
-		}
-		for _, e := range s.Entries {
-			_, err = tx.Exec(ctx, `INSERT INTO tariff_entries
-				(id, schedule_id, valid_from, valid_until, energy_price, producer_price, created_at)
-				VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-				e.ID, s.ID, e.ValidFrom, e.ValidUntil, e.EnergyPrice, e.ProducerPrice, e.CreatedAt,
+	if included[SectionTariffSchedules] {
+		for _, s := range backup.TariffSchedules {
+			_, err = tx.Exec(ctx, `INSERT INTO tariff_schedules
+				(id, eeg_id, member_id, name, granularity, is_active, created_at,
+				 free_kwh_override, discount_pct_override, meter_fee_eur_override,
+				 participation_fee_eur_override, zaehlpunkts_gebuehr_eur_override)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+				s.ID, remap(s.EegID), s.MemberID, s.Name, s.Granularity, s.IsActive, s.CreatedAt,
+				s.FreeKwhOverride, s.DiscountPctOverride, s.MeterFeeEurOverride,
+				s.ParticipationFeeEurOverride, s.ZaehlpunktsGebuehrOverride,
 			)
 			if err != nil {
-				return fmt.Errorf("insert tariff_entry %s: %w", e.ID, err)
+				return summary, fmt.Errorf("insert tariff_schedule %s: %w", s.ID, err)
+			}
+			for _, e := range s.Entries {
+				_, err = tx.Exec(ctx, `INSERT INTO tariff_entries
+					(id, schedule_id, valid_from, valid_until, energy_price, producer_price, created_at)
+					VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+					e.ID, s.ID, e.ValidFrom, e.ValidUntil, e.EnergyPrice, e.ProducerPrice, e.CreatedAt,
+				)
+				if err != nil {
+					return summary, fmt.Errorf("insert tariff_entry %s: %w", e.ID, err)
+				}
 			}
 		}
+		summary.Restored[SectionTariffSchedules] = len(backup.TariffSchedules)
 	}
 
 	// Restore billing runs.
-	for _, br := range backup.BillingRuns {
-		_, err = tx.Exec(ctx, `INSERT INTO billing_runs
-			(id, eeg_id, period_start, period_end, status, created_at)
-			VALUES ($1,$2,$3,$4,$5,$6)`,
-			br.ID, remap(br.EegID), br.PeriodStart, br.PeriodEnd, br.Status, br.CreatedAt,
-		)
-		if err != nil {
-			return fmt.Errorf("insert billing_run %s: %w", br.ID, err)
+	if included[SectionBillingRuns] {
+		for _, br := range backup.BillingRuns {
+			_, err = tx.Exec(ctx, `INSERT INTO billing_runs
+				(id, eeg_id, period_start, period_end, status, created_at)
+				VALUES ($1,$2,$3,$4,$5,$6)`,
+				br.ID, remap(br.EegID), br.PeriodStart, br.PeriodEnd, br.Status, br.CreatedAt,
+			)
+			if err != nil {
+				return summary, fmt.Errorf("insert billing_run %s: %w", br.ID, err)
+			}
 		}
+		summary.Restored[SectionBillingRuns] = len(backup.BillingRuns)
 	}
 
 	// Restore invoices.
-	for _, inv := range backup.Invoices {
-		_, err = tx.Exec(ctx, `INSERT INTO invoices
-			(id, member_id, eeg_id, period_start, period_end, total_kwh, total_amount,
-			 net_amount, vat_amount, vat_pct_applied, consumption_kwh, generation_kwh,
-			 pdf_path, storno_pdf_path, sent_at, invoice_number, status, billing_run_id,
-			 document_type, created_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
-			inv.ID, inv.MemberID, remap(inv.EegID),
-			inv.PeriodStart, inv.PeriodEnd, inv.TotalKwh, inv.TotalAmount,
-			inv.NetAmount, inv.VatAmount, inv.VatPctApplied, inv.ConsumptionKwh, inv.GenerationKwh,
-			inv.PdfPath, inv.StornoPdfPath, inv.SentAt, inv.InvoiceNumber, inv.Status,
-			inv.BillingRunID, inv.DocumentType, inv.CreatedAt,
-		)
-		if err != nil {
-			return fmt.Errorf("insert invoice %s: %w", inv.ID, err)
+	if included[SectionInvoices] {
+		for _, inv := range backup.Invoices {
+			_, err = tx.Exec(ctx, `INSERT INTO invoices
+				(id, member_id, eeg_id, period_start, period_end, total_kwh, total_amount,
+				 net_amount, vat_amount, vat_pct_applied, consumption_kwh, generation_kwh,
+				 pdf_path, storno_pdf_path, sent_at, invoice_number, status, billing_run_id,
+				 document_type, created_at)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+				inv.ID, inv.MemberID, remap(inv.EegID),
+				inv.PeriodStart, inv.PeriodEnd, inv.TotalKwh, inv.TotalAmount,
+				inv.NetAmount, inv.VatAmount, inv.VatPctApplied, inv.ConsumptionKwh, inv.GenerationKwh,
+				inv.PdfPath, inv.StornoPdfPath, inv.SentAt, inv.InvoiceNumber, inv.Status,
+				inv.BillingRunID, inv.DocumentType, inv.CreatedAt,
+			)
+			if err != nil {
+				return summary, fmt.Errorf("insert invoice %s: %w", inv.ID, err)
+			}
 		}
+		summary.Restored[SectionInvoices] = len(backup.Invoices)
 	}
 
 	// Restore participation records.
-	for _, p := range backup.Participations {
-		_, err = tx.Exec(ctx, `INSERT INTO eeg_meter_participations
-			(id, eeg_id, meter_point_id, participation_factor, share_type,
-			 valid_from, valid_until, notes, created_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
-			p.ID, remap(p.EegID), p.MeterPointID, p.ParticipationFactor, p.ShareType,
-			p.ValidFrom, p.ValidUntil, p.Notes, p.CreatedAt,
-		)
-		if err != nil {
-			return fmt.Errorf("insert participation %s: %w", p.ID, err)
+	if included[SectionParticipations] {
+		for _, p := range backup.Participations {
+			_, err = tx.Exec(ctx, `INSERT INTO eeg_meter_participations
+				(id, eeg_id, meter_point_id, participation_factor, share_type,
+				 valid_from, valid_until, notes, created_at)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+				p.ID, remap(p.EegID), p.MeterPointID, p.ParticipationFactor, p.ShareType,
+				p.ValidFrom, p.ValidUntil, p.Notes, p.CreatedAt,
+			)
+			if err != nil {
+				return summary, fmt.Errorf("insert participation %s: %w", p.ID, err)
+			}
 		}
+		summary.Restored[SectionParticipations] = len(backup.Participations)
 	}
 
 	// Restore energy readings.
-	for _, rd := range backup.Readings {
-		src := rd.Source
-		if src == "" {
-			src = "xlsx"
+	if included[SectionReadings] {
+		for _, rd := range backup.Readings {
+			src := rd.Source
+			if src == "" {
+				src = "xlsx"
+			}
+			qual := rd.Quality
+			if qual == "" {
+				qual = "L0"
+			}
+			_, err = tx.Exec(ctx, `INSERT INTO energy_readings
+				(meter_point_id, ts, wh_total, wh_community, wh_self, source, quality)
+				VALUES ($1,$2,$3,$4,$5,$6,$7)
+				ON CONFLICT (meter_point_id, ts) DO NOTHING`,
+				rd.MeterPointID, rd.Ts, rd.WhTotal, rd.WhCommunity, rd.WhSelf, src, qual,
+			)
+			if err != nil {
+				return summary, fmt.Errorf("insert reading: %w", err)
+			}
 		}
-		qual := rd.Quality
-		if qual == "" {
-			qual = "L0"
-		}
-		_, err = tx.Exec(ctx, `INSERT INTO energy_readings
-			(meter_point_id, ts, wh_total, wh_community, wh_self, source, quality)
-			VALUES ($1,$2,$3,$4,$5,$6,$7)
-			ON CONFLICT (meter_point_id, ts) DO NOTHING`,
-			rd.MeterPointID, rd.Ts, rd.WhTotal, rd.WhCommunity, rd.WhSelf, src, qual,
-		)
-		if err != nil {
-			return fmt.Errorf("insert reading: %w", err)
-		}
+		summary.Restored[SectionReadings] = len(backup.Readings)
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return summary, err
+	}
+	return summary, nil
 }

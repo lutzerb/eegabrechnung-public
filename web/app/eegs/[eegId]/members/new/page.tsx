@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { getEEG, createMember } from "@/lib/api";
 import { ValidatedInput } from "@/components/validated-input";
 import Link from "next/link";
+import { eegDisplayName } from "@/lib/eeg-display-name";
 
 interface Props {
   params: Promise<{ eegId: string }>;
@@ -105,7 +106,7 @@ export default async function NewMemberPage({ params, searchParams }: Props) {
           href={`/eegs/${eegId}`}
           className="text-sm text-slate-500 hover:text-slate-700"
         >
-          {eeg.name}
+          {eegDisplayName(eeg)}
         </Link>
         <span className="text-slate-400 mx-2">/</span>
         <Link
@@ -121,7 +122,7 @@ export default async function NewMemberPage({ params, searchParams }: Props) {
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-slate-900">Neues Mitglied</h1>
         <p className="text-slate-500 mt-1">
-          Neues Mitglied für {eeg.name} erstellen.
+          Neues Mitglied für {eegDisplayName(eeg)} erstellen.
         </p>
       </div>
 

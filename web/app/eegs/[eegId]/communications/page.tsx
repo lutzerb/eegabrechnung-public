@@ -6,6 +6,7 @@ import { getEEG } from "@/lib/api";
 import Link from "next/link";
 import EmailComposer from "./EmailComposer";
 import CampaignHistory from "./CampaignHistory";
+import { eegDisplayName } from "@/lib/eeg-display-name";
 
 const API = process.env.API_INTERNAL_URL || "http://localhost:8080";
 
@@ -65,7 +66,7 @@ export default async function CommunicationsPage({ params }: Props) {
           href={`/eegs/${eegId}`}
           className="text-sm text-slate-500 hover:text-slate-700"
         >
-          {eeg.name}
+          {eegDisplayName(eeg)}
         </Link>
         <span className="text-slate-400 mx-2">/</span>
         <span className="text-sm text-slate-900 font-medium">Kommunikation</span>
@@ -75,7 +76,7 @@ export default async function CommunicationsPage({ params }: Props) {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-900">Mitglieder-E-Mail</h1>
         <p className="text-slate-500 mt-1">
-          E-Mails an alle aktiven Mitglieder von {eeg.name} senden.
+          E-Mails an alle aktiven Mitglieder von {eegDisplayName(eeg)} senden.
         </p>
       </div>
 

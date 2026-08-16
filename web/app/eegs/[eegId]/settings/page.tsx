@@ -3,10 +3,12 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getEEG, updateEEG, UpdateEEGRequest } from "@/lib/api";
+import { eegDisplayName } from "@/lib/eeg-display-name";
 import { ValidatedInput } from "@/components/validated-input";
 import { BackupRestoreSection } from "@/components/backup-restore-section";
 import { DeleteEEGSection } from "@/components/delete-eeg-section";
 import LogoUpload from "./LogoUpload";
+import InvoiceDesignPreview from "./InvoiceDesignPreview";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 
@@ -18,6 +20,7 @@ interface Props {
 const TABS = [
   { key: "allgemein", label: "Allgemein" },
   { key: "rechnungen", label: "Rechnungen" },
+  { key: "rechnungsdesign", label: "Rechnungsdesign" },
   { key: "sepa", label: "SEPA" },
   { key: "eda", label: "EDA" },
   { key: "onboarding", label: "Onboarding" },
@@ -67,6 +70,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
 
     const data: UpdateEEGRequest = {
       name: formData.get("name") as string || undefined,
+      display_name: (formData.get("display_name") as string || "").trim(),
       netzbetreiber: formData.get("netzbetreiber") as string || undefined,
       energy_price: parseFloat(formData.get("energy_price") as string) || 0,
       producer_price: parseFloat(formData.get("producer_price") as string) || 0,
@@ -85,6 +89,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
       invoice_post_text: (formData.get("invoice_post_text") as string) || "",
       invoice_footer_text: (formData.get("invoice_footer_text") as string) || "",
       invoice_payment_notice_mode: (formData.get("invoice_payment_notice_mode") as string) || "sepa_lastschrift",
+      invoice_payment_notice_text: (formData.get("invoice_payment_notice_text") as string) || "",
       fee_billing_mode: (formData.get("fee_billing_mode") as string) || "per_month",
       generate_credit_notes: formData.get("generate_credit_notes") === "on",
       credit_note_number_prefix: (formData.get("credit_note_number_prefix") as string) || "GS",
@@ -109,6 +114,8 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
       uid_nummer: (formData.get("uid_nummer") as string) || "",
       gruendungsdatum: (formData.get("gruendungsdatum") as string) || undefined,
       onboarding_contract_text: (formData.get("onboarding_contract_text") as string) || "",
+      referral_options: ((formData.get("referral_options") as string) || "")
+        .split("\n").map((s) => s.trim()).filter(Boolean),
       // Per-EEG credentials — only sent when non-empty (empty = keep existing)
       eda_imap_host: (formData.get("eda_imap_host") as string) || undefined,
       eda_imap_user: (formData.get("eda_imap_user") as string) || undefined,
@@ -132,6 +139,23 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
       energy_imbalance_threshold_promille: parseFloat(formData.get("energy_imbalance_threshold_promille") as string) || 1,
       // Member portal
       portal_show_full_energy: formData.get("portal_show_full_energy") === "on",
+      // Invoice visual design
+      invoice_design: (formData.get("invoice_design") as string) || "standard",
+      invoice_accent_color: (formData.get("invoice_accent_color") as string) || "#c9b89a",
+      invoice_logo_left: formData.get("invoice_logo_left") !== "false",
+      invoice_font_family: (formData.get("invoice_font_family") as string) || "dejavu",
+      invoice_font_size: parseInt(formData.get("invoice_font_size") as string) || 10,
+      invoice_row_spacing: parseFloat(formData.get("invoice_row_spacing") as string) || 1.0,
+      invoice_energy_label_zeitraum_von: (formData.get("invoice_energy_label_zeitraum_von") as string) || "Zeitraum von",
+      invoice_energy_label_zeitraum_bis: (formData.get("invoice_energy_label_zeitraum_bis") as string) || "Zeitraum bis",
+      invoice_energy_label_gesamtverbrauch: (formData.get("invoice_energy_label_gesamtverbrauch") as string) || "Gesamtverbrauch kWh",
+      invoice_energy_label_netzbezug: (formData.get("invoice_energy_label_netzbezug") as string) || "Netzbezug kWh",
+      invoice_energy_label_community_verbrauch: (formData.get("invoice_energy_label_community_verbrauch") as string) || "Community-Verbrauch kWh",
+      invoice_energy_label_gesamteinspeisung: (formData.get("invoice_energy_label_gesamteinspeisung") as string) || "Gesamteinspeisung kWh",
+      invoice_energy_label_abnahme_energiegemeinschaft: (formData.get("invoice_energy_label_abnahme_energiegemeinschaft") as string) || "Abnahme durch Energiegemeinschaft kWh",
+      invoice_energy_label_resteinspeisung: (formData.get("invoice_energy_label_resteinspeisung") as string) || "Resteinspeisung kWh",
+      invoice_show_zero_fees: formData.get("invoice_show_zero_fees") === "on",
+      extra_meters_enabled: formData.get("extra_meters_enabled") === "on",
     };
 
     let saveError: string | null = null;
@@ -167,7 +191,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
           href={`/eegs/${eegId}`}
           className="text-sm text-slate-500 hover:text-slate-700"
         >
-          {eeg.name}
+          {eegDisplayName(eeg)}
         </Link>
         <span className="text-slate-400 mx-2">/</span>
         <span className="text-sm text-slate-900 font-medium">Einstellungen</span>
@@ -177,7 +201,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-slate-900">Einstellungen</h1>
         <p className="text-slate-500 mt-1">
-          Abrechnungsparameter für {eeg.name} bearbeiten.
+          Abrechnungsparameter für {eegDisplayName(eeg)} bearbeiten.
         </p>
       </div>
 
@@ -212,7 +236,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
         ))}
       </div>
 
-      <form action={saveSettings} className="max-w-2xl space-y-6">
+      <form action={saveSettings} className={activeTab === "rechnungsdesign" ? "max-w-5xl space-y-6" : "max-w-2xl space-y-6"}>
         {/* Hidden field to track active tab */}
         <input type="hidden" name="_tab" value={activeTab} />
 
@@ -220,6 +244,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
         {activeTab !== "allgemein" && (
           <>
             <input type="hidden" name="name" value={eeg.name} />
+            <input type="hidden" name="display_name" value={eeg.display_name || ""} />
             <input type="hidden" name="netzbetreiber" value={eeg.netzbetreiber || ""} />
             <input type="hidden" name="gruendungsdatum" value={eeg.gruendungsdatum ? eeg.gruendungsdatum.substring(0, 10) : ""} />
             <input type="hidden" name="strasse" value={eeg.strasse || ""} />
@@ -246,13 +271,33 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
             <input type="hidden" name="invoice_number_prefix" value={eeg.invoice_number_prefix || "INV"} />
             <input type="hidden" name="invoice_number_digits" value={String(eeg.invoice_number_digits || 5)} />
             <input type="hidden" name="invoice_number_start" value={String(eeg.invoice_number_start || 1)} />
-            <input type="hidden" name="invoice_pre_text" value={eeg.invoice_pre_text || ""} />
-            <input type="hidden" name="invoice_post_text" value={eeg.invoice_post_text || ""} />
-            <input type="hidden" name="invoice_footer_text" value={eeg.invoice_footer_text || ""} />
+            <input type="hidden" name="invoice_payment_notice_mode" value={eeg.invoice_payment_notice_mode || "sepa_lastschrift"} />
+            <input type="hidden" name="invoice_payment_notice_text" value={(eeg as any).invoice_payment_notice_text || ""} />
             <input type="hidden" name="generate_credit_notes" value={eeg.generate_credit_notes ? "on" : "off"} />
             <input type="hidden" name="credit_note_number_prefix" value={eeg.credit_note_number_prefix || "GS"} />
             <input type="hidden" name="credit_note_number_digits" value={String(eeg.credit_note_number_digits || 5)} />
             <input type="hidden" name="energy_imbalance_threshold_promille" value={String((eeg as any).energy_imbalance_threshold_promille ?? 1)} />
+          </>
+        )}
+        {activeTab !== "rechnungsdesign" && (
+          <>
+            <input type="hidden" name="invoice_footer_text" value={eeg.invoice_footer_text || ""} />
+            <input type="hidden" name="invoice_pre_text" value={eeg.invoice_pre_text || ""} />
+            <input type="hidden" name="invoice_post_text" value={eeg.invoice_post_text || ""} />
+            <input type="hidden" name="invoice_energy_label_zeitraum_von" value={(eeg as any).invoice_energy_label_zeitraum_von || "Zeitraum von"} />
+            <input type="hidden" name="invoice_energy_label_zeitraum_bis" value={(eeg as any).invoice_energy_label_zeitraum_bis || "Zeitraum bis"} />
+            <input type="hidden" name="invoice_energy_label_gesamtverbrauch" value={(eeg as any).invoice_energy_label_gesamtverbrauch || "Gesamtverbrauch kWh"} />
+            <input type="hidden" name="invoice_energy_label_netzbezug" value={(eeg as any).invoice_energy_label_netzbezug || "Netzbezug kWh"} />
+            <input type="hidden" name="invoice_energy_label_community_verbrauch" value={(eeg as any).invoice_energy_label_community_verbrauch || "Community-Verbrauch kWh"} />
+            <input type="hidden" name="invoice_energy_label_gesamteinspeisung" value={(eeg as any).invoice_energy_label_gesamteinspeisung || "Gesamteinspeisung kWh"} />
+            <input type="hidden" name="invoice_energy_label_abnahme_energiegemeinschaft" value={(eeg as any).invoice_energy_label_abnahme_energiegemeinschaft || "Abnahme durch Energiegemeinschaft kWh"} />
+            <input type="hidden" name="invoice_energy_label_resteinspeisung" value={(eeg as any).invoice_energy_label_resteinspeisung || "Resteinspeisung kWh"} />
+          </>
+        )}
+        {activeTab !== "rechnungen" && (
+          <>
+            <input type="hidden" name="invoice_show_zero_fees" value={(eeg as any).invoice_show_zero_fees ? "on" : ""} />
+            <input type="hidden" name="extra_meters_enabled" value={(eeg as any).extra_meters_enabled ? "on" : ""} />
           </>
         )}
         {activeTab !== "sepa" && (
@@ -272,7 +317,10 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
           </>
         )}
         {activeTab !== "onboarding" && (
-          <input type="hidden" name="onboarding_contract_text" value={eeg.onboarding_contract_text || ""} />
+          <>
+            <input type="hidden" name="onboarding_contract_text" value={eeg.onboarding_contract_text || ""} />
+            <input type="hidden" name="referral_options" value={(eeg.referral_options || []).join("\n")} />
+          </>
         )}
         {activeTab !== "abrechnung" && (
           <>
@@ -290,6 +338,16 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
         {activeTab !== "portal" && (
           <input type="hidden" name="portal_show_full_energy" value={(eeg as any).portal_show_full_energy !== false ? "on" : ""} />
         )}
+        {activeTab !== "rechnungsdesign" && (
+          <>
+            <input type="hidden" name="invoice_design" value={(eeg as any).invoice_design || "standard"} />
+            <input type="hidden" name="invoice_accent_color" value={(eeg as any).invoice_accent_color || "#c9b89a"} />
+            <input type="hidden" name="invoice_logo_left" value={(eeg as any).invoice_logo_left !== false ? "true" : "false"} />
+            <input type="hidden" name="invoice_font_family" value={(eeg as any).invoice_font_family || "dejavu"} />
+            <input type="hidden" name="invoice_font_size" value={String((eeg as any).invoice_font_size || 10)} />
+            <input type="hidden" name="invoice_row_spacing" value={String((eeg as any).invoice_row_spacing || 1.0)} />
+          </>
+        )}
         {/* energy_price / producer_price always hidden (managed in tariffs) */}
         <input type="hidden" name="energy_price" value={String(eeg.energy_price)} />
         <input type="hidden" name="producer_price" value={String(eeg.producer_price)} />
@@ -303,6 +361,13 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
                 <div>
                   <label className={labelClass}>Name der Energiegemeinschaft</label>
                   <input type="text" name="name" defaultValue={eeg.name} className={inputClass} />
+                </div>
+                <div>
+                  <label className={labelClass}>Anzeigename (optional)</label>
+                  <input type="text" name="display_name" defaultValue={eeg.display_name || ""} className={inputClass} placeholder={eeg.name} />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Wird überall angezeigt (Navigation, Listen, E-Mails, Portal) statt des Namens oben. Auf Rechnungen, SEPA-Dokumenten und der Beitrittserklärung bleibt weiterhin der Name der Energiegemeinschaft oben maßgeblich.
+                  </p>
                 </div>
                 <div>
                   <label className={labelClass}>Netzbetreiber</label>
@@ -448,6 +513,37 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">EUR</span>
                   </div>
                 </div>
+                <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
+                  <input
+                    type="checkbox"
+                    id="invoice_show_zero_fees"
+                    name="invoice_show_zero_fees"
+                    defaultChecked={(eeg as any).invoice_show_zero_fees === true}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+                  />
+                  <label htmlFor="invoice_show_zero_fees" className="text-sm text-slate-700">
+                    Fixgebühr/Mitgliedsbeitrag und Zählpunktsgebühr auch anzeigen, wenn sie 0,00&nbsp;€ betragen
+                    <span className="block text-xs text-slate-500 mt-0.5">
+                      Standard: eine Zeile mit 0&nbsp;€ wird auf der Rechnung weggelassen statt angezeigt.
+                    </span>
+                  </label>
+                </div>
+                <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
+                  <input
+                    type="checkbox"
+                    id="extra_meters_enabled"
+                    name="extra_meters_enabled"
+                    defaultChecked={(eeg as any).extra_meters_enabled === true}
+                    className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+                  />
+                  <label htmlFor="extra_meters_enabled" className="text-sm text-slate-700">
+                    Zusatzzähler aktivieren
+                    <span className="block text-xs text-slate-500 mt-0.5">
+                      Erlaubt manuell abgelesene Nebenzähler (z.B. Wärmepumpe) pro Mitglied, deren Verbrauch als
+                      eigene Zeile auf der Rechnung ausgewiesen wird. Standard: aus.
+                    </span>
+                  </label>
+                </div>
               </div>
             </div>
 
@@ -515,26 +611,19 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 p-6">
-              <h2 className="text-base font-semibold text-slate-900 mb-4">Rechnungstexte</h2>
-              <div className="space-y-4">
-                <div>
-                  <label className={labelClass}>Text vor Positionen</label>
-                  <textarea name="invoice_pre_text" rows={3} defaultValue={eeg.invoice_pre_text || ""} placeholder="Text der vor den Rechnungspositionen erscheint..." className={inputClass} />
-                </div>
-                <div>
-                  <label className={labelClass}>Text nach Positionen</label>
-                  <textarea name="invoice_post_text" rows={3} defaultValue={eeg.invoice_post_text || ""} placeholder="Text der nach den Rechnungspositionen erscheint..." className={inputClass} />
-                </div>
-                <div>
-                  <label className={labelClass}>Fußzeile</label>
-                  <textarea name="invoice_footer_text" rows={3} defaultValue={eeg.invoice_footer_text || ""} placeholder="Text der in der Fußzeile der Rechnung erscheint..." className={inputClass} />
-                </div>
-              </div>
+              <h2 className="text-base font-semibold text-slate-900 mb-1">Rechnungstexte</h2>
+              <p className="text-xs text-slate-500">
+                Text vor/nach Positionen und Fußzeile werden im Tab{" "}
+                <a href={`/eegs/${eegId}/settings?tab=rechnungsdesign`} className="text-blue-600 hover:underline">
+                  Rechnungsdesign
+                </a>{" "}
+                bearbeitet (dort mit Live-Vorschau).
+              </p>
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 p-6">
               <h2 className="text-base font-semibold text-slate-900 mb-1">Zahlungshinweis</h2>
-              <p className="text-xs text-slate-500 mb-4">Steuert den Absatz auf der Verbrauchsrechnung (und in der Rechnungs-E-Mail), der beschreibt, wie der Betrag beglichen wird.</p>
+              <p className="text-xs text-slate-500 mb-4">Steuert den Absatz auf der Rechnung (und, sofern nicht "Kein Zahlungshinweis", auch die "Auszahlung"-Zeile auf der Gutschrift), der beschreibt, wie der Betrag beglichen wird.</p>
               <div className="space-y-3">
                 <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
                   <input
@@ -566,6 +655,19 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
                   <input
                     type="radio"
                     name="invoice_payment_notice_mode"
+                    value="custom"
+                    defaultChecked={eeg.invoice_payment_notice_mode === "custom"}
+                    className="mt-0.5 h-4 w-4 border-slate-300 text-blue-700 focus:ring-blue-500"
+                  />
+                  <div>
+                    <p className="text-sm font-medium text-slate-800">Individueller Text</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Frei formulierbarer Text (siehe Feld unten) statt der automatisch generierten Formulierung.</p>
+                  </div>
+                </label>
+                <label className="flex items-start gap-3 p-3 rounded-lg border border-slate-200 cursor-pointer has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
+                  <input
+                    type="radio"
+                    name="invoice_payment_notice_mode"
                     value="none"
                     defaultChecked={eeg.invoice_payment_notice_mode === "none"}
                     className="mt-0.5 h-4 w-4 border-slate-300 text-blue-700 focus:ring-blue-500"
@@ -575,6 +677,23 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
                     <p className="text-xs text-slate-500 mt-0.5">Der Abschnitt entfällt komplett auf Rechnung und in der E-Mail.</p>
                   </div>
                 </label>
+              </div>
+              <div className="mt-4">
+                <label className={labelClass}>Individueller Text (nur bei Auswahl "Individueller Text" oben verwendet)</label>
+                <textarea
+                  name="invoice_payment_notice_text"
+                  rows={3}
+                  defaultValue={(eeg as any).invoice_payment_notice_text || ""}
+                  placeholder="Der Rechnungsbetrag von {betrag} wird bis {datum} auf das Konto {eeg_iban} überwiesen."
+                  className={inputClass}
+                />
+                <p className="text-xs text-slate-500 mt-1.5">
+                  Platzhalter: <code className="bg-slate-100 px-1 rounded">{"{betrag}"}</code>{" "}
+                  <code className="bg-slate-100 px-1 rounded">{"{iban}"}</code> (Mitglied){" "}
+                  <code className="bg-slate-100 px-1 rounded">{"{eeg_iban}"}</code>{" "}
+                  <code className="bg-slate-100 px-1 rounded">{"{eeg_bic}"}</code>{" "}
+                  <code className="bg-slate-100 px-1 rounded">{"{datum}"}</code>
+                </p>
               </div>
             </div>
 
@@ -660,6 +779,30 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
               </div>
             </div>
           </>
+        )}
+
+        {/* ── TAB: RECHNUNGSDESIGN ───────────────────────────────── */}
+        {activeTab === "rechnungsdesign" && (
+          <InvoiceDesignPreview
+            eegId={eegId}
+            initialDesign={(eeg as any).invoice_design || "standard"}
+            initialAccentColor={(eeg as any).invoice_accent_color || "#c9b89a"}
+            initialLogoLeft={(eeg as any).invoice_logo_left !== false}
+            initialFontFamily={(eeg as any).invoice_font_family || "dejavu"}
+            initialFontSize={(eeg as any).invoice_font_size || 10}
+            initialRowSpacing={(eeg as any).invoice_row_spacing || 1.0}
+            initialFooterText={eeg.invoice_footer_text || ""}
+            initialPreText={eeg.invoice_pre_text || ""}
+            initialPostText={eeg.invoice_post_text || ""}
+            initialLabelZeitraumVon={(eeg as any).invoice_energy_label_zeitraum_von || "Zeitraum von"}
+            initialLabelZeitraumBis={(eeg as any).invoice_energy_label_zeitraum_bis || "Zeitraum bis"}
+            initialLabelGesamtverbrauch={(eeg as any).invoice_energy_label_gesamtverbrauch || "Gesamtverbrauch kWh"}
+            initialLabelNetzbezug={(eeg as any).invoice_energy_label_netzbezug || "Netzbezug kWh"}
+            initialLabelCommunityVerbrauch={(eeg as any).invoice_energy_label_community_verbrauch || "Community-Verbrauch kWh"}
+            initialLabelGesamteinspeisung={(eeg as any).invoice_energy_label_gesamteinspeisung || "Gesamteinspeisung kWh"}
+            initialLabelAbnahmeEnergiegemeinschaft={(eeg as any).invoice_energy_label_abnahme_energiegemeinschaft || "Abnahme durch Energiegemeinschaft kWh"}
+            initialLabelResteinspeisung={(eeg as any).invoice_energy_label_resteinspeisung || "Resteinspeisung kWh"}
+          />
         )}
 
         {/* ── TAB: SEPA ──────────────────────────────────────────── */}
@@ -848,6 +991,23 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
               placeholder={`BEITRITTSERKLÄRUNG ZUR ENERGIEGEMEINSCHAFT\n\nHiermit erkläre ich/wir den Beitritt zur Energiegemeinschaft ...\n\nKontoverbindung: IBAN: {iban}\n\nDatum: {datum}`}
               className={`${inputClass} font-mono text-xs`}
             />
+
+            <div className="mt-6 pt-6 border-t border-slate-200">
+              <h2 className="text-base font-semibold text-slate-900 mb-1">
+                Auswahlmöglichkeiten &quot;Wie sind Sie auf uns aufmerksam geworden?&quot;
+              </h2>
+              <p className="text-xs text-slate-500 mb-4">
+                Eine Option pro Zeile. Wird als optionale Auswahl im öffentlichen Antragsformular angezeigt
+                (zusätzlich zu &quot;Sonstiges&quot; mit Freitext, das immer verfügbar ist).
+              </p>
+              <textarea
+                name="referral_options"
+                rows={4}
+                defaultValue={(eeg.referral_options || []).join("\n")}
+                placeholder={"Empfehlung von einem Mitglied\nInternet\nZeitung"}
+                className={inputClass}
+              />
+            </div>
           </div>
         )}
 
@@ -1079,7 +1239,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
       {/* Backup & Wiederherstellung — only in system tab */}
       {activeTab === "system" && (
         <>
-          <BackupRestoreSection eegId={eegId} eegName={eeg.name} />
+          <BackupRestoreSection eegId={eegId} eegName={eeg.name} displayName={eeg.display_name} />
 
           {/* Email log link */}
           <div className="mt-8 p-6 bg-white rounded-xl border border-slate-200">
@@ -1095,7 +1255,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
             </Link>
           </div>
 
-          <DeleteEEGSection eegId={eegId} eegName={eeg.name} />
+          <DeleteEEGSection eegId={eegId} eegName={eeg.name} displayName={eeg.display_name} />
         </>
       )}
     </div>

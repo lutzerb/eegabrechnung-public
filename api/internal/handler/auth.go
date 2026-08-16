@@ -7,7 +7,6 @@ import (
 
 	"github.com/lutzerb/eegabrechnung/internal/auth"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type AuthHandler struct {
@@ -47,7 +46,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+	if !auth.CheckPassword(user.PasswordHash, req.Password) {
 		jsonError(w, "invalid credentials", http.StatusUnauthorized)
 		return
 	}

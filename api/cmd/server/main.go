@@ -93,16 +93,16 @@ func main() {
 	tariffRepo := repository.NewTariffRepository(pool)
 	participationRepo := repository.NewParticipationRepository(pool)
 	emailLogRepo := repository.NewEmailLogRepository(pool)
-
-	webBaseURL := getEnv("WEB_BASE_URL", "http://localhost:3001")
+	orgRepo := repository.NewOrganizationRepository(pool)
+	extraMeterRepo := repository.NewExtraMeterRepository(pool)
 
 	// Services
-	billingSvc := billing.NewService(pool, eegRepo, memberRepo, readingRepo, invoiceRepo, billingRunRepo, tariffRepo, emailLogRepo, meterPointRepo, webBaseURL, billingCfg)
+	billingSvc := billing.NewService(pool, eegRepo, memberRepo, readingRepo, invoiceRepo, billingRunRepo, tariffRepo, emailLogRepo, meterPointRepo, extraMeterRepo, billingCfg)
 
 	// Handlers
 	eegHandler := handler.NewEEGHandler(eegRepo, memberRepo, meterPointRepo, participationRepo)
 	importHandler := handler.NewImportHandler(eegRepo, memberRepo, meterPointRepo, readingRepo)
-	billingHandler := handler.NewBillingHandler(billingSvc, invoiceRepo, billingRunRepo, memberRepo, eegRepo, emailLogRepo, webBaseURL)
+	billingHandler := handler.NewBillingHandler(billingSvc, invoiceRepo, billingRunRepo, memberRepo, eegRepo, emailLogRepo)
 	memberHandler := handler.NewMemberHandler(memberRepo, meterPointRepo, eegRepo, edaProcessRepo, jobRepo, participationRepo)
 	meterPointHandler := handler.NewMeterPointHandler(meterPointRepo, memberRepo, eegRepo, edaProcessRepo)
 	statsHandler := handler.NewStatsHandler(eegRepo, edaMessageRepo)
@@ -112,6 +112,7 @@ func main() {
 	reportHandler := handler.NewReportHandler(reportRepo, eegRepo)
 	userHandler := handler.NewUserHandler(userRepo, eegRepo)
 	tariffHandler := handler.NewTariffHandler(tariffRepo, eegRepo)
+	extraMeterHandler := handler.NewExtraMeterHandler(extraMeterRepo, memberRepo, eegRepo)
 	edaWorkerURL := getEnv("EDA_WORKER_URL", "http://eda-worker:8081")
 	edaHandler := handler.NewEDAHandler(eegRepo, meterPointRepo, edaProcessRepo, jobRepo, edaErrorRepo, workerStatusRepo, edaWorkerURL)
 	forecastURL := getEnv("FORECAST_SERVICE_URL", "http://forecast-service:8200")
@@ -125,7 +126,7 @@ func main() {
 	memberEmailRepo := repository.NewMemberEmailRepository(pool)
 	eegDocumentRepo := repository.NewEEGDocumentRepository(pool)
 
-	onboardingHandler := handler.NewOnboardingHandler(onboardingRepo, eegRepo, memberRepo, meterPointRepo, eegDocumentRepo, emailLogRepo, pool, webBaseURL)
+	onboardingHandler := handler.NewOnboardingHandler(onboardingRepo, eegRepo, memberRepo, meterPointRepo, eegDocumentRepo, emailLogRepo, pool)
 
 	// Background: send 72-hour reminder emails for unconverted eda_sent requests.
 	go func() {
@@ -138,7 +139,7 @@ func main() {
 	}()
 
 	portalRepo := repository.NewMemberPortalRepository(pool)
-	portalHandler := handler.NewMemberPortalHandler(portalRepo, memberRepo, meterPointRepo, participationRepo, readingRepo, invoiceRepo, eegRepo, edaProcessRepo, jobRepo, emailLogRepo, webBaseURL)
+	portalHandler := handler.NewMemberPortalHandler(portalRepo, memberRepo, meterPointRepo, participationRepo, readingRepo, invoiceRepo, eegRepo, orgRepo, edaProcessRepo, jobRepo, emailLogRepo)
 
 	memberEmailHandler := handler.NewMemberEmailHandler(memberEmailRepo, memberRepo, eegRepo, emailLogRepo)
 	eegDocumentHandler := handler.NewEEGDocumentHandler(eegDocumentRepo, portalRepo, eegRepo)
@@ -164,9 +165,9 @@ func main() {
 	))
 
 	// Rate limiters for public endpoints
-	loginLimiter := apimiddleware.NewIPRateLimiter(10, time.Minute)         // 10 login attempts/min/IP
-	onboardingLimiter := apimiddleware.NewIPRateLimiter(5, time.Minute)     // 5 submissions/min/IP
-	portalLimiter := apimiddleware.NewIPRateLimiter(10, time.Minute)        // 10 portal requests/min/IP
+	loginLimiter := apimiddleware.NewIPRateLimiter(10, time.Minute)     // 10 login attempts/min/IP
+	onboardingLimiter := apimiddleware.NewIPRateLimiter(5, time.Minute) // 5 submissions/min/IP
+	portalLimiter := apimiddleware.NewIPRateLimiter(10, time.Minute)    // 10 portal requests/min/IP
 
 	// Public auth endpoint
 	r.With(loginLimiter.Middleware).Post("/api/v1/auth/login", authHandler.Login)
@@ -186,6 +187,8 @@ func main() {
 	// Member portal (public, uses its own session token mechanism)
 	r.With(portalLimiter.Middleware).Post("/api/v1/public/portal/request-link", portalHandler.RequestLink)
 	r.With(portalLimiter.Middleware).Post("/api/v1/public/portal/exchange", portalHandler.ExchangeToken)
+	r.With(portalLimiter.Middleware).Post("/api/v1/public/portal/login-password", portalHandler.LoginPassword)
+	r.With(portalLimiter.Middleware).Post("/api/v1/public/portal/set-password", portalHandler.SetPassword)
 	r.Get("/api/v1/public/portal/me", portalHandler.GetMe)
 	r.Get("/api/v1/public/portal/energy", portalHandler.GetEnergy)
 	r.Get("/api/v1/public/portal/invoices", portalHandler.GetInvoices)
@@ -223,6 +226,7 @@ func main() {
 		r.Get("/eegs/{eegID}/export/stammdaten", eegHandler.ExportStammdaten)
 		r.Get("/eegs/{eegID}/logo", eegHandler.GetLogo)
 		r.Post("/eegs/{eegID}/logo", eegHandler.UploadLogo)
+		r.Post("/eegs/{eegID}/invoice-design/preview", eegHandler.PreviewInvoiceDesign)
 
 		// Billing endpoints
 		r.Post("/eegs/{eegID}/billing/run", billingHandler.RunBilling)
@@ -264,6 +268,7 @@ func main() {
 
 		// EDA process management
 		r.Get("/eegs/{eegID}/eda/processes", edaHandler.ListProcesses)
+		r.Get("/eegs/{eegID}/eda/netzbetreiber", edaHandler.ListActiveNetzbetreiber)
 		r.Post("/eegs/{eegID}/eda/anmeldung", edaHandler.Anmeldung)
 		r.Post("/eegs/{eegID}/eda/teilnahmefaktor", edaHandler.TeilnahmefaktorAendern)
 		r.Post("/eegs/{eegID}/eda/zaehlerstandsgang", edaHandler.ZaehlerstandsgangAnfordern)
@@ -315,6 +320,15 @@ func main() {
 		r.Put("/eegs/{eegID}/members/{memberID}/tariffs/{scheduleID}/entries", tariffHandler.SetEntries)
 		r.Post("/eegs/{eegID}/members/{memberID}/tariffs/{scheduleID}/activate", tariffHandler.ActivateSchedule)
 		r.Delete("/eegs/{eegID}/members/{memberID}/tariffs/{scheduleID}/activate", tariffHandler.DeactivateSchedule)
+
+		// Zusatzzähler (manually-read submeters, not Netzbetreiber smart meters)
+		r.Get("/eegs/{eegID}/members/{memberID}/extra-meters", extraMeterHandler.ListExtraMeters)
+		r.Post("/eegs/{eegID}/members/{memberID}/extra-meters", extraMeterHandler.CreateExtraMeter)
+		r.Put("/eegs/{eegID}/members/{memberID}/extra-meters/{id}", extraMeterHandler.UpdateExtraMeter)
+		r.Delete("/eegs/{eegID}/members/{memberID}/extra-meters/{id}", extraMeterHandler.DeleteExtraMeter)
+		r.Get("/eegs/{eegID}/members/{memberID}/extra-meters/{id}/readings", extraMeterHandler.ListReadings)
+		r.Post("/eegs/{eegID}/members/{memberID}/extra-meters/{id}/readings", extraMeterHandler.CreateReading)
+		r.Delete("/eegs/{eegID}/members/{memberID}/extra-meters/{id}/readings/{readingID}", extraMeterHandler.DeleteReading)
 
 		// Onboarding (approve triggers full member creation + EDA)
 		r.Get("/eegs/{eegID}/onboarding", onboardingHandler.ListOnboarding)
