@@ -11,6 +11,7 @@ jobs:
   mirror:
     runs-on: ubuntu-latest
     if: github.event.inputs.confirm == 'publish'
+    environment: HETZNER_API_KEY
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
@@ -19,10 +20,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           path: private
+          fetch-depth: 0
 
       - name: Sync as a new release commit on the public repo
         env:
           DEPLOY_KEY_B64: ${{ secrets.PUBLIC_REPO_DEPLOY_KEY }}
+          HETZNER_API_KEY: ${{ secrets.HETZNER_API_KEY }}
         run: |
           mkdir -p ~/.ssh
           echo "$DEPLOY_KEY_B64" | base64 -d > ~/.ssh/deploy_key
@@ -34,12 +37,68 @@ jobs:
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
 
-          rsync -a --delete --exclude '.git' ../private/ ./
+          PRIVATE_HEAD=$(git -C ../private rev-parse HEAD)
+          LAST_SHA=""
+          if [ -f .mirror-state ]; then
+            LAST_SHA=$(cat .mirror-state)
+          fi
+
+          if [ -n "$LAST_SHA" ] && git -C ../private cat-file -e "$LAST_SHA" 2>/dev/null; then
+            LOG=$(git -C ../private log --no-merges --pretty='format:- %s' "$LAST_SHA..$PRIVATE_HEAD")
+          else
+            LOG=$(git -C ../private log --no-merges --pretty='format:- %s' -20)
+          fi
+
+          rsync -a --delete --exclude '.git' --exclude '.mirror-state' ../private/ ./
+          echo "$PRIVATE_HEAD" > .mirror-state
 
           git add -A
           if git diff --cached --quiet; then
             echo "No changes to publish"
             exit 0
           fi
-          git commit -m "Release $(date +'%Y-%m-%d')"
+
+          SUMMARY=""
+          if [ -n "$HETZNER_API_KEY" ]; then
+            SYSTEM_PROMPT='You summarize a batch of internal git commit messages into a short, public-facing release note for an open-source mirror repository.
+          Rules:
+          - Output 3-8 bullet points, each a concise line starting with "- ".
+          - Group related commits into one bullet where it makes sense; skip purely internal chores (CI tweaks, formatting, comment fixes, dependency bumps) unless nothing else qualifies.
+          - Never include customer names, organization names, internal hostnames/IPs/ports, credentials, tokens, API keys, ticket/ID numbers, or any other detail that could identify a specific customer or expose secrets. Generalize instead (e.g. "improved multi-tenant handling", not the specific organization name).
+          - If nothing above qualifies as public-facing, output exactly: "- Internal maintenance and refactoring."
+          - Output only the bullet list, no headers, no commentary, no markdown formatting beyond the leading "- ".'
+
+            REQUEST_BODY=$(jq -n \
+              --arg system "$SYSTEM_PROMPT" \
+              --arg log "$LOG" \
+              '{
+                model: "Qwen/Qwen3.6-35B-A3B-FP8",
+                max_tokens: 1024,
+                chat_template_kwargs: {enable_thinking: false},
+                messages: [
+                  {role: "system", content: $system},
+                  {role: "user", content: $log}
+                ]
+              }')
+
+            RESPONSE=$(curl -sS https://inference.hetzner.com/api/v1/chat/completions \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $HETZNER_API_KEY" \
+              -d "$REQUEST_BODY") || true
+
+            SUMMARY=$(echo "$RESPONSE" | jq -r '.choices[0].message.content // empty' 2>/dev/null)
+          fi
+
+          if [ -z "$SUMMARY" ]; then
+            echo "LLM summary unavailable, falling back to raw commit subjects"
+            SUMMARY="$LOG"
+          fi
+
+          {
+            echo "Release $(date +'%Y-%m-%d')"
+            echo
+            echo "$SUMMARY"
+          } > /tmp/commit-msg.txt
+
+          git commit -F /tmp/commit-msg.txt
           git push origin HEAD:main
