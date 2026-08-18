@@ -197,6 +197,13 @@ type EEG struct {
 	// Whether the Fixgebühr/Teilnahmegebühr and Zählpunktsgebühr line items are
 	// shown even when their total is 0,00 € — applies to both invoice designs.
 	InvoiceShowZeroFees bool `json:"invoice_show_zero_fees"`
+	// Whether the "individuell" design's measurement table (top) and pricing
+	// table (bottom) list every calendar month individually on multi-month
+	// invoices, or collapse to the period total per Zählpunkt/direction.
+	// Default true (unchanged current behavior). pdf_theme.go still forces
+	// monthly rows regardless of this flag whenever the tariff price actually
+	// varied across months (see monthlyEnergyPriceVaries/monthlyGenerationPriceVaries).
+	InvoiceShowMonthlyBreakdown bool `json:"invoice_show_monthly_breakdown"`
 	// Line/row spacing scale factor for the "individuell" design (see
 	// InvoiceTheme.RowSpacing / theme.h() in pdf_theme.go); 1.0 = unscaled.
 	InvoiceRowSpacing float64 `json:"invoice_row_spacing"`

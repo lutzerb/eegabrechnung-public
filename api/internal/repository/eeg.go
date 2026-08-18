@@ -65,7 +65,7 @@ const eegCols = `e.id, organization_id, gemeinschaft_id, gemeinschaft_typ, netzb
 	invoice_energy_label_zeitraum_von, invoice_energy_label_zeitraum_bis, invoice_energy_label_gesamtverbrauch,
 	invoice_energy_label_netzbezug, invoice_energy_label_community_verbrauch, invoice_show_zero_fees,
 	invoice_energy_label_gesamteinspeisung, invoice_energy_label_abnahme_energiegemeinschaft, invoice_energy_label_resteinspeisung,
-	invoice_row_spacing,
+	invoice_row_spacing, invoice_show_monthly_breakdown,
 	extra_meters_enabled,
 	eda_imap_host, eda_imap_user, eda_imap_password_enc,
 	eda_smtp_host, eda_smtp_user, eda_smtp_password_enc, eda_smtp_from,
@@ -108,7 +108,7 @@ func (r *EEGRepository) scanEEG(row interface{ Scan(...any) error }, e *domain.E
 		&e.InvoiceEnergyLabelZeitraumVon, &e.InvoiceEnergyLabelZeitraumBis, &e.InvoiceEnergyLabelGesamtverbrauch,
 		&e.InvoiceEnergyLabelNetzbezug, &e.InvoiceEnergyLabelCommunityVerbrauch, &e.InvoiceShowZeroFees,
 		&e.InvoiceEnergyLabelGesamteinspeisung, &e.InvoiceEnergyLabelAbnahmeEnergiegemeinschaft, &e.InvoiceEnergyLabelResteinspeisung,
-		&e.InvoiceRowSpacing,
+		&e.InvoiceRowSpacing, &e.InvoiceShowMonthlyBreakdown,
 		&e.ExtraMetersEnabled,
 		&edaImapHost, &edaImapUser, &edaImapPwEnc,
 		&edaSmtpHost, &edaSmtpUser, &edaSmtpPwEnc, &edaSmtpFrom,
@@ -277,7 +277,8 @@ func (r *EEGRepository) Update(ctx context.Context, eeg *domain.EEG) error {
 	        invoice_energy_label_gesamteinspeisung=$80,
 	        invoice_energy_label_abnahme_energiegemeinschaft=$81,
 	        invoice_energy_label_resteinspeisung=$82,
-	        extra_meters_enabled=$83
+	        extra_meters_enabled=$83,
+	        invoice_show_monthly_breakdown=$84
 	      WHERE id=$50 AND organization_id=$51`
 	// Note: logo_path and auto_billing_last_run_at are not updated via this method.
 	days := eeg.SepaPreNotificationDays
@@ -336,6 +337,7 @@ func (r *EEGRepository) Update(ctx context.Context, eeg *domain.EEG) error {
 		eeg.InvoiceEnergyLabelAbnahmeEnergiegemeinschaft,
 		eeg.InvoiceEnergyLabelResteinspeisung,
 		eeg.ExtraMetersEnabled,
+		eeg.InvoiceShowMonthlyBreakdown,
 	)
 	return err
 }

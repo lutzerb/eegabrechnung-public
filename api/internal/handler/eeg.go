@@ -200,6 +200,7 @@ type eegRequest struct {
 	InvoiceEnergyLabelCommunityVerbrauch         string  `json:"invoice_energy_label_community_verbrauch"`
 	InvoiceShowZeroFees                          bool    `json:"invoice_show_zero_fees"`
 	InvoiceRowSpacing                            float64 `json:"invoice_row_spacing"`
+	InvoiceShowMonthlyBreakdown                  bool    `json:"invoice_show_monthly_breakdown"`
 	InvoiceEnergyLabelGesamteinspeisung          string  `json:"invoice_energy_label_gesamteinspeisung"`
 	InvoiceEnergyLabelAbnahmeEnergiegemeinschaft string  `json:"invoice_energy_label_abnahme_energiegemeinschaft"`
 	InvoiceEnergyLabelResteinspeisung            string  `json:"invoice_energy_label_resteinspeisung"`
@@ -744,6 +745,7 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 		existing.InvoiceEnergyLabelResteinspeisung = req.InvoiceEnergyLabelResteinspeisung
 	}
 	existing.InvoiceShowZeroFees = req.InvoiceShowZeroFees
+	existing.InvoiceShowMonthlyBreakdown = req.InvoiceShowMonthlyBreakdown
 
 	if err := h.eegRepo.Update(r.Context(), existing); err != nil {
 		jsonError(w, "failed to update EEG", http.StatusInternalServerError)
@@ -955,6 +957,7 @@ type previewDesignRequest struct {
 	InvoiceEnergyLabelGesamteinspeisung          string  `json:"invoice_energy_label_gesamteinspeisung"`
 	InvoiceEnergyLabelAbnahmeEnergiegemeinschaft string  `json:"invoice_energy_label_abnahme_energiegemeinschaft"`
 	InvoiceEnergyLabelResteinspeisung            string  `json:"invoice_energy_label_resteinspeisung"`
+	InvoiceShowMonthlyBreakdown                  bool    `json:"invoice_show_monthly_breakdown"`
 }
 
 // PreviewInvoiceDesign godoc
@@ -1025,6 +1028,7 @@ func (h *EEGHandler) PreviewInvoiceDesign(w http.ResponseWriter, r *http.Request
 	previewEEG.InvoiceEnergyLabelGesamteinspeisung = req.InvoiceEnergyLabelGesamteinspeisung
 	previewEEG.InvoiceEnergyLabelAbnahmeEnergiegemeinschaft = req.InvoiceEnergyLabelAbnahmeEnergiegemeinschaft
 	previewEEG.InvoiceEnergyLabelResteinspeisung = req.InvoiceEnergyLabelResteinspeisung
+	previewEEG.InvoiceShowMonthlyBreakdown = req.InvoiceShowMonthlyBreakdown
 
 	_, member, inv, vat, energyRows, generationRows := invoice.SampleFixtureData()
 	member.EegID = previewEEG.ID

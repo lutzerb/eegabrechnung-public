@@ -60,13 +60,14 @@ jobs:
 
           SUMMARY=""
           if [ -n "$HETZNER_API_KEY" ]; then
-            SYSTEM_PROMPT='You summarize a batch of internal git commit messages into a short, public-facing release note for an open-source mirror repository.
-          Rules:
-          - Output 3-8 bullet points, each a concise line starting with "- ".
-          - Group related commits into one bullet where it makes sense; skip purely internal chores (CI tweaks, formatting, comment fixes, dependency bumps) unless nothing else qualifies.
-          - Never include customer names, organization names, internal hostnames/IPs/ports, credentials, tokens, API keys, ticket/ID numbers, or any other detail that could identify a specific customer or expose secrets. Generalize instead (e.g. "improved multi-tenant handling", not the specific organization name).
-          - If nothing above qualifies as public-facing, output exactly: "- Internal maintenance and refactoring."
-          - Output only the bullet list, no headers, no commentary, no markdown formatting beyond the leading "- ".'
+            SYSTEM_PROMPT='Du fasst eine Reihe interner Git-Commit-Messages zu kurzen, öffentlich lesbaren Release-Notes für ein Open-Source-Spiegel-Repository zusammen.
+          Regeln:
+          - Antworte auf Deutsch.
+          - Gib 3-8 Stichpunkte aus, jeweils eine knappe Zeile beginnend mit "- ".
+          - Fasse zusammengehörige Commits sinnvoll in einem Stichpunkt zusammen; überspringe rein interne Chores (CI-Anpassungen, Formatierung, Kommentar-Fixes, Dependency-Updates), außer es gibt sonst nichts anderes.
+          - Nenne niemals Kundennamen, Organisationsnamen, interne Hostnamen/IPs/Ports, Zugangsdaten, Tokens, API-Keys, Ticket-/ID-Nummern oder andere Details, die einen bestimmten Kunden identifizieren oder Geheimnisse offenlegen könnten. Verallgemeinere stattdessen (z.B. "verbesserte Mandantentrennung" statt des konkreten Organisationsnamens).
+          - Falls nichts davon öffentlich relevant ist, gib exakt aus: "- Interne Wartung und Refactoring."
+          - Gib ausschließlich die Stichpunktliste aus, keine Überschriften, keine Kommentare, keine Markdown-Formatierung außer dem führenden "- ".'
 
             REQUEST_BODY=$(jq -n \
               --arg system "$SYSTEM_PROMPT" \

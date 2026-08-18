@@ -15,6 +15,7 @@ type Info struct {
 	PortalName string // e.g. "Smart Meter Webportal"
 	PortalURL  string // direct URL
 	Hinweis    string // short note for members
+	Unresolved bool   // true if ID is neither a known registry entry nor a documented override (best-effort guess only)
 }
 
 // registry maps EDA Marktpartner-IDs to Netzbetreiber info.
@@ -204,6 +205,8 @@ var registry = map[string]Info{
 	"AT008570": {Name: "Elektrizitätswerk Fernitz Ing. Franz Purkarthofer GmbH & Co KG"},
 	"AT008580": {Name: "Kiendler Vulkanlandstrom GmbH"},
 	"AT008620": {Name: "Elektrizitätswerk Gröbming KG"},
+	"AT008630": {Name: "P.K. Energieversorgungs-GmbH"},
+	"AT008631": {Name: "Kiendler GmbH"},
 	"AT008650": {Name: "Elektrizitätswerk Mariahof GmbH"},
 	"AT008690": {Name: "Gertraud Schafler GmbH."},
 	"AT008720": {Name: "Elektrowerk Schöder GmbH"},
@@ -215,6 +218,32 @@ var registry = map[string]Info{
 	"AT008950": {Name: "E-Werk Piwetz"},
 	"AT008960": {Name: "E-Werk Neudau Kottulinsky KG"},
 	"AT009220": {Name: "Energie Güssing GmbH"},
+}
+
+// prefixOverrides maps Zählpunkt-prefixes that are NOT themselves a
+// registered Marktpartner-ID to the actual EC-Nummer outbound EDA messages
+// must be routed to. A Zählpunkt's 8-char prefix is usually its issuing
+// Netzbetreiber's own EC-Nummer, but large regional operators sometimes
+// still use historical sub-area ("Verteilnetzbereich") codes in Zählpunkten
+// that were never registered as independent Marktpartner-IDs. Confirmed
+// case-by-case from real EDA traffic.
+var prefixOverrides = map[string]string{
+	// Energienetze Steiermark Verteilnetzbereich-Codes, keine eigenen EC-Nummern
+	// (bestätigt anhand einer echten CPRequest/ANFORDERUNG_PT-XML, 2026-08).
+	"AT008230": "AT008000",
+	"AT008830": "AT008000",
+	"AT008380": "AT008000",
+	"AT008480": "AT008000",
+	"AT008960": "AT008000",
+	"AT008320": "AT008000",
+	// Netz NÖ Verteilnetzbereich-Code (bestätigtes Mapping, 2026-08).
+	"AT002200": "AT002000",
+	// Stadtwerke Klagenfurt Verteilnetzbereich-Codes (bestätigtes Mapping, 2026-08).
+	"AT071000": "AT007100",
+	"AT000710": "AT007100",
+	// Weitere bestätigte Verteilnetzbereich-Codes ohne eigene EC-Nummer (2026-08).
+	"AT008580": "AT008630",
+	"AT008581": "AT008631",
 }
 
 // ByMarktpartnerID looks up a Netzbetreiber by its EDA Marktpartner-ID (e.g. "AT001000").
@@ -238,12 +267,34 @@ func ByZaehlpunkt(zaehlpunkt string) (Info, bool) {
 	return ByMarktpartnerID(id)
 }
 
+// ResolveRoutingID returns the Netzbetreiber-ID that outbound EDA messages
+// for the given Zählpunkt should be routed to, and whether that ID is
+// verified — a known registered EC-Nummer (registry), or an explicit
+// override (prefixOverrides). The literal 8-char prefix is NOT always the
+// correct routing target (see prefixOverrides); ok=false means the caller
+// must not silently send to the returned (best-guess) id.
+func ResolveRoutingID(zaehlpunkt string) (id string, ok bool) {
+	if len(zaehlpunkt) < 8 {
+		return "", false
+	}
+	prefix := zaehlpunkt[:8]
+	if override, found := prefixOverrides[prefix]; found {
+		return override, true
+	}
+	if _, found := registry[prefix]; found {
+		return prefix, true
+	}
+	return prefix, false
+}
+
 // ActiveFromMeterPoints derives the distinct set of Netzbetreiber currently
-// serving an EEG's active meter points (abgemeldet_am IS NULL), by grouping
-// on the Zählpunkt's 8-char Marktpartner-ID prefix. Mirrors the routing logic
-// used for BEG multi-Netzbetreiber EDA actions (handler/eda.go). Unknown IDs
-// are still returned, with the raw ID standing in for the name.
-// Result is sorted by name for a stable display order.
+// serving an EEG's active meter points (abgemeldet_am IS NULL), resolved via
+// ResolveRoutingID. Mirrors the routing logic used for BEG multi-Netzbetreiber
+// EDA actions (handler/eda.go). Deduping happens on the resolved ID, not the
+// raw Zählpunkt prefix, so two prefixes that resolve to the same real
+// Netzbetreiber (via an override) collapse into a single entry. Unresolved
+// prefixes are still returned, with the raw ID standing in for the name and
+// Unresolved set to true. Result is sorted by name for a stable display order.
 func ActiveFromMeterPoints(mps []domain.MeterPoint) []Info {
 	seen := map[string]bool{}
 	var result []Info
@@ -251,16 +302,17 @@ func ActiveFromMeterPoints(mps []domain.MeterPoint) []Info {
 		if mp.AbgemeldetAm != nil || len(mp.Zaehlpunkt) < 8 {
 			continue
 		}
-		id := mp.Zaehlpunkt[:8]
+		id, resolved := ResolveRoutingID(mp.Zaehlpunkt)
 		if seen[id] {
 			continue
 		}
 		seen[id] = true
-		info, ok := ByMarktpartnerID(id)
-		if !ok {
+		info, found := ByMarktpartnerID(id)
+		if !found {
 			info = Info{Name: id}
 		}
 		info.ID = id
+		info.Unresolved = !resolved
 		result = append(result, info)
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })

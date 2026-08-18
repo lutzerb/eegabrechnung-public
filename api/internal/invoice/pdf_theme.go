@@ -125,6 +125,26 @@ func (t InvoiceTheme) ln(pdf *fpdf.Fpdf, base float64) {
 	pdf.Ln(t.h(base))
 }
 
+// tint returns a light background mix of the theme accent color with white
+// (pct = accent share, 0-1) — a softer, branded alternative to a flat gray
+// fill, used for the Zählpunkt group sub-header band in drawEnergyPeriodTable/
+// drawGenerationPeriodTable so it reads as a proper section divider instead of
+// floating unstyled text, without competing with the fully accent-filled main
+// table header.
+func (t InvoiceTheme) tint(pct float64) (int, int, int) {
+	mix := func(c int) int {
+		v := int(float64(c)*pct + 255*(1-pct))
+		if v > 255 {
+			v = 255
+		}
+		if v < 0 {
+			v = 0
+		}
+		return v
+	}
+	return mix(t.AccentR), mix(t.AccentG), mix(t.AccentB)
+}
+
 // ThemeFromEEG builds an InvoiceTheme from the persisted per-EEG design fields
 // (see domain.EEG / migration 093). Falls back to DefaultOikosTheme's accent
 // color when eeg.InvoiceAccentColor isn't a valid "#rrggbb" hex string (handler
@@ -324,23 +344,191 @@ func drawWrappingLineRow(pdf *fpdf.Fpdf, theme InvoiceTheme, colDesc, colKwh, co
 	pdf.CellFormat(colAmount, rowH, amount, "1", 1, "R", false, 0, "")
 }
 
+// wrappingHeaderRowHeight returns the height drawWrappingHeaderRow would render
+// at, without drawing anything — used to measure a table's total height ahead
+// of drawing it (see ensurePageSpace).
+func wrappingHeaderRowHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, cols []float64, labels []string) float64 {
+	lineH := theme.h(4.2)
+	maxLines := 1
+	for i, label := range labels {
+		if lines := len(wrapLines(pdf, label, cols[i]-2)); lines > maxLines {
+			maxLines = lines
+		}
+	}
+	return float64(maxLines) * lineH
+}
+
+// wrappingLineRowHeight returns the height drawWrappingLineRow would render at
+// for the given description text, without drawing anything.
+func wrappingLineRowHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, colDesc, baseRowH float64, desc string) float64 {
+	lineH := theme.h(5.0)
+	if wrapped := float64(len(wrapLines(pdf, desc, colDesc-2))) * lineH; wrapped > baseRowH {
+		return wrapped
+	}
+	return baseRowH
+}
+
+// ensurePageSpace starts a new page if "needed" vertical space wouldn't fit
+// before the bottom margin on the current page. Called before drawing a table
+// as a whole (banner/header through to its last row) so it never gets torn
+// across a page break — e.g. the header landing on one page and the data rows
+// on the next, or a Zählpunkt group heading separated from its rows.
+func ensurePageSpace(pdf *fpdf.Fpdf, needed float64) {
+	if pdf.GetY()+needed > pageBreakTrigger(pdf) {
+		pdf.AddPage()
+	}
+}
+
+// pageBreakTrigger returns the Y coordinate beyond which content no longer
+// fits above the bottom margin on the current page.
+func pageBreakTrigger(pdf *fpdf.Fpdf) float64 {
+	pageH, _ := pdf.GetPageSize()
+	_, _, _, bottomMargin := pdf.GetMargins()
+	return pageH - bottomMargin
+}
+
+// priceEpsilonCt is the tolerance used when comparing per-month ct/kWh prices —
+// below the 4 decimal places actually shown ("%.4f ct"), so floating-point noise
+// from weighted/TOU price calculations never triggers a false "price varies".
+const priceEpsilonCt = 0.00005
+
+// monthlyEnergyPriceVaries reports whether the Bezug price actually differed
+// across the months of the billing period (e.g. a monthly tariff plan billed
+// quarterly) — months without consumption are ignored. Used to force monthly
+// rows even when the admin has collapsed the "individuell" design to period
+// totals (see eeg.InvoiceShowMonthlyBreakdown): a single blended price row
+// would otherwise misrepresent what was actually charged.
+func monthlyEnergyPriceVaries(items []MonthlyKwh) bool {
+	first, seen := 0.0, false
+	for _, m := range items {
+		if m.ConsumptionKwh == 0 {
+			continue
+		}
+		if !seen {
+			first, seen = m.EnergyPriceCt, true
+			continue
+		}
+		if math.Abs(m.EnergyPriceCt-first) > priceEpsilonCt {
+			return true
+		}
+	}
+	return false
+}
+
+// monthlyGenerationPriceVaries is the Einspeisung counterpart of
+// monthlyEnergyPriceVaries.
+func monthlyGenerationPriceVaries(items []MonthlyKwh) bool {
+	first, seen := 0.0, false
+	for _, m := range items {
+		if m.GenerationKwh == 0 {
+			continue
+		}
+		if !seen {
+			first, seen = m.ProducerPriceCt, true
+			continue
+		}
+		if math.Abs(m.ProducerPriceCt-first) > priceEpsilonCt {
+			return true
+		}
+	}
+	return false
+}
+
+// aggregateEnergyRows collapses monthly EnergyPeriodRow entries into one row
+// per Zählpunkt (summed kWh columns, ZeitraumVon/Bis spanning the full group),
+// preserving the order Zählpunkte first appear in. Used when the "individuell"
+// design collapses the measurement table to period totals.
+func aggregateEnergyRows(rows []EnergyPeriodRow) []EnergyPeriodRow {
+	if len(rows) == 0 {
+		return rows
+	}
+	order := make([]string, 0, len(rows))
+	agg := make(map[string]*EnergyPeriodRow, len(rows))
+	for _, r := range rows {
+		a, ok := agg[r.Zaehlpunkt]
+		if !ok {
+			cp := r
+			agg[r.Zaehlpunkt] = &cp
+			order = append(order, r.Zaehlpunkt)
+			continue
+		}
+		a.GesamtverbrauchKwh += r.GesamtverbrauchKwh
+		a.NetzbezugKwh += r.NetzbezugKwh
+		a.CommunityVerbrauchKwh += r.CommunityVerbrauchKwh
+		if r.ZeitraumVon.Before(a.ZeitraumVon) {
+			a.ZeitraumVon = r.ZeitraumVon
+		}
+		if r.ZeitraumBis.After(a.ZeitraumBis) {
+			a.ZeitraumBis = r.ZeitraumBis
+		}
+	}
+	result := make([]EnergyPeriodRow, 0, len(order))
+	for _, zp := range order {
+		result = append(result, *agg[zp])
+	}
+	return result
+}
+
+// aggregateGenerationRows is the GenerationPeriodRow counterpart of aggregateEnergyRows.
+func aggregateGenerationRows(rows []GenerationPeriodRow) []GenerationPeriodRow {
+	if len(rows) == 0 {
+		return rows
+	}
+	order := make([]string, 0, len(rows))
+	agg := make(map[string]*GenerationPeriodRow, len(rows))
+	for _, r := range rows {
+		a, ok := agg[r.Zaehlpunkt]
+		if !ok {
+			cp := r
+			agg[r.Zaehlpunkt] = &cp
+			order = append(order, r.Zaehlpunkt)
+			continue
+		}
+		a.GesamteinspeisungKwh += r.GesamteinspeisungKwh
+		a.AbnahmeKwh += r.AbnahmeKwh
+		a.ResteinspeisungKwh += r.ResteinspeisungKwh
+		if r.ZeitraumVon.Before(a.ZeitraumVon) {
+			a.ZeitraumVon = r.ZeitraumVon
+		}
+		if r.ZeitraumBis.After(a.ZeitraumBis) {
+			a.ZeitraumBis = r.ZeitraumBis
+		}
+	}
+	result := make([]GenerationPeriodRow, 0, len(order))
+	for _, zp := range order {
+		result = append(result, *agg[zp])
+	}
+	return result
+}
+
 // drawEnergyPeriodTable renders the Oikos-style energy breakdown table (Zeitraum
-// von/bis, Gesamtverbrauch, Netzbezug, Community-Verbrauch) with an accent-filled
-// header and an unbordered total row, matching the reference PDF's look. When
-// rows span more than one distinct Zählpunkt, each ZP's rows are preceded by a
-// small "Zählpunkt: {ZP}" sub-heading (mirrors drawMpSubRow's convention in the
-// pricing table) — the reference PDF only ever shows one ZP and has no such
-// heading, so the single-ZP case stays visually identical to it.
-func drawEnergyPeriodTable(pdf *fpdf.Fpdf, rows []EnergyPeriodRow, theme InvoiceTheme, eeg *domain.EEG) {
+// von/bis, Gesamtverbrauch, Community-Verbrauch, Netzbezug) with an accent-filled
+// header and a bordered "Summe" row totaling every kWh column. Column order
+// mirrors drawGenerationPeriodTable's (Gesamt, Energiegemeinschaft-Austausch,
+// extern) so the two tables' "Austausch mit der Energiegemeinschaft" columns
+// line up visually. When rows span
+// more than one distinct Zählpunkt, each ZP's rows are preceded by a tinted,
+// bordered "Zählpunkt: {ZP}" section-header band (mirrors drawMpSubRow's
+// convention in the pricing table) — the reference PDF only ever shows one ZP
+// and has no such heading, so the single-ZP case stays visually identical to it.
+func drawEnergyPeriodTable(pdf *fpdf.Fpdf, rows []EnergyPeriodRow, theme InvoiceTheme, eeg *domain.EEG, aggregate bool) {
 	if len(rows) == 0 {
 		return
+	}
+	if aggregate {
+		rows = aggregateEnergyRows(rows)
 	}
 	fullW := printableWidth(pdf)
 	colVon := 30.0
 	colBis := 30.0
 	colGesamt := 38.0
-	colNetz := 36.0
-	colCommunity := fullW - colVon - colBis - colGesamt - colNetz
+	// Community-Verbrauch (Bezug aus der Energiegemeinschaft) comes right after
+	// Gesamtverbrauch, Netzbezug (extern) last — mirrors drawGenerationPeriodTable's
+	// column order (Abnahme durch die Energiegemeinschaft, then Resteinspeisung
+	// extern) so the "Austausch mit der Energiegemeinschaft" column sits in the
+	// same position in both tables.
+	colCommunity := 36.0
+	colNetz := fullW - colVon - colBis - colGesamt - colCommunity
 	rowH := theme.h(7.0)
 	headerStartSize := theme.size(-1)
 
@@ -358,42 +546,80 @@ func drawEnergyPeriodTable(pdf *fpdf.Fpdf, rows []EnergyPeriodRow, theme Invoice
 	labelNetz := orDefault(eeg.InvoiceEnergyLabelNetzbezug, "Netzbezug kWh")
 	labelCommunity := orDefault(eeg.InvoiceEnergyLabelCommunityVerbrauch, "Community-Verbrauch kWh")
 
-	pdf.SetFont("Theme", "B", headerStartSize)
-	drawWrappingHeaderRow(pdf, theme,
-		[]float64{colVon, colBis, colGesamt, colNetz, colCommunity},
-		[]string{"L", "L", "R", "R", "R"},
-		[]string{labelVon, labelBis, labelGesamt, labelNetz, labelCommunity},
-	)
+	headerCols := []float64{colVon, colBis, colGesamt, colCommunity, colNetz}
+	headerLabels := []string{labelVon, labelBis, labelGesamt, labelCommunity, labelNetz}
+	drawHeader := func() {
+		pdf.SetFont("Theme", "B", headerStartSize)
+		drawWrappingHeaderRow(pdf, theme, headerCols, []string{"L", "L", "R", "R", "R"}, headerLabels)
+		pdf.SetFont("Theme", "", theme.size(-1))
+	}
+	drawZPHeading := func(zp string) {
+		tr, tg, tb := theme.tint(0.3)
+		pdf.SetFillColor(tr, tg, tb)
+		pdf.SetFont("Theme", "B", theme.size(-1.5))
+		pdf.SetTextColor(70, 70, 70)
+		pdf.CellFormat(fullW, theme.h(5.5), "Zählpunkt: "+zp, "1", 1, "L", true, 0, "")
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetFillColor(255, 255, 255)
+		pdf.SetFont("Theme", "", theme.size(-1))
+	}
 
-	pdf.SetFont("Theme", "", theme.size(-1))
+	// Page-break avoidance, checked per row (not just once up front) so a
+	// table that genuinely spans multiple pages still never tears: every
+	// continuation page reprints the column header, and — if the break falls
+	// inside a Zählpunkt group — reprints that group's heading band too, so
+	// no row is ever left without its header/heading in view above it.
+	headerH := wrappingHeaderRowHeight(pdf, theme, headerCols, headerLabels)
+	ensurePageSpace(pdf, headerH+rowH) // header + at least one row
+	drawHeader()
+
 	pdf.SetFillColor(255, 255, 255)
 	var totalGesamt, totalNetz, totalCommunity float64
 	lastZP := ""
 	first := true
 	for _, r := range rows {
-		if showZPHeadings && (first || r.Zaehlpunkt != lastZP) {
-			pdf.SetFont("Theme", "B", theme.size(-2.5))
-			pdf.SetTextColor(120, 120, 120)
-			pdf.CellFormat(fullW, theme.h(4.5), "Zählpunkt: "+r.Zaehlpunkt, "", 1, "L", false, 0, "")
-			pdf.SetTextColor(0, 0, 0)
-			pdf.SetFont("Theme", "", theme.size(-1))
+		newZPGroup := showZPHeadings && (first || r.Zaehlpunkt != lastZP)
+		blockH := rowH
+		if newZPGroup {
+			blockH += theme.h(5.5)
+		}
+		if pdf.GetY()+blockH > pageBreakTrigger(pdf) {
+			pdf.AddPage()
+			drawHeader()
+			if showZPHeadings {
+				drawZPHeading(r.Zaehlpunkt)
+			}
+		} else if newZPGroup {
+			drawZPHeading(r.Zaehlpunkt)
+		}
+		if showZPHeadings {
 			lastZP = r.Zaehlpunkt
 		}
 		first = false
 		pdf.CellFormat(colVon, rowH, r.ZeitraumVon.Format("02.01.2006"), "1", 0, "L", false, 0, "")
 		pdf.CellFormat(colBis, rowH, r.ZeitraumBis.Format("02.01.2006"), "1", 0, "L", false, 0, "")
 		pdf.CellFormat(colGesamt, rowH, formatKwh(r.GesamtverbrauchKwh), "1", 0, "R", false, 0, "")
-		pdf.CellFormat(colNetz, rowH, formatKwh(r.NetzbezugKwh), "1", 0, "R", false, 0, "")
-		pdf.CellFormat(colCommunity, rowH, formatKwh(r.CommunityVerbrauchKwh), "1", 1, "R", false, 0, "")
+		pdf.CellFormat(colCommunity, rowH, formatKwh(r.CommunityVerbrauchKwh), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(colNetz, rowH, formatKwh(r.NetzbezugKwh), "1", 1, "R", false, 0, "")
 		totalGesamt += r.GesamtverbrauchKwh
 		totalNetz += r.NetzbezugKwh
 		totalCommunity += r.CommunityVerbrauchKwh
 	}
-	// Unbordered total row, right-aligned under the last column — matches the
-	// reference PDF, which shows only the summed community-consumption figure.
+	// Bordered, gray-filled "Summe" row — every kWh column gets its total (not
+	// just Community-Verbrauch), so a multi-Zählpunkt table always closes with a
+	// clear grand total across the whole board. Repeats the header first if it
+	// would otherwise land alone at the top of a new page.
+	if pdf.GetY()+rowH > pageBreakTrigger(pdf) {
+		pdf.AddPage()
+		drawHeader()
+	}
 	pdf.SetFont("Theme", "B", theme.size(-1))
-	pdf.CellFormat(colVon+colBis+colGesamt+colNetz, rowH, "", "", 0, "", false, 0, "")
-	pdf.CellFormat(colCommunity, rowH, formatKwh(totalCommunity), "", 1, "R", false, 0, "")
+	pdf.SetFillColor(235, 235, 235)
+	pdf.CellFormat(colVon+colBis, rowH, "Summe", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(colGesamt, rowH, formatKwh(totalGesamt), "1", 0, "R", true, 0, "")
+	pdf.CellFormat(colCommunity, rowH, formatKwh(totalCommunity), "1", 0, "R", true, 0, "")
+	pdf.CellFormat(colNetz, rowH, formatKwh(totalNetz), "1", 1, "R", true, 0, "")
+	pdf.SetFillColor(255, 255, 255)
 	pdf.SetFont("Theme", "", theme.size(0))
 	theme.ln(pdf, 4)
 }
@@ -403,12 +629,12 @@ func drawEnergyPeriodTable(pdf *fpdf.Fpdf, rows []EnergyPeriodRow, theme Invoice
 // Energiegemeinschaft (community-absorbed, the billed amount) / Resteinspeisung
 // (residual fed into the public grid). Uses the same column widths as the
 // consumption table so the two tables line up visually when both are shown.
-// Unlike drawEnergyPeriodTable's total row (which only totals the single
-// billed column), both Abnahme and Resteinspeisung totals are shown here since
-// both are meaningful to a producer.
-func drawGenerationPeriodTable(pdf *fpdf.Fpdf, rows []GenerationPeriodRow, theme InvoiceTheme, eeg *domain.EEG) {
+func drawGenerationPeriodTable(pdf *fpdf.Fpdf, rows []GenerationPeriodRow, theme InvoiceTheme, eeg *domain.EEG, aggregate bool) {
 	if len(rows) == 0 {
 		return
+	}
+	if aggregate {
+		rows = aggregateGenerationRows(rows)
 	}
 	fullW := printableWidth(pdf)
 	colVon := 30.0
@@ -433,25 +659,50 @@ func drawGenerationPeriodTable(pdf *fpdf.Fpdf, rows []GenerationPeriodRow, theme
 	labelAbnahme := orDefault(eeg.InvoiceEnergyLabelAbnahmeEnergiegemeinschaft, "Abnahme durch Energiegemeinschaft kWh")
 	labelRest := orDefault(eeg.InvoiceEnergyLabelResteinspeisung, "Resteinspeisung kWh")
 
-	pdf.SetFont("Theme", "B", headerStartSize)
-	drawWrappingHeaderRow(pdf, theme,
-		[]float64{colVon, colBis, colGesamt, colAbnahme, colRest},
-		[]string{"L", "L", "R", "R", "R"},
-		[]string{labelVon, labelBis, labelGesamt, labelAbnahme, labelRest},
-	)
+	headerCols := []float64{colVon, colBis, colGesamt, colAbnahme, colRest}
+	headerLabels := []string{labelVon, labelBis, labelGesamt, labelAbnahme, labelRest}
+	drawHeader := func() {
+		pdf.SetFont("Theme", "B", headerStartSize)
+		drawWrappingHeaderRow(pdf, theme, headerCols, []string{"L", "L", "R", "R", "R"}, headerLabels)
+		pdf.SetFont("Theme", "", theme.size(-1))
+	}
+	drawZPHeading := func(zp string) {
+		tr, tg, tb := theme.tint(0.3)
+		pdf.SetFillColor(tr, tg, tb)
+		pdf.SetFont("Theme", "B", theme.size(-1.5))
+		pdf.SetTextColor(70, 70, 70)
+		pdf.CellFormat(fullW, theme.h(5.5), "Zählpunkt: "+zp, "1", 1, "L", true, 0, "")
+		pdf.SetTextColor(0, 0, 0)
+		pdf.SetFillColor(255, 255, 255)
+		pdf.SetFont("Theme", "", theme.size(-1))
+	}
 
-	pdf.SetFont("Theme", "", theme.size(-1))
+	// See drawEnergyPeriodTable — same per-row page-break-avoidance, so a
+	// table that genuinely spans multiple pages still never tears.
+	headerH := wrappingHeaderRowHeight(pdf, theme, headerCols, headerLabels)
+	ensurePageSpace(pdf, headerH+rowH) // header + at least one row
+	drawHeader()
+
 	pdf.SetFillColor(255, 255, 255)
-	var totalAbnahme, totalRest float64
+	var totalGesamt, totalAbnahme, totalRest float64
 	lastZP := ""
 	first := true
 	for _, r := range rows {
-		if showZPHeadings && (first || r.Zaehlpunkt != lastZP) {
-			pdf.SetFont("Theme", "B", theme.size(-2.5))
-			pdf.SetTextColor(120, 120, 120)
-			pdf.CellFormat(fullW, theme.h(4.5), "Zählpunkt: "+r.Zaehlpunkt, "", 1, "L", false, 0, "")
-			pdf.SetTextColor(0, 0, 0)
-			pdf.SetFont("Theme", "", theme.size(-1))
+		newZPGroup := showZPHeadings && (first || r.Zaehlpunkt != lastZP)
+		blockH := rowH
+		if newZPGroup {
+			blockH += theme.h(5.5)
+		}
+		if pdf.GetY()+blockH > pageBreakTrigger(pdf) {
+			pdf.AddPage()
+			drawHeader()
+			if showZPHeadings {
+				drawZPHeading(r.Zaehlpunkt)
+			}
+		} else if newZPGroup {
+			drawZPHeading(r.Zaehlpunkt)
+		}
+		if showZPHeadings {
 			lastZP = r.Zaehlpunkt
 		}
 		first = false
@@ -460,15 +711,92 @@ func drawGenerationPeriodTable(pdf *fpdf.Fpdf, rows []GenerationPeriodRow, theme
 		pdf.CellFormat(colGesamt, rowH, formatKwh(r.GesamteinspeisungKwh), "1", 0, "R", false, 0, "")
 		pdf.CellFormat(colAbnahme, rowH, formatKwh(r.AbnahmeKwh), "1", 0, "R", false, 0, "")
 		pdf.CellFormat(colRest, rowH, formatKwh(r.ResteinspeisungKwh), "1", 1, "R", false, 0, "")
+		totalGesamt += r.GesamteinspeisungKwh
 		totalAbnahme += r.AbnahmeKwh
 		totalRest += r.ResteinspeisungKwh
 	}
+	// Bordered, gray-filled "Summe" row — every kWh column gets its total
+	// (including Gesamteinspeisung, previously left blank). Repeats the header
+	// first if it would otherwise land alone at the top of a new page.
+	if pdf.GetY()+rowH > pageBreakTrigger(pdf) {
+		pdf.AddPage()
+		drawHeader()
+	}
 	pdf.SetFont("Theme", "B", theme.size(-1))
-	pdf.CellFormat(colVon+colBis+colGesamt, rowH, "", "", 0, "", false, 0, "")
-	pdf.CellFormat(colAbnahme, rowH, formatKwh(totalAbnahme), "", 0, "R", false, 0, "")
-	pdf.CellFormat(colRest, rowH, formatKwh(totalRest), "", 1, "R", false, 0, "")
+	pdf.SetFillColor(235, 235, 235)
+	pdf.CellFormat(colVon+colBis, rowH, "Summe", "1", 0, "L", true, 0, "")
+	pdf.CellFormat(colGesamt, rowH, formatKwh(totalGesamt), "1", 0, "R", true, 0, "")
+	pdf.CellFormat(colAbnahme, rowH, formatKwh(totalAbnahme), "1", 0, "R", true, 0, "")
+	pdf.CellFormat(colRest, rowH, formatKwh(totalRest), "1", 1, "R", true, 0, "")
+	pdf.SetFillColor(255, 255, 255)
 	pdf.SetFont("Theme", "", theme.size(0))
 	theme.ln(pdf, 4)
+}
+
+// themedPricingTableHeight computes the total height of the bordered
+// "Monatsabrechnung" table (banner + header + every line item) exactly as
+// GeneratePDFThemed will draw it — mirrors the same branch conditions — so
+// ensurePageSpace can be called before drawing anything and the table's
+// header never ends up separated from its rows by a page break. Does NOT
+// include the unbordered VAT/Saldo section below the table — that's plain
+// label/value text without a header row to tear away from, so a page break
+// inside it reads fine.
+func themedPricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domain.EEG, vat VATOptions, colDesc, rowH float64, effShowCons, effShowGen bool) float64 {
+	h := rowH // banner
+	h += rowH // column header
+	multiMonth := len(vat.MonthlyLineItems) > 1
+	showConsRows := multiMonth && effShowCons
+	showGenRows := multiMonth && effShowGen
+	if multiMonth {
+		for _, m := range vat.MonthlyLineItems {
+			if m.ConsumptionKwh == 0 && vat.GenerationKwh > 0 {
+				continue
+			}
+			if showConsRows {
+				monthLabel := germanMonth(m.Month.Month()) + " " + fmt.Sprintf("%d", m.Month.Year())
+				h += wrappingLineRowHeight(pdf, theme, colDesc, rowH, "Bezug Strom "+monthLabel)
+			}
+		}
+		if vat.ConsumptionKwh > 0 || vat.GenerationKwh == 0 {
+			h += rowH // Summe Bezug
+		}
+		for _, m := range vat.MonthlyLineItems {
+			if m.GenerationKwh == 0 {
+				continue
+			}
+			if showGenRows {
+				monthLabel := germanMonth(m.Month.Month()) + " " + fmt.Sprintf("%d", m.Month.Year())
+				h += wrappingLineRowHeight(pdf, theme, colDesc, rowH, "Einspeisung "+monthLabel)
+			}
+		}
+		if vat.GenerationKwh > 0 {
+			h += rowH // Summe Einspeisung
+		}
+		feeMonths := vat.FeeMonths
+		if feeMonths < 1 {
+			feeMonths = 1
+		}
+		feeTotal := (vat.MeterFeeEur + vat.ParticipationFeeEur) * float64(feeMonths)
+		if feeTotal > 0 || eeg.InvoiceShowZeroFees {
+			feeLabel := "Messstellengebühr / Teilnahmegebühr"
+			if feeMonths > 1 {
+				feeLabel = fmt.Sprintf("Messstellengebühr / Teilnahmegebühr (%d Monate)", feeMonths)
+			}
+			h += wrappingLineRowHeight(pdf, theme, colDesc, rowH, feeLabel)
+		}
+	} else if vat.GenerationKwh > 0 {
+		h += rowH * 2 // Bezug + Einspeisung, single-line labels
+	} else {
+		h += rowH
+	}
+	if vat.ZaehlpunktsGebuehrTotal > 0 || eeg.InvoiceShowZeroFees {
+		label := fmt.Sprintf("Zählpunktsgebühr (%d × %s)", vat.ZaehlpunktsGebuehrCount, formatAmount(vat.ZaehlpunktsGebuehrEur))
+		if vat.FeeMonths > 1 {
+			label = fmt.Sprintf("Zählpunktsgebühr (%d × %s × %d Monate)", vat.ZaehlpunktsGebuehrCount, formatAmount(vat.ZaehlpunktsGebuehrEur), vat.FeeMonths)
+		}
+		h += wrappingLineRowHeight(pdf, theme, colDesc, rowH, label)
+	}
+	return h
 }
 
 // GeneratePDFThemed renders a consumer/prosumer "Rechnung" with the Oikos-style
@@ -542,8 +870,11 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 	theme.ln(pdf, 4)
 
 	// ── Title ─────────────────────────────────────────────────────────────────
+	// Uses DisplayNameOrName (Anzeigename) — unlike the Rechnungssteller header
+	// block above, which always shows the legal eeg.Name since that block is
+	// the legally binding part of the document.
 	pdf.SetFont("Theme", "B", theme.size(3))
-	pdf.CellFormat(0, theme.h(8), "Rechnung - "+eeg.Name, "", 1, "L", false, 0, "")
+	pdf.CellFormat(0, theme.h(8), "Rechnung - "+eeg.DisplayNameOrName(), "", 1, "L", false, 0, "")
 	pdf.SetFont("Theme", "", theme.size(0))
 	pdf.CellFormat(0, theme.h(6), fmt.Sprintf("Abrechnungszeitraum: %s – %s", inv.PeriodStart.Format("02.01.2006"), inv.PeriodEnd.Format("02.01.2006")), "", 1, "L", false, 0, "")
 	theme.ln(pdf, 4)
@@ -555,11 +886,21 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 		theme.ln(pdf, 4)
 	}
 
+	// effShowCons/effShowGen: the admin's InvoiceShowMonthlyBreakdown setting
+	// collapses monthly rows to period totals, UNLESS the tariff price actually
+	// varied across months (e.g. a monthly tariff plan billed quarterly) — in
+	// that case monthly rows are forced regardless, since a single "Preis je
+	// kWh" cell can't represent multiple different rates. Drives both the
+	// measurement tables below and the pricing table further down, so the two
+	// halves of the invoice always stay consistent with each other.
+	effShowCons := eeg.InvoiceShowMonthlyBreakdown || monthlyEnergyPriceVaries(vat.MonthlyLineItems)
+	effShowGen := eeg.InvoiceShowMonthlyBreakdown || monthlyGenerationPriceVaries(vat.MonthlyLineItems)
+
 	// ── Energy breakdown table (Netzbezug/Community-Verbrauch, see EnergyPeriodRow) ─
-	drawEnergyPeriodTable(pdf, energyRows, theme, eeg)
+	drawEnergyPeriodTable(pdf, energyRows, theme, eeg, !effShowCons)
 
 	// ── Generation breakdown table (Gesamteinspeisung/Abnahme/Resteinspeisung) ─
-	drawGenerationPeriodTable(pdf, generationRows, theme, eeg)
+	drawGenerationPeriodTable(pdf, generationRows, theme, eeg, !effShowGen)
 
 	// ── Pricing table: same content/branches as GeneratePDF, restyled ────────
 	colDesc := 80.0
@@ -568,6 +909,8 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 	colAmount := 0.0
 	rowH := theme.h(8.0)
 	vatH := theme.h(6.0)
+
+	ensurePageSpace(pdf, themedPricingTableHeight(pdf, theme, eeg, vat, colDesc, rowH, effShowCons, effShowGen))
 
 	// Banner title row spanning full width — matches printableWidth exactly so it
 	// aligns with the column row below (colAmount=0 auto-fills to the same edge).
@@ -586,6 +929,8 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 	pdf.SetFillColor(255, 255, 255)
 
 	multiMonth := len(vat.MonthlyLineItems) > 1
+	showConsRows := multiMonth && effShowCons
+	showGenRows := multiMonth && effShowGen
 	if multiMonth {
 		totalConsKwh := 0.0
 		totalConsAmount := 0.0
@@ -593,7 +938,6 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 			if m.ConsumptionKwh == 0 && vat.GenerationKwh > 0 {
 				continue
 			}
-			monthLabel := germanMonth(m.Month.Month()) + " " + fmt.Sprintf("%d", m.Month.Year())
 			priceCt := m.EnergyPriceCt
 			if priceCt == 0 {
 				priceCt = vat.EnergyPrice
@@ -601,12 +945,14 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 			energyAmount := m.ConsumptionKwh * priceCt / 100
 			totalConsKwh += m.ConsumptionKwh
 			totalConsAmount += energyAmount
-			drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
-				"Bezug Strom "+monthLabel, formatKwh(m.ConsumptionKwh), fmt.Sprintf("%.4f ct", priceCt), formatAmount(energyAmount))
+			if showConsRows {
+				monthLabel := germanMonth(m.Month.Month()) + " " + fmt.Sprintf("%d", m.Month.Year())
+				drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
+					"Bezug Strom "+monthLabel, formatKwh(m.ConsumptionKwh), fmt.Sprintf("%.4f ct", priceCt), formatAmount(energyAmount))
+			}
 		}
 		if vat.ConsumptionKwh > 0 || vat.GenerationKwh == 0 {
 			drawTotalRow(pdf, colDesc, colKwh, colPrice, colAmount, rowH, "Summe Bezug", totalConsKwh, totalConsAmount, false)
-			drawMpSubRow(pdf, vat.ConsumptionMeterPointKwh)
 		}
 		totalGenKwh := 0.0
 		totalGenAmount := 0.0
@@ -614,7 +960,6 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 			if m.GenerationKwh == 0 {
 				continue
 			}
-			monthLabel := germanMonth(m.Month.Month()) + " " + fmt.Sprintf("%d", m.Month.Year())
 			prodPriceCt := m.ProducerPriceCt
 			if prodPriceCt == 0 {
 				prodPriceCt = vat.ProducerPrice
@@ -622,12 +967,14 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 			genAmount := m.GenerationKwh * prodPriceCt / 100
 			totalGenKwh += m.GenerationKwh
 			totalGenAmount += genAmount
-			drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
-				"Einspeisung "+monthLabel, formatKwh(m.GenerationKwh), fmt.Sprintf("%.4f ct", prodPriceCt), "-"+formatAmount(genAmount))
+			if showGenRows {
+				monthLabel := germanMonth(m.Month.Month()) + " " + fmt.Sprintf("%d", m.Month.Year())
+				drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
+					"Einspeisung "+monthLabel, formatKwh(m.GenerationKwh), fmt.Sprintf("%.4f ct", prodPriceCt), "-"+formatAmount(genAmount))
+			}
 		}
 		if vat.GenerationKwh > 0 {
 			drawTotalRow(pdf, colDesc, colKwh, colPrice, colAmount, rowH, "Summe Einspeisung", totalGenKwh, totalGenAmount, true)
-			drawMpSubRow(pdf, vat.GenerationMeterPointKwh)
 		}
 		feeMonths := vat.FeeMonths
 		if feeMonths < 1 {
@@ -644,15 +991,12 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 	} else if vat.GenerationKwh > 0 {
 		drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
 			"Bezug Strom "+period, formatKwh(vat.ConsumptionKwh), fmt.Sprintf("%.4f ct", vat.EnergyPrice), formatAmount(vat.EnergyNet))
-		drawMpSubRow(pdf, vat.ConsumptionMeterPointKwh)
 
 		drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
 			"Einspeisung Strom "+period, formatKwh(vat.GenerationKwh), fmt.Sprintf("%.4f ct", vat.ProducerPrice), "-"+formatAmount(vat.GenerationNet))
-		drawMpSubRow(pdf, vat.GenerationMeterPointKwh)
 	} else {
 		drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
 			"Bezug Strom "+period, formatKwh(inv.ConsumptionKwh), fmt.Sprintf("%.4f ct", vat.EnergyPrice), formatAmount(vat.EnergyNet))
-		drawMpSubRow(pdf, vat.ConsumptionMeterPointKwh)
 	}
 
 	if vat.ZaehlpunktsGebuehrTotal > 0 || eeg.InvoiceShowZeroFees {
@@ -875,6 +1219,39 @@ func drawThemedTotalLine(pdf *fpdf.Fpdf, label string, theme InvoiceTheme) {
 	pdf.SetFont("Theme", "", theme.size(0))
 }
 
+// creditNotePricingTableHeight is the GenerateCreditNotePDFThemed counterpart
+// of themedPricingTableHeight (see there) — same page-break-avoidance purpose,
+// mirrors this function's own banner/header/line-item/drawMpSubRow branches.
+func creditNotePricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domain.EEG, generationMeterPoints []MeterPointKwh, monthlyItems []MonthlyKwh, colDesc, rowH float64) float64 {
+	h := rowH // banner
+	h += rowH // column header
+	showGenRows := len(monthlyItems) > 1 && (eeg.InvoiceShowMonthlyBreakdown || monthlyGenerationPriceVaries(monthlyItems))
+	if len(monthlyItems) > 1 {
+		for _, m := range monthlyItems {
+			if m.GenerationKwh == 0 {
+				continue
+			}
+			if showGenRows {
+				monthLabel := germanMonth(m.Month.Month()) + " " + fmt.Sprintf("%d", m.Month.Year())
+				h += wrappingLineRowHeight(pdf, theme, colDesc, rowH, "Einspeisung Strom "+monthLabel)
+			}
+		}
+		h += rowH // Summe Einspeisung
+	} else {
+		h += rowH // single Einspeisung row
+	}
+	// drawMpSubRow's subH is fixed at 4.5 and not theme-scaled (shared helper
+	// from pdf.go, always DejaVu regardless of theme — see newThemedPDF).
+	if mpCount := len(generationMeterPoints); mpCount > 0 {
+		if mpCount == 1 {
+			h += 4.5
+		} else {
+			h += 4.5 * float64(mpCount)
+		}
+	}
+	return h
+}
+
 // GenerateCreditNotePDFThemed renders a producer "Gutschrift" with the Oikos-style
 // visual theme — mirrors GenerateCreditNotePDF's data logic (multi-month/single-
 // month branches, VAT/Reverse-Charge handling) exactly, restyling header, logo,
@@ -947,8 +1324,11 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 	theme.ln(pdf, 4)
 
 	// ── Title ─────────────────────────────────────────────────────────────────
+	// Uses DisplayNameOrName (Anzeigename) — unlike the Rechnungssteller header
+	// block above, which always shows the legal eeg.Name since that block is
+	// the legally binding part of the document.
 	pdf.SetFont("Theme", "B", theme.size(3))
-	pdf.CellFormat(0, theme.h(8), "Gutschrift - "+eeg.Name, "", 1, "L", false, 0, "")
+	pdf.CellFormat(0, theme.h(8), "Gutschrift - "+eeg.DisplayNameOrName(), "", 1, "L", false, 0, "")
 	pdf.SetFont("Theme", "", theme.size(0))
 	pdf.CellFormat(0, theme.h(6), fmt.Sprintf("Abrechnungszeitraum: %s – %s", inv.PeriodStart.Format("02.01.2006"), inv.PeriodEnd.Format("02.01.2006")), "", 1, "L", false, 0, "")
 	theme.ln(pdf, 4)
@@ -968,6 +1348,8 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 	rowH := theme.h(8.0)
 	vatH := theme.h(6.0)
 
+	ensurePageSpace(pdf, creditNotePricingTableHeight(pdf, theme, eeg, generationMeterPoints, monthlyItems, colDesc, rowH))
+
 	pdf.SetFont("Theme", "B", theme.size(0))
 	theme.apply(pdf)
 	pdf.CellFormat(printableWidth(pdf), rowH, "Gutschriftsabrechnung", "1", 1, "C", true, 0, "")
@@ -983,6 +1365,11 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 	pdf.SetFillColor(255, 255, 255)
 	netAmount := generationKwh * producerPriceCt / 100
 
+	// See monthlyGenerationPriceVaries (GeneratePDFThemed) — the admin's
+	// InvoiceShowMonthlyBreakdown setting collapses monthly rows to the period
+	// total, unless the tariff price actually varied across months, in which
+	// case monthly rows are forced regardless.
+	showGenRows := len(monthlyItems) > 1 && (eeg.InvoiceShowMonthlyBreakdown || monthlyGenerationPriceVaries(monthlyItems))
 	if len(monthlyItems) > 1 {
 		totalGenKwh := 0.0
 		totalGenAmount := 0.0
@@ -990,7 +1377,6 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 			if m.GenerationKwh == 0 {
 				continue
 			}
-			monthLabel := germanMonth(m.Month.Month()) + " " + fmt.Sprintf("%d", m.Month.Year())
 			mPriceCt := m.ProducerPriceCt
 			if mPriceCt == 0 {
 				mPriceCt = producerPriceCt
@@ -998,8 +1384,11 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 			genAmount := m.GenerationKwh * mPriceCt / 100
 			totalGenKwh += m.GenerationKwh
 			totalGenAmount += genAmount
-			drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
-				"Einspeisung Strom "+monthLabel, formatKwh(m.GenerationKwh), fmt.Sprintf("%.4f ct", mPriceCt), formatAmount(genAmount))
+			if showGenRows {
+				monthLabel := germanMonth(m.Month.Month()) + " " + fmt.Sprintf("%d", m.Month.Year())
+				drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
+					"Einspeisung Strom "+monthLabel, formatKwh(m.GenerationKwh), fmt.Sprintf("%.4f ct", mPriceCt), formatAmount(genAmount))
+			}
 		}
 		drawTotalRow(pdf, colDesc, colKwh, colPrice, colAmount, rowH, "Summe Einspeisung", totalGenKwh, totalGenAmount, false)
 		drawMpSubRow(pdf, generationMeterPoints)
@@ -1143,8 +1532,11 @@ func GenerateStornorechnungThemed(inv *domain.Invoice, eeg *domain.EEG, member *
 	pdf.SetXY(20, 45)
 
 	// ── Title ─────────────────────────────────────────────────────────────────
+	// Uses DisplayNameOrName (Anzeigename) — unlike the Rechnungssteller header
+	// block above, which always shows the legal eeg.Name since that block is
+	// the legally binding part of the document.
 	pdf.SetFont("Theme", "B", theme.size(3))
-	pdf.CellFormat(0, theme.h(8), "Stornorechnung - "+eeg.Name, "", 1, "L", false, 0, "")
+	pdf.CellFormat(0, theme.h(8), "Stornorechnung - "+eeg.DisplayNameOrName(), "", 1, "L", false, 0, "")
 	theme.ln(pdf, 4)
 
 	// ── Reference, date & billing period ─────────────────────────────────────

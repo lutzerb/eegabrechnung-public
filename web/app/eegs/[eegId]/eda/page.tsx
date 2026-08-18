@@ -244,15 +244,27 @@ export default async function EDAPage({ params, searchParams }: Props) {
                     <tr className="border-b border-slate-200 bg-slate-50">
                       <th className="text-left px-4 py-2 font-medium text-slate-600">Name</th>
                       <th className="text-left px-4 py-2 font-medium text-slate-600">Marktpartner-ID</th>
+                      <th className="text-left px-4 py-2 font-medium text-slate-600"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {[...activeNetzbetreiber]
                       .sort((a, b) => a.name.localeCompare(b.name, "de-AT"))
                       .map((nb) => (
-                        <tr key={nb.id}>
+                        <tr key={nb.id} className={nb.unresolved ? "bg-amber-50" : undefined}>
                           <td className="px-4 py-2.5 text-slate-800">{nb.name}</td>
                           <td className="px-4 py-2.5 font-mono text-xs text-slate-500">{nb.id}</td>
+                          <td className="px-4 py-2.5">
+                            {nb.unresolved && (
+                              <span
+                                className="inline-flex items-center gap-1 text-xs font-medium text-amber-700"
+                                title="Dieser Zählpunkt-Präfix ist weder als bekannter Netzbetreiber noch als dokumentierte Ausnahme hinterlegt. EDA-Aktionen für diesen Zählpunkt werden blockiert, bis die Zuordnung ergänzt wurde."
+                              >
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block" />
+                                Zuordnung unklar
+                              </span>
+                            )}
+                          </td>
                         </tr>
                       ))}
                   </tbody>

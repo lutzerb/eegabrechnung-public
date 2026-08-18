@@ -48,7 +48,8 @@ func TestActiveFromMeterPoints_DedupAndFilter(t *testing.T) {
 }
 
 // TestActiveFromMeterPoints_UnknownPrefixFallsBackToID verifies that an
-// unrecognized Marktpartner-ID is still returned, using the raw ID as Name.
+// unrecognized Marktpartner-ID is still returned, using the raw ID as Name,
+// and is flagged Unresolved so callers know not to trust it blindly.
 func TestActiveFromMeterPoints_UnknownPrefixFallsBackToID(t *testing.T) {
 	mps := []domain.MeterPoint{
 		mp("AT999999123456789012345678", false),
@@ -59,6 +60,66 @@ func TestActiveFromMeterPoints_UnknownPrefixFallsBackToID(t *testing.T) {
 	}
 	if got[0].ID != "AT999999" || got[0].Name != "AT999999" {
 		t.Errorf("expected fallback Info{ID: AT999999, Name: AT999999}, got %+v", got[0])
+	}
+	if !got[0].Unresolved {
+		t.Errorf("expected Unresolved=true for unknown prefix, got %+v", got[0])
+	}
+}
+
+// TestResolveRoutingID_KnownPrefix verifies that a registered EC-Nummer
+// resolves to itself with ok=true.
+func TestResolveRoutingID_KnownPrefix(t *testing.T) {
+	id, ok := netzbetreiber.ResolveRoutingID("AT001000123456789012345678")
+	if !ok || id != "AT001000" {
+		t.Errorf("expected (AT001000, true), got (%q, %v)", id, ok)
+	}
+}
+
+// TestResolveRoutingID_Override verifies that a documented prefix override
+// (e.g. AT008230 → AT008000, Energienetze Steiermark Verteilnetzbereich-Code)
+// resolves to the actual target EC-Nummer, not the literal Zählpunkt prefix.
+func TestResolveRoutingID_Override(t *testing.T) {
+	id, ok := netzbetreiber.ResolveRoutingID("AT0082300801000000000000000089806")
+	if !ok || id != "AT008000" {
+		t.Errorf("expected (AT008000, true), got (%q, %v)", id, ok)
+	}
+}
+
+// TestResolveRoutingID_UnknownPrefix verifies that a prefix with neither a
+// registry entry nor an override is reported as unresolved (ok=false), even
+// though the raw prefix is still returned for error messages.
+func TestResolveRoutingID_UnknownPrefix(t *testing.T) {
+	id, ok := netzbetreiber.ResolveRoutingID("AT999999123456789012345678")
+	if ok {
+		t.Errorf("expected ok=false for unknown prefix, got id=%q ok=true", id)
+	}
+	if id != "AT999999" {
+		t.Errorf("expected raw prefix AT999999 to still be returned, got %q", id)
+	}
+}
+
+// TestResolveRoutingID_TooShort verifies that a Zählpunkt shorter than 8
+// chars is rejected outright.
+func TestResolveRoutingID_TooShort(t *testing.T) {
+	if _, ok := netzbetreiber.ResolveRoutingID("AT0010"); ok {
+		t.Errorf("expected ok=false for too-short Zählpunkt")
+	}
+}
+
+// TestActiveFromMeterPoints_OverrideDedup verifies that two different
+// Zählpunkt-prefixes resolving to the same real Netzbetreiber via an
+// override collapse into a single entry, keyed on the resolved ID.
+func TestActiveFromMeterPoints_OverrideDedup(t *testing.T) {
+	mps := []domain.MeterPoint{
+		mp("AT0082300801000000000000000089806", false), // resolves to AT008000 via override
+		mp("AT0080000801000000000000000012345", false), // literal AT008000
+	}
+	got := netzbetreiber.ActiveFromMeterPoints(mps)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 deduped entry, got %d: %+v", len(got), got)
+	}
+	if got[0].ID != "AT008000" || got[0].Name != "Energienetze Steiermark" || got[0].Unresolved {
+		t.Errorf("expected resolved AT008000 = Energienetze Steiermark, got %+v", got[0])
 	}
 }
 

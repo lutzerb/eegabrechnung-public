@@ -82,6 +82,9 @@ export interface EEG {
   invoice_energy_label_abnahme_energiegemeinschaft?: string;
   invoice_energy_label_resteinspeisung?: string;
   invoice_show_zero_fees?: boolean;
+  // "individuell" design: list every calendar month individually on multi-month
+  // invoices vs. collapse to the period total per Zählpunkt/direction (default true)
+  invoice_show_monthly_breakdown?: boolean;
   // Zusatzzähler feature toggle — manually-read submeters (e.g. Wärmepumpe), default off
   extra_meters_enabled?: boolean;
   created_at?: string;
@@ -223,6 +226,7 @@ export interface UpdateEEGRequest {
   invoice_energy_label_abnahme_energiegemeinschaft?: string;
   invoice_energy_label_resteinspeisung?: string;
   invoice_show_zero_fees?: boolean;
+  invoice_show_monthly_breakdown?: boolean;
   extra_meters_enabled?: boolean;
 }
 
@@ -1016,6 +1020,7 @@ export async function listEDAProcesses(
 export interface ActiveNetzbetreiber {
   id: string;
   name: string;
+  unresolved: boolean;
 }
 
 export async function listActiveNetzbetreiber(

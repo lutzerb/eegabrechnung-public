@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 	_ "time/tzdata" // embed IANA timezone database (required in Alpine containers)
 
@@ -80,8 +81,9 @@ func (h *EDAHandler) ListProcesses(w http.ResponseWriter, r *http.Request) {
 
 // activeNetzbetreiberResponse is one entry of GET /eegs/{eegID}/eda/netzbetreiber.
 type activeNetzbetreiberResponse struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Unresolved bool   `json:"unresolved"`
 }
 
 // ListActiveNetzbetreiber godoc
@@ -110,7 +112,7 @@ func (h *EDAHandler) ListActiveNetzbetreiber(w http.ResponseWriter, r *http.Requ
 	infos := netzbetreiber.ActiveFromMeterPoints(mps)
 	result := make([]activeNetzbetreiberResponse, len(infos))
 	for i, info := range infos {
-		result[i] = activeNetzbetreiberResponse{ID: info.ID, Name: info.Name}
+		result[i] = activeNetzbetreiberResponse{ID: info.ID, Name: info.Name, Unresolved: info.Unresolved}
 	}
 	jsonOK(w, result)
 }
@@ -178,10 +180,6 @@ func (h *EDAHandler) Anmeldung(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "zaehlpunkt is required", http.StatusBadRequest)
 		return
 	}
-	if eeg.GemeinschaftTyp != "BEG" && len(req.Zaehlpunkt) >= 8 && req.Zaehlpunkt[:8] != eeg.EdaNetzbetreiberID {
-		jsonError(w, fmt.Sprintf("Zählpunkt %s passt nicht zum konfigurierten Netzbetreiber %s (Präfix: %s)", req.Zaehlpunkt, eeg.EdaNetzbetreiberID, req.Zaehlpunkt[:8]), http.StatusBadRequest)
-		return
-	}
 	if req.ParticipationFactor <= 0 || req.ParticipationFactor > 100 {
 		jsonError(w, "participation_factor must be between 0 and 100", http.StatusBadRequest)
 		return
@@ -205,10 +203,22 @@ func (h *EDAHandler) Anmeldung(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Derive Netzbetreiber-ID from Zählpunkt prefix; more reliable than the EEG-wide setting.
+	// Resolve the actual Netzbetreiber-ID from the Zählpunkt: the raw 8-char
+	// prefix is not always the correct routing target (some regional
+	// operators reuse historical sub-area codes in Zählpunkten that were
+	// never registered as their own Marktpartner-ID — see prefixOverrides).
 	netzbetreiberTo := eeg.EdaNetzbetreiberID
 	if len(req.Zaehlpunkt) >= 8 {
-		netzbetreiberTo = req.Zaehlpunkt[:8]
+		resolved, ok := netzbetreiber.ResolveRoutingID(req.Zaehlpunkt)
+		if !ok {
+			jsonError(w, fmt.Sprintf("Unbekannter Netzbetreiber-Code für Zählpunkt %s (Präfix %s) — bitte in der Netzbetreiber-Registry oder den Ausnahme-Zuordnungen ergänzen (api/internal/netzbetreiber/lookup.go)", req.Zaehlpunkt, req.Zaehlpunkt[:8]), http.StatusUnprocessableEntity)
+			return
+		}
+		if eeg.GemeinschaftTyp != "BEG" && resolved != eeg.EdaNetzbetreiberID {
+			jsonError(w, fmt.Sprintf("Zählpunkt %s passt nicht zum konfigurierten Netzbetreiber %s (aufgelöste ID: %s)", req.Zaehlpunkt, eeg.EdaNetzbetreiberID, resolved), http.StatusBadRequest)
+			return
+		}
+		netzbetreiberTo = resolved
 	}
 
 	msgID := uuid.NewString()
@@ -360,10 +370,6 @@ func (h *EDAHandler) TeilnahmefaktorAendern(w http.ResponseWriter, r *http.Reque
 		jsonError(w, "zaehlpunkt is required", http.StatusBadRequest)
 		return
 	}
-	if eeg.GemeinschaftTyp != "BEG" && len(req.Zaehlpunkt) >= 8 && req.Zaehlpunkt[:8] != eeg.EdaNetzbetreiberID {
-		jsonError(w, fmt.Sprintf("Zählpunkt %s passt nicht zum konfigurierten Netzbetreiber %s (Präfix: %s)", req.Zaehlpunkt, eeg.EdaNetzbetreiberID, req.Zaehlpunkt[:8]), http.StatusBadRequest)
-		return
-	}
 	if req.ParticipationFactor <= 0 || req.ParticipationFactor > 100 {
 		jsonError(w, "participation_factor must be between 0 and 100", http.StatusBadRequest)
 		return
@@ -414,10 +420,22 @@ func (h *EDAHandler) TeilnahmefaktorAendern(w http.ResponseWriter, r *http.Reque
 		}
 	}
 
-	// Derive Netzbetreiber-ID from Zählpunkt prefix; more reliable than the EEG-wide setting.
+	// Resolve the actual Netzbetreiber-ID from the Zählpunkt: the raw 8-char
+	// prefix is not always the correct routing target (some regional
+	// operators reuse historical sub-area codes in Zählpunkten that were
+	// never registered as their own Marktpartner-ID — see prefixOverrides).
 	netzbetreiberTo := eeg.EdaNetzbetreiberID
 	if len(req.Zaehlpunkt) >= 8 {
-		netzbetreiberTo = req.Zaehlpunkt[:8]
+		resolved, ok := netzbetreiber.ResolveRoutingID(req.Zaehlpunkt)
+		if !ok {
+			jsonError(w, fmt.Sprintf("Unbekannter Netzbetreiber-Code für Zählpunkt %s (Präfix %s) — bitte in der Netzbetreiber-Registry oder den Ausnahme-Zuordnungen ergänzen (api/internal/netzbetreiber/lookup.go)", req.Zaehlpunkt, req.Zaehlpunkt[:8]), http.StatusUnprocessableEntity)
+			return
+		}
+		if eeg.GemeinschaftTyp != "BEG" && resolved != eeg.EdaNetzbetreiberID {
+			jsonError(w, fmt.Sprintf("Zählpunkt %s passt nicht zum konfigurierten Netzbetreiber %s (aufgelöste ID: %s)", req.Zaehlpunkt, eeg.EdaNetzbetreiberID, resolved), http.StatusBadRequest)
+			return
+		}
+		netzbetreiberTo = resolved
 	}
 
 	convID := uuid.NewString()
@@ -544,10 +562,6 @@ func (h *EDAHandler) ZaehlerstandsgangAnfordern(w http.ResponseWriter, r *http.R
 		jsonError(w, "zaehlpunkt is required", http.StatusBadRequest)
 		return
 	}
-	if eeg.GemeinschaftTyp != "BEG" && len(req.Zaehlpunkt) >= 8 && req.Zaehlpunkt[:8] != eeg.EdaNetzbetreiberID {
-		jsonError(w, fmt.Sprintf("Zählpunkt %s passt nicht zum konfigurierten Netzbetreiber %s (Präfix: %s)", req.Zaehlpunkt, eeg.EdaNetzbetreiberID, req.Zaehlpunkt[:8]), http.StatusBadRequest)
-		return
-	}
 	if req.DateFrom == "" || req.DateTo == "" {
 		jsonError(w, "date_from and date_to are required", http.StatusBadRequest)
 		return
@@ -574,10 +588,22 @@ func (h *EDAHandler) ZaehlerstandsgangAnfordern(w http.ResponseWriter, r *http.R
 	// and the response includes all QH slots of January 31.
 	dateTo = dateTo.AddDate(0, 0, 1)
 
-	// Derive Netzbetreiber-ID from Zählpunkt prefix; more reliable than the EEG-wide setting.
+	// Resolve the actual Netzbetreiber-ID from the Zählpunkt: the raw 8-char
+	// prefix is not always the correct routing target (some regional
+	// operators reuse historical sub-area codes in Zählpunkten that were
+	// never registered as their own Marktpartner-ID — see prefixOverrides).
 	netzbetreiberTo := eeg.EdaNetzbetreiberID
 	if len(req.Zaehlpunkt) >= 8 {
-		netzbetreiberTo = req.Zaehlpunkt[:8]
+		resolved, ok := netzbetreiber.ResolveRoutingID(req.Zaehlpunkt)
+		if !ok {
+			jsonError(w, fmt.Sprintf("Unbekannter Netzbetreiber-Code für Zählpunkt %s (Präfix %s) — bitte in der Netzbetreiber-Registry oder den Ausnahme-Zuordnungen ergänzen (api/internal/netzbetreiber/lookup.go)", req.Zaehlpunkt, req.Zaehlpunkt[:8]), http.StatusUnprocessableEntity)
+			return
+		}
+		if eeg.GemeinschaftTyp != "BEG" && resolved != eeg.EdaNetzbetreiberID {
+			jsonError(w, fmt.Sprintf("Zählpunkt %s passt nicht zum konfigurierten Netzbetreiber %s (aufgelöste ID: %s)", req.Zaehlpunkt, eeg.EdaNetzbetreiberID, resolved), http.StatusBadRequest)
+			return
+		}
+		netzbetreiberTo = resolved
 	}
 
 	convID := uuid.NewString()
@@ -683,8 +709,17 @@ func (h *EDAHandler) PODList(w http.ResponseWriter, r *http.Request) {
 			jsonError(w, "failed to list meter points", http.StatusInternalServerError)
 			return
 		}
+		var unresolved []string
 		for _, info := range netzbetreiber.ActiveFromMeterPoints(mps) {
+			if info.Unresolved {
+				unresolved = append(unresolved, info.ID)
+				continue
+			}
 			nbTargets = append(nbTargets, info.ID)
+		}
+		if len(unresolved) > 0 {
+			jsonError(w, fmt.Sprintf("Unbekannter Netzbetreiber-Code für Zählpunkt-Präfix(e) %s — bitte in der Netzbetreiber-Registry oder den Ausnahme-Zuordnungen ergänzen (api/internal/netzbetreiber/lookup.go)", strings.Join(unresolved, ", ")), http.StatusUnprocessableEntity)
+			return
 		}
 		if len(nbTargets) == 0 && eeg.EdaNetzbetreiberID != "" {
 			nbTargets = []string{eeg.EdaNetzbetreiberID}
@@ -802,10 +837,6 @@ func (h *EDAHandler) WiderrufEEG(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "zaehlpunkt is required", http.StatusBadRequest)
 		return
 	}
-	if eeg.GemeinschaftTyp != "BEG" && len(req.Zaehlpunkt) >= 8 && req.Zaehlpunkt[:8] != eeg.EdaNetzbetreiberID {
-		jsonError(w, fmt.Sprintf("Zählpunkt %s passt nicht zum konfigurierten Netzbetreiber %s (Präfix: %s)", req.Zaehlpunkt, eeg.EdaNetzbetreiberID, req.Zaehlpunkt[:8]), http.StatusBadRequest)
-		return
-	}
 	if req.ConsentEnd == "" {
 		jsonError(w, "consent_end is required (YYYY-MM-DD)", http.StatusBadRequest)
 		return
@@ -841,10 +872,22 @@ func (h *EDAHandler) WiderrufEEG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Derive Netzbetreiber-ID from Zählpunkt prefix; more reliable than the EEG-wide setting.
+	// Resolve the actual Netzbetreiber-ID from the Zählpunkt: the raw 8-char
+	// prefix is not always the correct routing target (some regional
+	// operators reuse historical sub-area codes in Zählpunkten that were
+	// never registered as their own Marktpartner-ID — see prefixOverrides).
 	netzbetreiberTo := eeg.EdaNetzbetreiberID
 	if len(req.Zaehlpunkt) >= 8 {
-		netzbetreiberTo = req.Zaehlpunkt[:8]
+		resolved, ok := netzbetreiber.ResolveRoutingID(req.Zaehlpunkt)
+		if !ok {
+			jsonError(w, fmt.Sprintf("Unbekannter Netzbetreiber-Code für Zählpunkt %s (Präfix %s) — bitte in der Netzbetreiber-Registry oder den Ausnahme-Zuordnungen ergänzen (api/internal/netzbetreiber/lookup.go)", req.Zaehlpunkt, req.Zaehlpunkt[:8]), http.StatusUnprocessableEntity)
+			return
+		}
+		if eeg.GemeinschaftTyp != "BEG" && resolved != eeg.EdaNetzbetreiberID {
+			jsonError(w, fmt.Sprintf("Zählpunkt %s passt nicht zum konfigurierten Netzbetreiber %s (aufgelöste ID: %s)", req.Zaehlpunkt, eeg.EdaNetzbetreiberID, resolved), http.StatusBadRequest)
+			return
+		}
+		netzbetreiberTo = resolved
 	}
 
 	msgID := uuid.NewString()

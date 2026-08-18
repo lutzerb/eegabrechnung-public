@@ -21,6 +21,7 @@ interface Props {
   initialLabelGesamteinspeisung: string;
   initialLabelAbnahmeEnergiegemeinschaft: string;
   initialLabelResteinspeisung: string;
+  initialShowMonthlyBreakdown: boolean;
 }
 
 const FONT_FAMILIES = [
@@ -57,6 +58,7 @@ export default function InvoiceDesignPreview({
   initialLabelGesamteinspeisung,
   initialLabelAbnahmeEnergiegemeinschaft,
   initialLabelResteinspeisung,
+  initialShowMonthlyBreakdown,
 }: Props) {
   const [design, setDesign] = useState(initialDesign || "standard");
   const [accentColor, setAccentColor] = useState(initialAccentColor || "#c9b89a");
@@ -77,6 +79,7 @@ export default function InvoiceDesignPreview({
     initialLabelAbnahmeEnergiegemeinschaft || "Abnahme durch Energiegemeinschaft kWh"
   );
   const [labelResteinspeisung, setLabelResteinspeisung] = useState(initialLabelResteinspeisung || "Resteinspeisung kWh");
+  const [showMonthlyBreakdown, setShowMonthlyBreakdown] = useState(initialShowMonthlyBreakdown);
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -111,6 +114,7 @@ export default function InvoiceDesignPreview({
             invoice_energy_label_gesamteinspeisung: labelGesamteinspeisung,
             invoice_energy_label_abnahme_energiegemeinschaft: labelAbnahmeEnergiegemeinschaft,
             invoice_energy_label_resteinspeisung: labelResteinspeisung,
+            invoice_show_monthly_breakdown: showMonthlyBreakdown,
           }),
         });
         if (cancelled) return;
@@ -159,6 +163,7 @@ export default function InvoiceDesignPreview({
     labelGesamteinspeisung,
     labelAbnahmeEnergiegemeinschaft,
     labelResteinspeisung,
+    showMonthlyBreakdown,
   ]);
 
   useEffect(() => {
@@ -357,6 +362,26 @@ export default function InvoiceDesignPreview({
               </p>
             </div>
 
+            <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
+              <input
+                type="checkbox"
+                id="invoice_show_monthly_breakdown"
+                name="invoice_show_monthly_breakdown"
+                checked={showMonthlyBreakdown}
+                onChange={(e) => setShowMonthlyBreakdown(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+              />
+              <label htmlFor="invoice_show_monthly_breakdown" className="text-sm text-slate-700">
+                Bei mehrmonatigen Rechnungen jeden Monat einzeln anzeigen
+                <span className="block text-xs text-slate-500 mt-0.5">
+                  Aus: Mess- und Preistabelle zeigen nur die Periodensumme je Zählpunkt/Richtung statt einer
+                  Zeile pro Monat. Hat sich der Tarif innerhalb der Periode tatsächlich monatlich geändert (z.B.
+                  monatlicher Tarifplan bei quartalsweiser Abrechnung), wird trotzdem automatisch monatlich
+                  angezeigt — sonst wäre der Preis je kWh nicht mehr eindeutig.
+                </span>
+              </label>
+            </div>
+
             <div className="pt-2 border-t border-slate-100">
               <p className="text-sm font-medium text-slate-800 mb-1">Bezeichnungen der Energie-Tabelle</p>
               <p className="text-xs text-slate-500 mb-3">
@@ -394,22 +419,22 @@ export default function InvoiceDesignPreview({
                   />
                 </div>
                 <div>
-                  <label className={labelClass}>Netzbezug</label>
-                  <input
-                    type="text"
-                    name="invoice_energy_label_netzbezug"
-                    value={labelNetzbezug}
-                    onChange={(e) => setLabelNetzbezug(e.target.value)}
-                    className={inputClass}
-                  />
-                </div>
-                <div className="col-span-2">
                   <label className={labelClass}>Community-Verbrauch</label>
                   <input
                     type="text"
                     name="invoice_energy_label_community_verbrauch"
                     value={labelCommunityVerbrauch}
                     onChange={(e) => setLabelCommunityVerbrauch(e.target.value)}
+                    className={inputClass}
+                  />
+                </div>
+                <div className="col-span-2">
+                  <label className={labelClass}>Netzbezug</label>
+                  <input
+                    type="text"
+                    name="invoice_energy_label_netzbezug"
+                    value={labelNetzbezug}
+                    onChange={(e) => setLabelNetzbezug(e.target.value)}
                     className={inputClass}
                   />
                 </div>

@@ -155,6 +155,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
       invoice_energy_label_abnahme_energiegemeinschaft: (formData.get("invoice_energy_label_abnahme_energiegemeinschaft") as string) || "Abnahme durch Energiegemeinschaft kWh",
       invoice_energy_label_resteinspeisung: (formData.get("invoice_energy_label_resteinspeisung") as string) || "Resteinspeisung kWh",
       invoice_show_zero_fees: formData.get("invoice_show_zero_fees") === "on",
+      invoice_show_monthly_breakdown: formData.get("invoice_show_monthly_breakdown") === "on",
       extra_meters_enabled: formData.get("extra_meters_enabled") === "on",
     };
 
@@ -346,6 +347,11 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
             <input type="hidden" name="invoice_font_family" value={(eeg as any).invoice_font_family || "dejavu"} />
             <input type="hidden" name="invoice_font_size" value={String((eeg as any).invoice_font_size || 10)} />
             <input type="hidden" name="invoice_row_spacing" value={String((eeg as any).invoice_row_spacing || 1.0)} />
+            <input
+              type="hidden"
+              name="invoice_show_monthly_breakdown"
+              value={(eeg as any).invoice_show_monthly_breakdown !== false ? "on" : ""}
+            />
           </>
         )}
         {/* energy_price / producer_price always hidden (managed in tariffs) */}
@@ -802,6 +808,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
             initialLabelGesamteinspeisung={(eeg as any).invoice_energy_label_gesamteinspeisung || "Gesamteinspeisung kWh"}
             initialLabelAbnahmeEnergiegemeinschaft={(eeg as any).invoice_energy_label_abnahme_energiegemeinschaft || "Abnahme durch Energiegemeinschaft kWh"}
             initialLabelResteinspeisung={(eeg as any).invoice_energy_label_resteinspeisung || "Resteinspeisung kWh"}
+            initialShowMonthlyBreakdown={(eeg as any).invoice_show_monthly_breakdown !== false}
           />
         )}
 
