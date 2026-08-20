@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lutzerb/eegabrechnung/internal/domain"
 	edaxml "github.com/lutzerb/eegabrechnung/internal/eda/xml"
 	"github.com/google/uuid"
 )
@@ -90,5 +91,74 @@ func TestBuildReadingsFromCRMsg_PlainTotalWithoutScaled(t *testing.T) {
 	}
 	if diff := r.WhCommunity - 1.7; diff > 1e-9 || diff < -1e-9 {
 		t.Errorf("wh_community = %v, want 1.7", r.WhCommunity)
+	}
+}
+
+func eegWithIMAPCreds(name, host, user, password string) *domain.EEG {
+	return &domain.EEG{
+		ID:              uuid.New(),
+		Name:            name,
+		EDAIMAPHost:     host,
+		EDAIMAPUser:     user,
+		EDAIMAPPassword: password,
+	}
+}
+
+func TestGroupEEGsByIMAPCredentials_SharedAccountGroupedTogether(t *testing.T) {
+	a := eegWithIMAPCreds("Gießenberg", "mail.edanet.at:993", "gc104929", "sekret")
+	b := eegWithIMAPCreds("Ziegelstraße", "mail.edanet.at:993", "gc104929", "sekret")
+	c := eegWithIMAPCreds("Anderer Account", "mail.edanet.at:993", "rc999999", "andereswort")
+
+	groups := groupEEGsByIMAPCredentials([]*domain.EEG{a, b, c})
+
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 groups, got %d", len(groups))
+	}
+	if len(groups[0]) != 2 {
+		t.Fatalf("expected first group (shared account) to have 2 EEGs, got %d", len(groups[0]))
+	}
+	if groups[0][0].ID != a.ID || groups[0][1].ID != b.ID {
+		t.Errorf("expected first group to contain a then b in encounter order, got %v", groups[0])
+	}
+	if len(groups[1]) != 1 || groups[1][0].ID != c.ID {
+		t.Fatalf("expected second group to contain only c, got %v", groups[1])
+	}
+}
+
+func TestGroupEEGsByIMAPCredentials_NoSharedCredentials(t *testing.T) {
+	a := eegWithIMAPCreds("A", "host1", "user1", "pw1")
+	b := eegWithIMAPCreds("B", "host2", "user2", "pw2")
+
+	groups := groupEEGsByIMAPCredentials([]*domain.EEG{a, b})
+
+	if len(groups) != 2 {
+		t.Fatalf("expected 2 groups (no shared credentials), got %d", len(groups))
+	}
+}
+
+func TestGroupEEGsByIMAPCredentials_Empty(t *testing.T) {
+	groups := groupEEGsByIMAPCredentials(nil)
+	if len(groups) != 0 {
+		t.Fatalf("expected 0 groups for empty input, got %d", len(groups))
+	}
+}
+
+func TestBackoffDuration_IncreasesWithRetryCountAndStaysWithinJitterBounds(t *testing.T) {
+	cases := []struct {
+		retryCount int
+		base       time.Duration
+	}{
+		{retryCount: 1, base: 1 * time.Minute},
+		{retryCount: 2, base: 5 * time.Minute},
+		{retryCount: 3, base: 5 * time.Minute}, // clamped to the last tier
+	}
+	for _, c := range cases {
+		for i := 0; i < 20; i++ { // sample the jitter a few times
+			d := backoffDuration(c.retryCount)
+			maxD := c.base + c.base/4
+			if d < c.base || d > maxD {
+				t.Fatalf("retryCount=%d: backoffDuration=%v, want in [%v, %v]", c.retryCount, d, c.base, maxD)
+			}
+		}
 	}
 }

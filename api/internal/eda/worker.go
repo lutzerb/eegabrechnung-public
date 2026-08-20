@@ -7,8 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"regexp"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -49,6 +52,17 @@ type Worker struct {
 	workerStatusRepo *repository.EDAWorkerStatusRepository
 	onboardingRepo   *repository.OnboardingRepository
 	emailLogRepo     *repository.EmailLogRepository
+
+	// polling prevents the ticker-driven poll() and the manual /eda/poll-now
+	// endpoint (PollOnce) from running two overlapping poll cycles.
+	polling atomic.Bool
+
+	// smtpRateMu guards smtpNextSendAt, a per-account (host+user) reservation of
+	// the next allowed SMTP send time — see reserveSMTPSlot. This paces sends that
+	// share edanet.at credentials (e.g. two EEGs on one Marktpartner account) so
+	// concurrent/back-to-back sends can't hit the same account without spacing.
+	smtpRateMu     sync.Mutex
+	smtpNextSendAt map[string]time.Time
 }
 
 // NewWorker creates a Worker. pollInterval controls how often the transport
@@ -73,6 +87,7 @@ func NewWorker(db *pgxpool.Pool, tr types.Transport, transportMode string, encKe
 		workerStatusRepo: repository.NewEDAWorkerStatusRepository(db),
 		onboardingRepo:   repository.NewOnboardingRepository(db),
 		emailLogRepo:     repository.NewEmailLogRepository(db),
+		smtpNextSendAt:   map[string]time.Time{},
 	}
 }
 
@@ -140,7 +155,15 @@ func (w *Worker) reprocessPendingCRMsgs(ctx context.Context) {
 }
 
 // poll performs one iteration: receive inbound messages and process outbound jobs.
+// Guarded against overlapping with itself, since Run's ticker and the manual
+// /eda/poll-now endpoint (PollOnce) both call this and aren't otherwise synchronized.
 func (w *Worker) poll(ctx context.Context) {
+	if !w.polling.CompareAndSwap(false, true) {
+		w.log.Warn("poll already in progress — skipping this cycle")
+		return
+	}
+	defer w.polling.Store(false)
+
 	var pollErr string
 
 	// Process any DATEN_CRMSG messages that are pending in the DB (e.g. from a restart).
@@ -194,7 +217,43 @@ func (w *Worker) receiveInbound(ctx context.Context) error {
 	return w.processInboundMessages(ctx, msgs)
 }
 
-// receiveInboundPerEEG polls each EEG's individual IMAP mailbox in MAIL mode.
+// maxConcurrentIMAPPolls bounds how many distinct mailboxes are polled in parallel
+// per poll cycle, so one slow/stuck EEG's IMAP session can't starve the others out
+// of the shared inbound time budget (see poll()'s 120s inboundCtx).
+const maxConcurrentIMAPPolls = 4
+
+// mailCredKey identifies a physical mailbox by its decrypted IMAP credentials.
+// Two EEGs configured with byte-identical credentials (e.g. two GEA communities
+// sharing one edanet.at Marktpartner account) resolve to the same key.
+type mailCredKey struct{ host, user, password string }
+
+// groupEEGsByIMAPCredentials groups EEGs that share byte-identical decrypted IMAP
+// credentials so the worker polls each physical mailbox exactly once per cycle
+// instead of once per EEG. This is safe because inbound message routing is always
+// content-based (ConversationID / GemeinschaftID lookups) — never derived from
+// "which EEG's poll fetched it" — so which EEG in a group happens to be used to
+// build the transport config doesn't affect correctness.
+func groupEEGsByIMAPCredentials(eegs []*domain.EEG) [][]*domain.EEG {
+	groups := map[mailCredKey][]*domain.EEG{}
+	var order []mailCredKey
+	for _, eeg := range eegs {
+		key := mailCredKey{eeg.EDAIMAPHost, eeg.EDAIMAPUser, eeg.EDAIMAPPassword}
+		if _, ok := groups[key]; !ok {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], eeg)
+	}
+	result := make([][]*domain.EEG, 0, len(order))
+	for _, k := range order {
+		result = append(result, groups[k])
+	}
+	return result
+}
+
+// receiveInboundPerEEG polls each distinct IMAP mailbox in MAIL mode, with bounded
+// concurrency across mailboxes. Errors for one mailbox are logged and swallowed,
+// never propagated, so one broken mailbox can't abort polling for the others —
+// this mirrors the previous sequential loop's fault-tolerant behavior exactly.
 func (w *Worker) receiveInboundPerEEG(ctx context.Context) error {
 	eegs, err := w.eegRepo.ListEEGsWithIMAPCredentials(ctx)
 	if err != nil {
@@ -204,31 +263,51 @@ func (w *Worker) receiveInboundPerEEG(ctx context.Context) error {
 		w.log.Debug("no EEGs with IMAP credentials configured")
 		return nil
 	}
-	for _, eeg := range eegs {
-		cfg := transport.MailConfig{
-			IMAPHost:     eeg.EDAIMAPHost,
-			IMAPUser:     eeg.EDAIMAPUser,
-			IMAPPassword: eeg.EDAIMAPPassword,
-			SMTPHost:     eeg.EDASmtpHost,
-			SMTPUser:     eeg.EDASmtpUser,
-			SMTPPassword: eeg.EDASmtpPassword,
-			SMTPFrom:     eeg.EDASmtpFrom,
-		}
-		mt, err := transport.NewMailTransport(cfg, w.log)
-		if err != nil {
-			w.log.Warn("skipping EEG — MAIL transport not configured", "eeg_id", eeg.ID, "eeg_name", eeg.Name, "error", err)
-			continue
-		}
-		msgs, err := mt.Poll(ctx)
-		if err != nil {
-			w.log.Error("IMAP poll failed", "eeg_id", eeg.ID, "eeg_name", eeg.Name, "error", err)
-			continue
-		}
-		if err := w.processInboundMessages(ctx, msgs); err != nil {
-			w.log.Error("processInboundMessages failed", "eeg_id", eeg.ID, "eeg_name", eeg.Name, "error", err)
-		}
+	groups := groupEEGsByIMAPCredentials(eegs)
+
+	sem := make(chan struct{}, maxConcurrentIMAPPolls)
+	var wg sync.WaitGroup
+	for _, group := range groups {
+		group := group
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			w.pollMailboxGroup(ctx, group)
+		}()
 	}
+	wg.Wait()
 	return nil
+}
+
+// pollMailboxGroup polls one physical mailbox shared by all EEGs in group (using the
+// first EEG's credentials, which are identical across the group by construction) and
+// dispatches whatever it returns exactly as a single-EEG poll would.
+func (w *Worker) pollMailboxGroup(ctx context.Context, group []*domain.EEG) {
+	primary := group[0]
+	cfg := transport.MailConfig{
+		IMAPHost:     primary.EDAIMAPHost,
+		IMAPUser:     primary.EDAIMAPUser,
+		IMAPPassword: primary.EDAIMAPPassword,
+		SMTPHost:     primary.EDASmtpHost,
+		SMTPUser:     primary.EDASmtpUser,
+		SMTPPassword: primary.EDASmtpPassword,
+		SMTPFrom:     primary.EDASmtpFrom,
+	}
+	mt, err := transport.NewMailTransport(cfg, w.log)
+	if err != nil {
+		w.log.Warn("skipping mailbox group — MAIL transport not configured", "eeg_id", primary.ID, "eeg_name", primary.Name, "error", err)
+		return
+	}
+	msgs, err := mt.Poll(ctx)
+	if err != nil {
+		w.log.Error("IMAP poll failed", "eeg_id", primary.ID, "eeg_name", primary.Name, "error", err)
+		return
+	}
+	if err := w.processInboundMessages(ctx, msgs); err != nil {
+		w.log.Error("processInboundMessages failed", "eeg_id", primary.ID, "eeg_name", primary.Name, "error", err)
+	}
 }
 
 // processInboundMessages handles a slice of inbound messages from any transport.
@@ -267,6 +346,14 @@ func (w *Worker) processInboundMessages(ctx context.Context, msgs []*types.Messa
 				var eegIDPtr *uuid.UUID
 				if eegID != uuid.Nil {
 					eegIDPtr = &eegID
+					// Backfill eeg_id on the eda_messages row too, not just the
+					// eda_errors dead-letter entry — otherwise a failed CR_MSG
+					// import (e.g. GemeinschaftID resolved fine but the Zählpunkt
+					// has no meter_point yet) shows up with a blank EEG column on
+					// the Nachrichten tab even though we know which EEG it's for.
+					if err := w.edaMsgRepo.UpdateEegID(ctx, msgID, eegID); err != nil {
+						w.log.Warn("failed to set eeg_id on failed CR_MSG", "id", msgID, "error", err)
+					}
 				}
 				w.storeError(ctx, eegIDPtr, msg, err)
 				continue
@@ -352,7 +439,7 @@ func (w *Worker) processInboundMessages(ctx context.Context, msgs []*types.Messa
 			notif := edaxml.ParseCPNotification(msg.XMLPayload)
 			w.log.Info("CPNotification received",
 				"message_code", notif.MessageCode,
-				"response_code", notif.ResponseCode,
+				"response_codes", notif.ResponseCodes,
 				"conversation_id", notif.ConversationID,
 			)
 			// Reconstruct UUID from stripped ConversationId and look up the process.
@@ -374,9 +461,11 @@ func (w *Worker) processInboundMessages(ctx context.Context, msgs []*types.Messa
 				}
 			}
 			// ABLEHNUNG_PT = edanet rejected our outbound message (e.g. ResponseCode 55 = unknown Zählpunkt).
+			// A rejection can carry more than one ResponseCode (e.g. 181+76 for EC_PODLIST) —
+			// format as "response_codes=[...]" so the frontend's parseEdaErrorCodes() shows all of them.
 			// Mark the EDA process as rejected so it doesn't stay stuck in "sent".
 			if strings.HasPrefix(notif.MessageCode, "ABLEHNUNG") && notifProc != nil {
-				errMsg := fmt.Sprintf("ABLEHNUNG_PT response_code=%s", notif.ResponseCode)
+				errMsg := fmt.Sprintf("%s response_codes=%v", notif.MessageCode, notif.ResponseCodes)
 				now := time.Now().UTC()
 				if err := w.edaProcRepo.UpdateStatus(ctx, notifProc.ID, "rejected", &now, errMsg); err != nil {
 					w.log.Warn("ABLEHNUNG_PT: failed to mark process rejected",
@@ -387,7 +476,7 @@ func (w *Worker) processInboundMessages(ctx context.Context, msgs []*types.Messa
 					w.log.Warn("ABLEHNUNG_PT: process rejected by edanet",
 						"process_id", notifProc.ID,
 						"process_type", notifProc.ProcessType,
-						"response_code", notif.ResponseCode,
+						"response_codes", notif.ResponseCodes,
 					)
 					// Send error notification email to the EEG operator (non-blocking).
 					notifProc.Status = "rejected"
@@ -643,11 +732,19 @@ func (w *Worker) processCRMsg(ctx context.Context, msg *types.Message) (uuid.UUI
 	// direction-plausibility check below (a "does the stored config look wrong right now"
 	// heads-up), not for attaching readings. Reading attachment is resolved per-timestamp
 	// below, since GetByZaehlpunkt only ever returns "whichever row is active now".
+	//
+	// A Zählpunkt with no currently-active row (deregistered, or a late/backfilled CR_MSG
+	// arriving for one that's since been recycled) is NOT an error here — it just means
+	// there's nothing to run the plausibility check against. The message must still be
+	// processed: the per-timestamp resolve() below finds the historically-correct row via
+	// GetByZaehlpunktAtTime regardless of whether anything is active today.
 	mp, err := w.meterPointRepo.GetByZaehlpunkt(ctx, record.Zaehlpunkt)
 	if err != nil {
-		return knownEegID, fmt.Errorf("meter point %q not found: %w", record.Zaehlpunkt, err)
-	}
-	if knownEegID == uuid.Nil {
+		w.log.Info("CR_MSG: no currently active meter point for this Zählpunkt — skipping direction-plausibility check, still resolving readings per timestamp",
+			"zaehlpunkt", record.Zaehlpunkt,
+		)
+		mp = nil
+	} else if knownEegID == uuid.Nil {
 		knownEegID = mp.EegID
 	}
 
@@ -656,13 +753,15 @@ func (w *Worker) processCRMsg(ctx context.Context, msg *types.Message) (uuid.UUI
 	// Zählpunkt. A mismatch is a strong signal that this Zählpunkt was registered with the
 	// wrong Energierichtung (e.g. a prosumer's two Zählpunkte swapped during onboarding, or
 	// during a manual EDA re-registration) — alert the operator rather than fail silently.
-	if detected := detectSchemaDirection(record); detected != "" && detected != mp.Energierichtung {
-		w.log.Warn("CR_MSG OBIS schema does not match stored Energierichtung — possible Zählpunkt mix-up",
-			"zaehlpunkt", record.Zaehlpunkt,
-			"stored_direction", mp.Energierichtung,
-			"detected_direction", detected,
-		)
-		go w.notifyDirectionMismatch(context.WithoutCancel(ctx), mp, detected)
+	if mp != nil {
+		if detected := detectSchemaDirection(record); detected != "" && detected != mp.Energierichtung {
+			w.log.Warn("CR_MSG OBIS schema does not match stored Energierichtung — possible Zählpunkt mix-up",
+				"zaehlpunkt", record.Zaehlpunkt,
+				"stored_direction", mp.Energierichtung,
+				"detected_direction", detected,
+			)
+			go w.notifyDirectionMismatch(context.WithoutCancel(ctx), mp, detected)
+		}
 	}
 
 	// Resolve the correct meter_point_id PER READING TIMESTAMP rather than once for the
@@ -1299,43 +1398,69 @@ func (w *Worker) processECMPList(ctx context.Context, msgID uuid.UUID, msg *type
 	}
 
 	// Post-confirmation actions for EC_REQ_ONL
-	if proc.ProcessType == "EC_REQ_ONL" && proc.MeterPointID != nil && *proc.MeterPointID != uuid.Nil {
-		mpID := *proc.MeterPointID
+	if proc.ProcessType == "EC_REQ_ONL" {
+		var mpID uuid.UUID
+		if proc.MeterPointID != nil {
+			mpID = *proc.MeterPointID
+		}
 
-		// Update registriert_seit and consent_id from the ECMPList ABSCHLUSS_ECON entry.
-		var confirmedDate time.Time
-		for _, entry := range result.Entries {
-			if entry.MeteringPoint == proc.Zaehlpunkt && !entry.DateFrom.IsZero() {
-				confirmedDate = entry.DateFrom
-				if err := w.meterPointRepo.UpdateRegistriertSeit(ctx, mpID, proc.EegID, proc.Zaehlpunkt, entry.DateFrom, entry.ConsentID); err != nil {
-					w.log.Warn("failed to update registriert_seit after EDA confirmation",
-						"meter_point_id", mpID, "error", err)
+		// The meter point this process was originally created for may have been
+		// deleted (and possibly recreated) while the confirmation was still in
+		// flight — ON DELETE SET NULL orphans meter_point_id in that case. Without
+		// this fallback the confirmation below would silently no-op: the NB thinks
+		// the Zählpunkt is registered, but nothing in the app reflects it.
+		if mpID == uuid.Nil {
+			if mp, lookupErr := w.meterPointRepo.GetLatestByZaehlpunktInEEG(ctx, proc.EegID, proc.Zaehlpunkt); lookupErr == nil {
+				mpID = mp.ID
+				if relinkErr := w.edaProcRepo.SetMeterPointID(ctx, proc.ID, mpID); relinkErr != nil {
+					w.log.Warn("failed to re-link orphaned EC_REQ_ONL process to meter point",
+						"process_id", proc.ID, "meter_point_id", mpID, "error", relinkErr)
+				} else {
+					w.log.Info("re-linked orphaned EC_REQ_ONL process to meter point after ABSCHLUSS_ECON",
+						"process_id", proc.ID, "meter_point_id", mpID, "zaehlpunkt", proc.Zaehlpunkt)
 				}
-				// Also store consent_id if present (backup for ZUSTIMMUNG_ECON path).
-				if entry.ConsentID != "" {
-					if err := w.meterPointRepo.UpdateConsentID(ctx, mpID, entry.ConsentID); err != nil {
-						w.log.Warn("failed to store consent_id from ECMPList",
-							"meter_point_id", mpID, "error", err)
-					}
-				}
-				break
+			} else {
+				w.log.Warn("ABSCHLUSS_ECON confirmed but process has no meter_point_id and none found for zaehlpunkt",
+					"process_id", proc.ID, "zaehlpunkt", proc.Zaehlpunkt, "error", lookupErr)
 			}
 		}
 
-		// Auto-activate onboarding request.
-		if err := w.onboardingRepo.SetActiveByMeterPoint(ctx, mpID); err != nil {
-			w.log.Warn("failed to auto-activate onboarding after EDA confirmation",
-				"meter_point_id", mpID, "error", err)
-		}
+		if mpID != uuid.Nil {
+			// Update registriert_seit and consent_id from the ECMPList ABSCHLUSS_ECON entry.
+			var confirmedDate time.Time
+			for _, entry := range result.Entries {
+				if entry.MeteringPoint == proc.Zaehlpunkt && !entry.DateFrom.IsZero() {
+					confirmedDate = entry.DateFrom
+					if err := w.meterPointRepo.UpdateRegistriertSeit(ctx, mpID, proc.EegID, proc.Zaehlpunkt, entry.DateFrom, entry.ConsentID); err != nil {
+						w.log.Warn("failed to update registriert_seit after EDA confirmation",
+							"meter_point_id", mpID, "error", err)
+					}
+					// Also store consent_id if present (backup for ZUSTIMMUNG_ECON path).
+					if entry.ConsentID != "" {
+						if err := w.meterPointRepo.UpdateConsentID(ctx, mpID, entry.ConsentID); err != nil {
+							w.log.Warn("failed to store consent_id from ECMPList",
+								"meter_point_id", mpID, "error", err)
+						}
+					}
+					break
+				}
+			}
 
-		// Transition member REGISTERED → ACTIVE.
-		if err := w.memberRepo.ActivateByMeterPoint(ctx, mpID); err != nil {
-			w.log.Warn("failed to activate member after EDA confirmation",
-				"meter_point_id", mpID, "error", err)
-		}
+			// Auto-activate onboarding request.
+			if err := w.onboardingRepo.SetActiveByMeterPoint(ctx, mpID); err != nil {
+				w.log.Warn("failed to auto-activate onboarding after EDA confirmation",
+					"meter_point_id", mpID, "error", err)
+			}
 
-		// Send confirmation email to member.
-		go w.sendAnmeldungConfirmationEmail(context.WithoutCancel(ctx), mpID, proc.EegID, proc.Zaehlpunkt, confirmedDate)
+			// Transition member REGISTERED → ACTIVE.
+			if err := w.memberRepo.ActivateByMeterPoint(ctx, mpID); err != nil {
+				w.log.Warn("failed to activate member after EDA confirmation",
+					"meter_point_id", mpID, "error", err)
+			}
+
+			// Send confirmation email to member.
+			go w.sendAnmeldungConfirmationEmail(context.WithoutCancel(ctx), mpID, proc.EegID, proc.Zaehlpunkt, confirmedDate)
+		}
 	}
 
 	w.log.Info("ECMPList: EDA process confirmed",
@@ -1369,25 +1494,67 @@ type edaJobPayload struct {
 	EegID          uuid.UUID `json:"eeg_id"`
 }
 
-// processOutbound picks up pending EDA jobs from the jobs table and sends them.
-func (w *Worker) processOutbound(ctx context.Context) error {
-	tx, err := w.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin tx: %w", err)
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+// maxConcurrentSends bounds how many outbound EDA jobs are sent in parallel per
+// poll cycle. The real defense against hammering one shared edanet.at account is
+// reserveSMTPSlot's per-account pacing (see sendJob), not this limit — this only
+// bounds overall wall-clock time when many independent-account jobs queue up.
+const maxConcurrentSends = 3
 
-	// Lock up to 10 pending EDA jobs at once.
-	rows, err := tx.Query(ctx, `
-		SELECT id, type, payload, retry_count
-		FROM jobs
-		WHERE status = 'pending' AND type LIKE 'eda.%'
-		ORDER BY created_at
-		LIMIT 10
-		FOR UPDATE SKIP LOCKED
-	`)
+// staleClaimAfter reclaims jobs stuck in 'processing' (e.g. after a worker crash
+// mid-send) back into the claimable pool. Folded into claimPendingEDAJobs's query
+// so it's re-checked every poll tick — no separate reaper process needed.
+const staleClaimAfter = 5 * time.Minute
+
+// processOutbound atomically claims pending EDA jobs and sends them with bounded
+// concurrency. Each job's outcome is persisted individually (see
+// processOneOutboundJob) rather than inside one long-lived transaction spanning the
+// whole batch, so a crash mid-batch can no longer roll back an already-successful
+// send's status update and risk resending a message edanet already received.
+func (w *Worker) processOutbound(ctx context.Context) error {
+	jobs, err := w.claimPendingEDAJobs(ctx, 10)
 	if err != nil {
-		return fmt.Errorf("query jobs: %w", err)
+		return fmt.Errorf("claim jobs: %w", err)
+	}
+	if len(jobs) == 0 {
+		return nil
+	}
+
+	sem := make(chan struct{}, maxConcurrentSends)
+	var wg sync.WaitGroup
+	for _, job := range jobs {
+		job := job
+		wg.Add(1)
+		sem <- struct{}{}
+		go func() {
+			defer wg.Done()
+			defer func() { <-sem }()
+			w.processOneOutboundJob(ctx, job)
+		}()
+	}
+	wg.Wait()
+	return nil
+}
+
+// claimPendingEDAJobs atomically claims up to limit due EDA jobs in a single
+// statement — implicitly atomic, row locks held only for this query's duration
+// (vs. the previous design's one transaction held open across the whole batch's
+// sequential sends). Also reclaims jobs stuck in 'processing' past staleClaimAfter.
+func (w *Worker) claimPendingEDAJobs(ctx context.Context, limit int) ([]edaJob, error) {
+	rows, err := w.db.Query(ctx, `
+		UPDATE jobs SET status = 'processing', updated_at = now()
+		WHERE id IN (
+			SELECT id FROM jobs
+			WHERE type LIKE 'eda.%'
+			  AND ( (status = 'pending' AND next_attempt_at <= now())
+			     OR (status = 'processing' AND updated_at < now() - $2::interval) )
+			ORDER BY created_at
+			LIMIT $1
+			FOR UPDATE SKIP LOCKED
+		)
+		RETURNING id, type, payload, retry_count
+	`, limit, staleClaimAfter.String())
+	if err != nil {
+		return nil, fmt.Errorf("query jobs: %w", err)
 	}
 	defer rows.Close()
 
@@ -1396,7 +1563,7 @@ func (w *Worker) processOutbound(ctx context.Context) error {
 		var j edaJob
 		var payloadRaw []byte
 		if err := rows.Scan(&j.id, &j.jobType, &payloadRaw, &j.retryCount); err != nil {
-			return fmt.Errorf("scan job: %w", err)
+			return nil, fmt.Errorf("scan job: %w", err)
 		}
 		if err := json.Unmarshal(payloadRaw, &j.payload); err != nil {
 			w.log.Warn("failed to decode job payload",
@@ -1408,168 +1575,197 @@ func (w *Worker) processOutbound(ctx context.Context) error {
 		jobs = append(jobs, j)
 	}
 	if err := rows.Err(); err != nil {
-		return fmt.Errorf("rows error: %w", err)
+		return nil, fmt.Errorf("rows error: %w", err)
 	}
-	rows.Close()
+	return jobs, nil
+}
 
-	for _, job := range jobs {
-		sentMsg, sendErr := w.sendJob(ctx, job)
+// backoffDuration computes the delay before the next retry attempt for a job that
+// has just failed retryCount times, with up to 25% jitter to avoid synchronized
+// retry storms. Only retryCount 1 and 2 are ever used in practice since
+// maxJobRetries is 3 (the 3rd failure goes straight to permanent failure).
+func backoffDuration(retryCount int) time.Duration {
+	tiers := []time.Duration{1 * time.Minute, 5 * time.Minute}
+	idx := retryCount - 1
+	if idx < 0 {
+		idx = 0
+	} else if idx >= len(tiers) {
+		idx = len(tiers) - 1
+	}
+	d := tiers[idx]
+	return d + time.Duration(rand.Int63n(int64(d)/4))
+}
 
-		if sendErr == nil {
-			// Send succeeded.
-			w.log.Info("EDA job sent",
-				"job_id", job.id,
-				"process", job.payload.Process,
-			)
+// processOneOutboundJob sends a single claimed job and persists its outcome
+// (sent / retry-pending / permanent failure) in its own short statement(s) — no
+// shared transaction with other jobs in the batch, so this job's outcome durably
+// survives even if a sibling goroutine or the process itself fails afterward.
+func (w *Worker) processOneOutboundJob(ctx context.Context, job edaJob) {
+	sentMsg, sendErr := w.sendJob(ctx, job)
 
-			if _, err := tx.Exec(ctx,
-				`UPDATE jobs SET status = 'sent', updated_at = now() WHERE id = $1`,
-				job.id,
-			); err != nil {
-				w.log.Error("failed to update job status to sent", "job_id", job.id, "error", err)
-			}
+	var eegIDArg *uuid.UUID
+	if job.payload.EegID != uuid.Nil {
+		id := job.payload.EegID
+		eegIDArg = &id
+	}
+	var edaProcessIDArg *uuid.UUID
+	if job.payload.EDAProcessID != uuid.Nil {
+		id := job.payload.EDAProcessID
+		edaProcessIDArg = &id
+	}
 
-			// Advance eda_process from 'pending' to 'sent' (don't overwrite a later status
-			// like 'first_confirmed' that may have arrived via an inbound CPDocument in the same poll).
-			if job.payload.EDAProcessID != uuid.Nil {
-				if _, err := tx.Exec(ctx,
-					`UPDATE eda_processes SET status = 'sent', updated_at = now()
-					 WHERE id = $1 AND status = 'pending'`,
-					job.payload.EDAProcessID,
-				); err != nil {
-					w.log.Warn("failed to mark EDA process as sent",
-						"process_id", job.payload.EDAProcessID,
-						"error", err,
-					)
-				}
-			}
-
-			// Record sent message in eda_messages using the actual email subject.
-			var eegIDArg *uuid.UUID
-			if job.payload.EegID != uuid.Nil {
-				id := job.payload.EegID
-				eegIDArg = &id
-			}
-			var edaProcessIDArg *uuid.UUID
-			if job.payload.EDAProcessID != uuid.Nil {
-				id := job.payload.EDAProcessID
-				edaProcessIDArg = &id
-			}
-			if _, err := tx.Exec(ctx,
-				`INSERT INTO eda_messages
-				   (eeg_id, process, message_type, subject, body, direction, status, xml_payload, error_msg, from_address, to_address, eda_process_id, zaehlpunkt)
-				 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-				eegIDArg,
-				job.payload.Process,
-				job.payload.Process,
-				sentMsg.Subject,
-				"",
-				DirectionOutbound,
-				StatusSent,
-				job.payload.XMLPayload,
-				"",
-				job.payload.From,
-				job.payload.To,
-				edaProcessIDArg,
-				extractZaehlpunkte(job.payload.XMLPayload),
-			); err != nil {
-				w.log.Warn("failed to record outbound eda_message", "job_id", job.id, "error", err)
-			}
-
-			continue
-		}
-
-		// Send failed — apply retry logic.
-		newRetryCount := job.retryCount + 1
-		w.log.Error("failed to send EDA job",
-			"job_id", job.id,
-			"process", job.payload.Process,
-			"attempt", newRetryCount,
-			"max_retries", maxJobRetries,
-			"error", sendErr,
-		)
-
-		if newRetryCount < maxJobRetries {
-			// Keep job pending for the next poll cycle.
-			if _, err := tx.Exec(ctx,
-				`UPDATE jobs SET retry_count = $1, updated_at = now() WHERE id = $2`,
-				newRetryCount, job.id,
-			); err != nil {
-				w.log.Error("failed to update job retry_count", "job_id", job.id, "error", err)
-			}
-			w.log.Warn("EDA job will be retried",
-				"job_id", job.id,
-				"process", job.payload.Process,
-				"next_attempt", newRetryCount+1,
-			)
-			continue
-		}
-
-		// Retries exhausted — permanently fail the job.
-		w.log.Error("EDA job permanently failed after max retries",
+	if sendErr == nil {
+		// Send succeeded.
+		w.log.Info("EDA job sent",
 			"job_id", job.id,
 			"process", job.payload.Process,
 		)
 
-		if _, err := tx.Exec(ctx,
-			`UPDATE jobs SET status = 'error', retry_count = $1, updated_at = now() WHERE id = $2`,
-			newRetryCount, job.id,
+		if _, err := w.db.Exec(ctx,
+			`UPDATE jobs SET status = 'sent', updated_at = now() WHERE id = $1`,
+			job.id,
 		); err != nil {
-			w.log.Error("failed to update job status to error", "job_id", job.id, "error", err)
+			w.log.Error("failed to update job status to sent", "job_id", job.id, "error", err)
 		}
 
-		// Mark eda_process as error.
+		// Advance eda_process from 'pending' to 'sent' (don't overwrite a later status
+		// like 'first_confirmed' that may have arrived via an inbound CPDocument in the same poll).
 		if job.payload.EDAProcessID != uuid.Nil {
-			if err := w.edaProcRepo.UpdateStatus(ctx, job.payload.EDAProcessID, "error", nil, sendErr.Error()); err != nil {
-				w.log.Warn("failed to mark EDA process as error",
+			if _, err := w.db.Exec(ctx,
+				`UPDATE eda_processes SET status = 'sent', updated_at = now()
+				 WHERE id = $1 AND status = 'pending'`,
+				job.payload.EDAProcessID,
+			); err != nil {
+				w.log.Warn("failed to mark EDA process as sent",
 					"process_id", job.payload.EDAProcessID,
 					"error", err,
 				)
-			} else {
-				// Send error notification email to the EEG operator (non-blocking).
-				if proc, lookupErr := w.edaProcRepo.GetByID(ctx, job.payload.EDAProcessID); lookupErr == nil {
-					if eeg, eegErr := w.eegRepo.GetByIDInternal(ctx, proc.EegID); eegErr == nil {
-						go w.sendEDAErrorNotification(ctx, proc, eeg)
-					}
-				}
 			}
 		}
 
-		// Record permanent failure in eda_messages.
-		// No real email subject exists since the send failed.
-		var eegIDArg *uuid.UUID
-		if job.payload.EegID != uuid.Nil {
-			id := job.payload.EegID
-			eegIDArg = &id
-		}
-		var edaProcessIDArgFail *uuid.UUID
-		if job.payload.EDAProcessID != uuid.Nil {
-			id := job.payload.EDAProcessID
-			edaProcessIDArgFail = &id
-		}
-		if _, err := tx.Exec(ctx,
+		// Record sent message in eda_messages using the actual email subject.
+		if _, err := w.db.Exec(ctx,
 			`INSERT INTO eda_messages
 			   (eeg_id, process, message_type, subject, body, direction, status, xml_payload, error_msg, from_address, to_address, eda_process_id, zaehlpunkt)
 			 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
 			eegIDArg,
 			job.payload.Process,
 			job.payload.Process,
-			fmt.Sprintf("[SENDEFEHLER] %s %s", job.payload.Process, job.payload.GemeinschaftID),
+			sentMsg.Subject,
 			"",
 			DirectionOutbound,
-			StatusError,
+			StatusSent,
 			job.payload.XMLPayload,
-			sendErr.Error(),
+			"",
 			job.payload.From,
 			job.payload.To,
-			edaProcessIDArgFail,
+			edaProcessIDArg,
 			extractZaehlpunkte(job.payload.XMLPayload),
 		); err != nil {
-			w.log.Warn("failed to record failed outbound eda_message", "job_id", job.id, "error", err)
+			w.log.Warn("failed to record outbound eda_message", "job_id", job.id, "error", err)
+		}
+		return
+	}
+
+	// Send failed — apply retry logic.
+	newRetryCount := job.retryCount + 1
+	w.log.Error("failed to send EDA job",
+		"job_id", job.id,
+		"process", job.payload.Process,
+		"attempt", newRetryCount,
+		"max_retries", maxJobRetries,
+		"error", sendErr,
+	)
+
+	if newRetryCount < maxJobRetries {
+		// The claim already moved this job to 'processing' — flip it back to
+		// 'pending' with an exponential backoff before the next attempt is due.
+		next := time.Now().UTC().Add(backoffDuration(newRetryCount))
+		if _, err := w.db.Exec(ctx,
+			`UPDATE jobs SET status = 'pending', retry_count = $1, next_attempt_at = $2, updated_at = now() WHERE id = $3`,
+			newRetryCount, next, job.id,
+		); err != nil {
+			w.log.Error("failed to update job retry_count", "job_id", job.id, "error", err)
+		}
+		w.log.Warn("EDA job will be retried",
+			"job_id", job.id,
+			"process", job.payload.Process,
+			"next_attempt", newRetryCount+1,
+			"next_attempt_at", next,
+		)
+		return
+	}
+
+	// Retries exhausted — permanently fail the job.
+	w.log.Error("EDA job permanently failed after max retries",
+		"job_id", job.id,
+		"process", job.payload.Process,
+	)
+
+	if _, err := w.db.Exec(ctx,
+		`UPDATE jobs SET status = 'error', retry_count = $1, updated_at = now() WHERE id = $2`,
+		newRetryCount, job.id,
+	); err != nil {
+		w.log.Error("failed to update job status to error", "job_id", job.id, "error", err)
+	}
+
+	// Mark eda_process as error.
+	if job.payload.EDAProcessID != uuid.Nil {
+		if err := w.edaProcRepo.UpdateStatus(ctx, job.payload.EDAProcessID, "error", nil, sendErr.Error()); err != nil {
+			w.log.Warn("failed to mark EDA process as error",
+				"process_id", job.payload.EDAProcessID,
+				"error", err,
+			)
+		} else {
+			// Send error notification email to the EEG operator (non-blocking).
+			if proc, lookupErr := w.edaProcRepo.GetByID(ctx, job.payload.EDAProcessID); lookupErr == nil {
+				if eeg, eegErr := w.eegRepo.GetByIDInternal(ctx, proc.EegID); eegErr == nil {
+					go w.sendEDAErrorNotification(ctx, proc, eeg)
+				}
+			}
 		}
 	}
 
-	return tx.Commit(ctx)
+	// Record permanent failure in eda_messages.
+	// No real email subject exists since the send failed.
+	subject := fmt.Sprintf("[SENDEFEHLER] %s %s", job.payload.Process, job.payload.GemeinschaftID)
+	if _, err := w.db.Exec(ctx,
+		`INSERT INTO eda_messages
+		   (eeg_id, process, message_type, subject, body, direction, status, xml_payload, error_msg, from_address, to_address, eda_process_id, zaehlpunkt)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+		eegIDArg,
+		job.payload.Process,
+		job.payload.Process,
+		subject,
+		"",
+		DirectionOutbound,
+		StatusError,
+		job.payload.XMLPayload,
+		sendErr.Error(),
+		job.payload.From,
+		job.payload.To,
+		edaProcessIDArg,
+		extractZaehlpunkte(job.payload.XMLPayload),
+	); err != nil {
+		w.log.Warn("failed to record failed outbound eda_message", "job_id", job.id, "error", err)
+	}
+
+	// Also move it to the eda_errors dead-letter table so it's visible on the
+	// existing "Fehler" tab (GET .../eda/errors) — previously only inbound parse
+	// failures and edanet-originated EDASendError responses landed there; a local
+	// SMTP transport failure like this one was invisible unless the operator
+	// happened to check the Prozesse tab or had invoice SMTP configured for the
+	// error-notification email above.
+	if err := w.edaErrorRepo.Create(ctx, &domain.EDAError{
+		EegID:       eegIDArg,
+		Direction:   DirectionOutbound,
+		MessageType: job.payload.Process,
+		Subject:     subject,
+		RawContent:  job.payload.XMLPayload,
+		ErrorMsg:    sendErr.Error(),
+	}); err != nil {
+		w.log.Warn("failed to persist EDA error record for outbound failure", "job_id", job.id, "error", err)
+	}
 }
 
 // sendJob sends a single EDA job via the transport.
@@ -1593,6 +1789,9 @@ func (w *Worker) sendJob(ctx context.Context, job edaJob) (*types.Message, error
 		if err != nil || eeg == nil {
 			return nil, fmt.Errorf("EEG %s not found for MAIL send: %w", job.payload.EegID, err)
 		}
+		if err := w.reserveSMTPSlot(ctx, eeg.EDASmtpHost+"|"+eeg.EDASmtpUser); err != nil {
+			return nil, fmt.Errorf("reserve SMTP slot: %w", err)
+		}
 		cfg := transport.MailConfig{
 			IMAPHost:     eeg.EDAIMAPHost,
 			IMAPUser:     eeg.EDAIMAPUser,
@@ -1613,6 +1812,38 @@ func (w *Worker) sendJob(ctx context.Context, job edaJob) (*types.Message, error
 		return nil, fmt.Errorf("no transport available for send (transportMode=%s)", w.transportMode)
 	}
 	return msg, tr.Send(ctx, msg)
+}
+
+// minSMTPSendGap is the minimum spacing enforced between two SMTP sends that share
+// the same edanet.at account. Two EEGs on one shared Marktpartner mailbox sending
+// back-to-back with no pacing is a plausible trigger for the gateway dropping the
+// connection ("smtp new client: EOF") — this mitigates that regardless of how many
+// jobs are sent concurrently.
+const minSMTPSendGap = 3 * time.Second
+
+// reserveSMTPSlot blocks until it is this caller's turn to send on the account
+// identified by key (host+user), then reserves the next slot. Uses a reservation
+// pattern (compute-and-store the next allowed time under the lock, sleep outside
+// it) to avoid a read-sleep-write race between concurrent callers targeting the
+// same account.
+func (w *Worker) reserveSMTPSlot(ctx context.Context, key string) error {
+	w.smtpRateMu.Lock()
+	now := time.Now()
+	next := now
+	if last, ok := w.smtpNextSendAt[key]; ok && last.After(now) {
+		next = last
+	}
+	w.smtpNextSendAt[key] = next.Add(minSMTPSendGap)
+	w.smtpRateMu.Unlock()
+
+	if wait := time.Until(next); wait > 0 {
+		select {
+		case <-time.After(wait):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
 }
 
 // processCMRevoke handles an inbound CMRevoke message:

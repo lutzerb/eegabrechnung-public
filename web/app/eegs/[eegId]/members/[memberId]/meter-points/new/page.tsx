@@ -47,7 +47,6 @@ export default async function NewMeterPointPage({ params, searchParams }: Props)
   }
 
   const edaConfigured = !!(eeg.eda_marktpartner_id && eeg.eda_netzbetreiber_id);
-  const edaNetzbetreiberId = eeg.eda_netzbetreiber_id ?? "";
 
   // EDA Anmeldung: frühestens morgen, höchstens 30 Tage in der Zukunft
   const edaTomorrowStr = (() => {
@@ -70,11 +69,6 @@ export default async function NewMeterPointPage({ params, searchParams }: Props)
     if (!zaehlpunkt || !energierichtung) {
       redirect(
         `/eegs/${eegId}/members/${memberId}/meter-points/new?error=${encodeURIComponent("Zählpunkt-ID und Energierichtung sind Pflichtfelder.")}`
-      );
-    }
-    if (edaNetzbetreiberId && zaehlpunkt.length >= 8 && zaehlpunkt.substring(0, 8) !== edaNetzbetreiberId) {
-      redirect(
-        `/eegs/${eegId}/members/${memberId}/meter-points/new?error=${encodeURIComponent(`Zählpunkt-Präfix „${zaehlpunkt.substring(0, 8)}" passt nicht zum konfigurierten Netzbetreiber „${edaNetzbetreiberId}"`)}`
       );
     }
 

@@ -97,7 +97,12 @@ func (t *MailTransport) Send(ctx context.Context, msg *types.Message) error {
 	if prozessID == "" {
 		prozessID = msg.Process
 	}
-	msgID := uuid.NewString()
+	// Use the caller's stable ID (sendJob passes the job's UUID) so retries of the
+	// same job reuse the same MessageId instead of minting a new one each attempt.
+	msgID := msg.ID
+	if _, err := uuid.Parse(msgID); err != nil {
+		msgID = uuid.NewString()
+	}
 	subject := fmt.Sprintf("[%s MessageId=%s]", prozessID, msgID)
 	to := edanetAddress(msg.To)
 	body := buildMIMEMessage(t.cfg.SMTPFrom, to, subject, msg.XMLPayload)

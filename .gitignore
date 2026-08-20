@@ -70,3 +70,11 @@ testdata/
 
 # Local code review notes (not versioned)
 CODE_REVIEW_LOCAL.md
+
+# Forecast model experimentation (offline research, not versioned)
+forecast/experiments/.venv/
+forecast/experiments/__pycache__/
+forecast/experiments/data/
+forecast/experiments/models/
+forecast/experiments/results.csv
+forecast/experiments/*.parquet

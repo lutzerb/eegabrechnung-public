@@ -27,6 +27,7 @@ type EDAHandler struct {
 	jobRepo          *repository.JobRepository
 	edaErrorRepo     *repository.EDAErrorRepository
 	workerStatusRepo *repository.EDAWorkerStatusRepository
+	readingRepo      *repository.ReadingRepository
 	edaWorkerURL     string
 }
 
@@ -37,6 +38,7 @@ func NewEDAHandler(
 	jobRepo *repository.JobRepository,
 	edaErrorRepo *repository.EDAErrorRepository,
 	workerStatusRepo *repository.EDAWorkerStatusRepository,
+	readingRepo *repository.ReadingRepository,
 	edaWorkerURL string,
 ) *EDAHandler {
 	return &EDAHandler{
@@ -46,6 +48,7 @@ func NewEDAHandler(
 		jobRepo:          jobRepo,
 		edaErrorRepo:     edaErrorRepo,
 		workerStatusRepo: workerStatusRepo,
+		readingRepo:      readingRepo,
 		edaWorkerURL:     edaWorkerURL,
 	}
 }
@@ -182,6 +185,11 @@ func (h *EDAHandler) Anmeldung(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.ParticipationFactor <= 0 || req.ParticipationFactor > 100 {
 		jsonError(w, "participation_factor must be between 0 and 100", http.StatusBadRequest)
+		return
+	}
+
+	if active, err := h.edaProcRepo.HasActiveAnmeldung(r.Context(), eegID, req.Zaehlpunkt); err == nil && active {
+		jsonError(w, "Für diesen Zählpunkt läuft bereits eine Anmeldung oder sie ist bereits bestätigt — bitte Status abwarten statt erneut anzumelden", http.StatusConflict)
 		return
 	}
 
@@ -651,9 +659,116 @@ func (h *EDAHandler) ZaehlerstandsgangAnfordern(w http.ResponseWriter, r *http.R
 	jsonOK(w, proc)
 }
 
+// ZaehlerstandsgangPerioden godoc
+//
+//	@Summary		List registration periods for a Zählpunkt
+//	@Description	Returns the full Anmeldung/Abmeldung history (meter_point_registration_periods) for a raw Zählpunkt string, oldest first. Used by the "Nur aktive Perioden anfordern" option on CR_REQ_PT — works for any Zählpunkt (free-typed or from the picker), not just ones with a local meter_points row.
+//	@Tags			EDA
+//	@Produce		json
+//	@Param			eegID		path	string	true	"EEG ID (UUID)"
+//	@Param			zaehlpunkt	query	string	true	"Zählpunkt ID"
+//	@Success		200	{array}		domain.MeterPointRegistrationPeriod
+//	@Failure		400	{object}	map[string]string
+//	@Failure		401	{object}	map[string]string
+//	@Failure		404	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/eegs/{eegID}/eda/zaehlerstandsgang/perioden [get]
+func (h *EDAHandler) ZaehlerstandsgangPerioden(w http.ResponseWriter, r *http.Request) {
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
+		return
+	}
+	zp := strings.TrimSpace(r.URL.Query().Get("zaehlpunkt"))
+	if zp == "" {
+		jsonError(w, "zaehlpunkt query parameter is required", http.StatusBadRequest)
+		return
+	}
+	periods, err := h.mpRepo.ListRegistrationHistory(r.Context(), eeg.ID, zp)
+	if err != nil {
+		jsonError(w, "failed to load registration periods", http.StatusInternalServerError)
+		return
+	}
+	if periods == nil {
+		periods = []domain.MeterPointRegistrationPeriod{}
+	}
+	jsonOK(w, periods)
+}
+
+// fehlendeDatenPreviewItem is one Zählpunkt/period entry of the missing-data preview.
+type fehlendeDatenPreviewItem struct {
+	Zaehlpunkt      string                        `json:"zaehlpunkt"`
+	MemberName      string                        `json:"member_name"`
+	PeriodID        uuid.UUID                     `json:"period_id"`
+	RegistriertSeit string                        `json:"registriert_seit"`
+	AbgemeldetAm    *string                       `json:"abgemeldet_am,omitempty"`
+	MissingRanges   []repository.CategorizedRange `json:"missing_ranges"`
+	InFlight        bool                          `json:"in_flight"`
+}
+
+// fehlendeDatenPreviewResponse is the body of GET /eda/zaehlerstandsgang/fehlende-daten.
+type fehlendeDatenPreviewResponse struct {
+	Items       []fehlendeDatenPreviewItem `json:"items"`
+	TotalRanges int                        `json:"total_ranges"`
+}
+
+// FehlendeDatenPreview godoc
+//
+//	@Summary		Preview missing CR_REQ_PT data across all Zählpunkte/periods
+//	@Description	For every registration period of every Zählpunkt ever registered in this EEG (meter_point_registration_periods, regardless of current member status), finds contiguous date ranges lacking a full day of L1/L2 energy_readings, and flags whether the Zählpunkt has an in-flight (pending/sent) CR_REQ_PT process. Read-only — does not send anything.
+//	@Tags			EDA
+//	@Produce		json
+//	@Param			eegID	path	string	true	"EEG ID (UUID)"
+//	@Success		200	{object}	fehlendeDatenPreviewResponse
+//	@Failure		401	{object}	map[string]string
+//	@Failure		404	{object}	map[string]string
+//	@Failure		500	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/eegs/{eegID}/eda/zaehlerstandsgang/fehlende-daten [get]
+func (h *EDAHandler) FehlendeDatenPreview(w http.ResponseWriter, r *http.Request) {
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
+		return
+	}
+
+	viennaLoc, _ := time.LoadLocation("Europe/Vienna")
+	now := time.Now().In(viennaLoc)
+	todayMidnight := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, viennaLoc)
+
+	gaps, err := h.readingRepo.MissingDataByRegistrationPeriod(r.Context(), eeg.ID, todayMidnight)
+	if err != nil {
+		jsonError(w, "failed to compute missing data", http.StatusInternalServerError)
+		return
+	}
+	inFlight, err := h.edaProcRepo.ListZaehlpunkteWithInFlightCRReqPT(r.Context(), eeg.ID)
+	if err != nil {
+		jsonError(w, "failed to check in-flight requests", http.StatusInternalServerError)
+		return
+	}
+
+	items := make([]fehlendeDatenPreviewItem, 0, len(gaps))
+	total := 0
+	for _, g := range gaps {
+		items = append(items, fehlendeDatenPreviewItem{
+			Zaehlpunkt: g.Zaehlpunkt, MemberName: g.MemberName, PeriodID: g.PeriodID, RegistriertSeit: g.RegistriertSeit,
+			AbgemeldetAm: g.AbgemeldetAm, MissingRanges: g.MissingRanges,
+			InFlight: inFlight[g.Zaehlpunkt],
+		})
+		total += len(g.MissingRanges)
+	}
+	jsonOK(w, fehlendeDatenPreviewResponse{Items: items, TotalRanges: total})
+}
+
 // podListRequest is the body for POST /eda/podlist.
 // No fields are required — the EEG's ECID and Netzbetreiber are used automatically.
-type podListRequest struct{}
+// date_from/date_to are optional (YYYY-MM-DD): per the ebutilities CPRequest schema
+// they carry the desired period for the Zählpunktliste snapshot. Some Netzbetreiber
+// (e.g. Netz NÖ) tolerate omitting them and default to "current status", others
+// (e.g. Energienetze Steiermark) appear to require them — omitted, they reject with
+// response code 181 ("Gemeinschafts-ID nicht vorhanden").
+type podListRequest struct {
+	DateFrom string `json:"date_from,omitempty"`
+	DateTo   string `json:"date_to,omitempty"`
+}
 
 // PODList godoc
 //
@@ -698,6 +813,35 @@ func (h *EDAHandler) PODList(w http.ResponseWriter, r *http.Request) {
 	if eeg.GemeinschaftID == "" {
 		jsonError(w, "Gemeinschafts-ID (ECID) muss in den EEG-Einstellungen konfiguriert sein", http.StatusBadRequest)
 		return
+	}
+
+	var req podListRequest
+	_ = json.NewDecoder(r.Body).Decode(&req) // body is optional; ignore decode errors on empty body
+
+	var dateFrom, dateTo time.Time
+	if req.DateFrom != "" || req.DateTo != "" {
+		if req.DateFrom == "" || req.DateTo == "" {
+			jsonError(w, "date_from and date_to must both be set (or both omitted)", http.StatusBadRequest)
+			return
+		}
+		viennaLoc, _ := time.LoadLocation("Europe/Vienna")
+		var err error
+		dateFrom, err = time.ParseInLocation("2006-01-02", req.DateFrom, viennaLoc)
+		if err != nil {
+			jsonError(w, "date_from must be YYYY-MM-DD", http.StatusBadRequest)
+			return
+		}
+		dateTo, err = time.ParseInLocation("2006-01-02", req.DateTo, viennaLoc)
+		if err != nil {
+			jsonError(w, "date_to must be YYYY-MM-DD", http.StatusBadRequest)
+			return
+		}
+		if dateTo.Before(dateFrom) {
+			jsonError(w, "date_to must not be before date_from", http.StatusBadRequest)
+			return
+		}
+		// Exclusive upper bound, same convention as CR_REQ_PT.
+		dateTo = dateTo.AddDate(0, 0, 1)
 	}
 
 	// For BEG: send one PODLIST per distinct Netzbetreiber derived from active meter point prefixes.
@@ -746,6 +890,8 @@ func (h *EDAHandler) PODList(w http.ResponseWriter, r *http.Request) {
 			MessageID:      uuid.NewString(),
 			ConversationID: convID,
 			ECID:           eeg.GemeinschaftID,
+			DateFrom:       dateFrom,
+			DateTo:         dateTo,
 		})
 		if err != nil {
 			jsonError(w, fmt.Sprintf("build XML: %v", err), http.StatusInternalServerError)

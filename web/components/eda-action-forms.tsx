@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import type { FehlendeDatenPreviewItem, FehlendeDatenPreviewResponse, FehlendeDatenCategory } from "@/lib/api";
 
 export function PollNowButton({ eegId }: { eegId: string }) {
   const [state, setState] = useState<"idle" | "polling" | "done">("idle");
@@ -41,7 +42,6 @@ export interface MemberMeterPointOption {
 interface Props {
   eegId: string;
   edaConfigured: boolean;
-  netzbetreiberId: string;
   members?: {
     name: string;
     name1?: string;
@@ -50,7 +50,7 @@ interface Props {
   }[];
 }
 
-export function EDAActionForms({ eegId, edaConfigured, netzbetreiberId, members = [] }: Props) {
+export function EDAActionForms({ eegId, edaConfigured, members = [] }: Props) {
   const [activeTab, setActiveTab] = useState<Tab>("anmeldung-online");
   const router = useRouter();
 
@@ -111,19 +111,24 @@ export function EDAActionForms({ eegId, edaConfigured, netzbetreiberId, members 
 
       <div className="p-6">
         {activeTab === "anmeldung-online" && (
-          <AnmeldungOnlineForm eegId={eegId} disabled={!edaConfigured} netzbetreiberId={netzbetreiberId} onSuccess={() => router.refresh()} />
+          <AnmeldungOnlineForm eegId={eegId} disabled={!edaConfigured} onSuccess={() => router.refresh()} />
         )}
         {activeTab === "teilnahmefaktor" && (
-          <TeilnahmefaktorForm eegId={eegId} disabled={!edaConfigured} netzbetreiberId={netzbetreiberId} onSuccess={() => router.refresh()} />
+          <TeilnahmefaktorForm eegId={eegId} disabled={!edaConfigured} onSuccess={() => router.refresh()} />
         )}
         {activeTab === "zaehlerstandsgang" && (
-          <ZaehlerstandsgangForm eegId={eegId} disabled={!edaConfigured} netzbetreiberId={netzbetreiberId} meterPointOptions={meterPointOptions} onSuccess={() => router.refresh()} />
+          <div className="space-y-8">
+            <ZaehlerstandsgangForm eegId={eegId} disabled={!edaConfigured} meterPointOptions={meterPointOptions} onSuccess={() => router.refresh()} />
+            <div className="border-t border-slate-200 pt-6">
+              <FehlendeDatenSection eegId={eegId} disabled={!edaConfigured} onSuccess={() => router.refresh()} />
+            </div>
+          </div>
         )}
         {activeTab === "podlist" && (
           <PODListForm eegId={eegId} disabled={!edaConfigured} onSuccess={() => router.refresh()} />
         )}
         {activeTab === "widerruf" && (
-          <WiderrufForm eegId={eegId} disabled={!edaConfigured} netzbetreiberId={netzbetreiberId} onSuccess={() => router.refresh()} />
+          <WiderrufForm eegId={eegId} disabled={!edaConfigured} onSuccess={() => router.refresh()} />
         )}
       </div>
     </div>
@@ -135,12 +140,10 @@ export function EDAActionForms({ eegId, edaConfigured, netzbetreiberId, members 
 function AnmeldungOnlineForm({
   eegId,
   disabled,
-  netzbetreiberId,
   onSuccess,
 }: {
   eegId: string;
   disabled: boolean;
-  netzbetreiberId: string;
   onSuccess: () => void;
 }) {
   const [zaehlpunkt, setZaehlpunkt] = useState("");
@@ -156,11 +159,6 @@ function AnmeldungOnlineForm({
     setLoading(true);
     setError(null);
     setSuccess(false);
-    if (netzbetreiberId && zaehlpunkt.length >= 8 && zaehlpunkt.substring(0, 8) !== netzbetreiberId) {
-      setError(`Zählpunkt-Präfix „${zaehlpunkt.substring(0, 8)}" passt nicht zum konfigurierten Netzbetreiber „${netzbetreiberId}"`);
-      setLoading(false);
-      return;
-    }
     try {
       const body: Record<string, unknown> = {
         zaehlpunkt,
@@ -281,12 +279,10 @@ function AnmeldungOnlineForm({
 function TeilnahmefaktorForm({
   eegId,
   disabled,
-  netzbetreiberId,
   onSuccess,
 }: {
   eegId: string;
   disabled: boolean;
-  netzbetreiberId: string;
   onSuccess: () => void;
 }) {
   const [zaehlpunkt, setZaehlpunkt] = useState("");
@@ -301,11 +297,6 @@ function TeilnahmefaktorForm({
     setLoading(true);
     setError(null);
     setSuccess(false);
-    if (netzbetreiberId && zaehlpunkt.length >= 8 && zaehlpunkt.substring(0, 8) !== netzbetreiberId) {
-      setError(`Zählpunkt-Präfix „${zaehlpunkt.substring(0, 8)}" passt nicht zum konfigurierten Netzbetreiber „${netzbetreiberId}"`);
-      setLoading(false);
-      return;
-    }
     try {
       const res = await fetch(`/api/eegs/${eegId}/eda/teilnahmefaktor`, {
         method: "POST",
@@ -405,22 +396,91 @@ function TeilnahmefaktorForm({
 
 // ── Zählpunktdaten nachfordern (CR_REQ_PT) ────────────────────────────────────
 
+// Sends a single CR_REQ_PT request; returns a formatted failure string, or null
+// on success. Shared between ZaehlerstandsgangForm's own submit loop and
+// FehlendeDatenSection's confirm step, since both fan out multiple (Zählpunkt,
+// Zeitraum) requests against the same single-ZP backend endpoint.
+async function postZaehlerstandsgang(
+  eegId: string,
+  zaehlpunkt: string,
+  dateFrom: string,
+  dateTo: string
+): Promise<string | null> {
+  try {
+    const res = await fetch(`/api/eegs/${eegId}/eda/zaehlerstandsgang`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ zaehlpunkt, date_from: dateFrom, date_to: dateTo }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      return `${zaehlpunkt} (${dateFrom}–${dateTo}): ${data.error || `Fehler ${res.status}`}`;
+    }
+    return null;
+  } catch (err: unknown) {
+    return `${zaehlpunkt} (${dateFrom}–${dateTo}): ${(err as Error).message}`;
+  }
+}
+
+interface PendingZaehlerstandsgangRequest {
+  zaehlpunkt: string;
+  date_from: string;
+  date_to: string;
+}
+
+// For each selected Zählpunkt, fetches its registration periods and expands
+// them into one request per period. Works for any Zählpunkt string (periods
+// are keyed by eeg_id+zaehlpunkt, not a local meter_points row), so it also
+// covers free-typed ZPs not in the picker. Open periods (no abgemeldet_am) run
+// through "yesterday" — the backend never has data for today yet.
+async function buildActivePeriodRequests(
+  eegId: string,
+  zaehlpunkte: string[]
+): Promise<{ requests: PendingZaehlerstandsgangRequest[]; failures: string[] }> {
+  const requests: PendingZaehlerstandsgangRequest[] = [];
+  const failures: string[] = [];
+  for (const zp of zaehlpunkte) {
+    try {
+      const res = await fetch(`/api/eegs/${eegId}/eda/zaehlerstandsgang/perioden?zaehlpunkt=${encodeURIComponent(zp)}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        failures.push(`${zp}: ${data.error || `Fehler ${res.status}`}`);
+        continue;
+      }
+      const periods: { registriert_seit: string; abgemeldet_am?: string }[] = await res.json();
+      if (periods.length === 0) {
+        failures.push(`${zp}: keine Registrierungsperioden gefunden`);
+        continue;
+      }
+      for (const p of periods) {
+        requests.push({
+          zaehlpunkt: zp,
+          date_from: p.registriert_seit.slice(0, 10),
+          date_to: p.abgemeldet_am ? p.abgemeldet_am.slice(0, 10) : yesterday(),
+        });
+      }
+    } catch (err: unknown) {
+      failures.push(`${zp}: ${(err as Error).message}`);
+    }
+  }
+  return { requests, failures };
+}
+
 function ZaehlerstandsgangForm({
   eegId,
   disabled,
-  netzbetreiberId,
   meterPointOptions,
   onSuccess,
 }: {
   eegId: string;
   disabled: boolean;
-  netzbetreiberId: string;
   meterPointOptions: MemberMeterPointOption[];
   onSuccess: () => void;
 }) {
   const [zaehlpunkteText, setZaehlpunkteText] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [useActivePeriods, setUseActivePeriods] = useState(false);
   const [pickerFilter, setPickerFilter] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -466,41 +526,34 @@ function ZaehlerstandsgangForm({
       setLoading(false);
       return;
     }
-    const badPrefix = zaehlpunkte.find(
-      (z) => netzbetreiberId && z.length >= 8 && z.substring(0, 8) !== netzbetreiberId
-    );
-    if (badPrefix) {
-      setError(`Zählpunkt-Präfix „${badPrefix.substring(0, 8)}" passt nicht zum konfigurierten Netzbetreiber „${netzbetreiberId}"`);
+    if (!useActivePeriods && (!dateFrom || !dateTo)) {
+      setError("Von und Bis sind erforderlich");
       setLoading(false);
       return;
     }
 
-    const failures: string[] = [];
-    for (const zaehlpunkt of zaehlpunkte) {
-      try {
-        const res = await fetch(`/api/eegs/${eegId}/eda/zaehlerstandsgang`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            zaehlpunkt,
-            date_from: dateFrom,
-            date_to: dateTo,
-          }),
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          failures.push(`${zaehlpunkt}: ${data.error || `Fehler ${res.status}`}`);
-        }
-      } catch (err: unknown) {
-        failures.push(`${zaehlpunkt}: ${(err as Error).message}`);
-      }
+    let requests: PendingZaehlerstandsgangRequest[];
+    const preFailures: string[] = [];
+    if (useActivePeriods) {
+      const built = await buildActivePeriodRequests(eegId, zaehlpunkte);
+      requests = built.requests;
+      preFailures.push(...built.failures);
+    } else {
+      requests = zaehlpunkte.map((zaehlpunkt) => ({ zaehlpunkt, date_from: dateFrom, date_to: dateTo }));
     }
+
+    const failures: string[] = [...preFailures];
+    for (const req of requests) {
+      const err = await postZaehlerstandsgang(eegId, req.zaehlpunkt, req.date_from, req.date_to);
+      if (err) failures.push(err);
+    }
+    const totalAttempted = requests.length + preFailures.length;
 
     if (failures.length === 0) {
       setSuccess(
-        zaehlpunkte.length === 1
+        requests.length === 1
           ? "Anfrage wurde in die Warteschlange aufgenommen und wird übermittelt."
-          : `${zaehlpunkte.length} Anfragen wurden in die Warteschlange aufgenommen und werden übermittelt.`
+          : `${requests.length} Anfragen wurden in die Warteschlange aufgenommen und werden übermittelt.`
       );
       setZaehlpunkteText("");
       setDateFrom("");
@@ -508,9 +561,9 @@ function ZaehlerstandsgangForm({
       onSuccess();
     } else {
       setError(
-        `${failures.length} von ${zaehlpunkte.length} Anfragen fehlgeschlagen:\n${failures.join("\n")}`
+        `${failures.length} von ${totalAttempted} Anfragen fehlgeschlagen:\n${failures.join("\n")}`
       );
-      if (failures.length < zaehlpunkte.length) onSuccess();
+      if (failures.length < totalAttempted) onSuccess();
     }
     setLoading(false);
   }
@@ -615,30 +668,41 @@ function ZaehlerstandsgangForm({
         </p>
       </div>
 
+      <label className="flex items-center gap-2 text-sm text-slate-700">
+        <input
+          type="checkbox"
+          checked={useActivePeriods}
+          onChange={(e) => setUseActivePeriods(e.target.checked)}
+          disabled={disabled || loading}
+          className="rounded border-slate-300 text-teal-700 focus:ring-teal-500"
+        />
+        Nur aktive Perioden anfordern (je eine Anfrage pro Registrierungsperiode statt manuellem Zeitraum)
+      </label>
+
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5">
-            Von *
+            Von {!useActivePeriods && "*"}
           </label>
           <input
             type="date"
             value={dateFrom}
             onChange={(e) => setDateFrom(e.target.value)}
-            required
-            disabled={disabled || loading}
+            required={!useActivePeriods}
+            disabled={disabled || loading || useActivePeriods}
             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-slate-50"
           />
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-700 mb-1.5">
-            Bis *
+            Bis {!useActivePeriods && "*"}
           </label>
           <input
             type="date"
             value={dateTo}
             onChange={(e) => setDateTo(e.target.value)}
-            required
-            disabled={disabled || loading}
+            required={!useActivePeriods}
+            disabled={disabled || loading || useActivePeriods}
             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-slate-50"
           />
         </div>
@@ -646,7 +710,7 @@ function ZaehlerstandsgangForm({
 
       <button
         type="submit"
-        disabled={disabled || loading || zaehlpunkte.length === 0 || !dateFrom || !dateTo}
+        disabled={disabled || loading || zaehlpunkte.length === 0 || (!useActivePeriods && (!dateFrom || !dateTo))}
         className="px-5 py-2.5 bg-teal-700 text-white text-sm font-medium rounded-lg hover:bg-teal-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >
         {loading
@@ -659,7 +723,279 @@ function ZaehlerstandsgangForm({
   );
 }
 
+// ── Fehlende Daten nachfordern (EEG-weite CR_REQ_PT-Lückenprüfung) ───────────
+
+interface FehlendeDatenRow {
+  key: string;
+  zaehlpunkt: string;
+  memberName: string;
+  from: string;
+  to: string;
+  category: FehlendeDatenCategory;
+  inFlight: boolean;
+}
+
+function flattenFehlendeDatenRows(items: FehlendeDatenPreviewItem[]): FehlendeDatenRow[] {
+  return items.flatMap((it) =>
+    it.missing_ranges.map((r) => ({
+      key: `${it.zaehlpunkt}__${it.period_id}__${r.from}__${r.to}`,
+      zaehlpunkt: it.zaehlpunkt,
+      memberName: it.member_name,
+      from: r.from,
+      to: r.to,
+      category: r.category,
+      inFlight: it.in_flight,
+    }))
+  );
+}
+
+function CategoryBadge({ category }: { category: FehlendeDatenCategory }) {
+  const styles: Record<FehlendeDatenCategory, string> = {
+    no_data: "bg-red-100 text-red-700",
+    l3_only: "bg-orange-100 text-orange-700",
+    partial: "bg-slate-100 text-slate-600",
+  };
+  const labels: Record<FehlendeDatenCategory, string> = {
+    no_data: "keine Daten",
+    l3_only: "nur L3",
+    partial: "teilweise",
+  };
+  return (
+    <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium ${styles[category]}`}>
+      {labels[category]}
+    </span>
+  );
+}
+
+function FehlendeDatenSection({
+  eegId,
+  disabled,
+  onSuccess,
+}: {
+  eegId: string;
+  disabled: boolean;
+  onSuccess: () => void;
+}) {
+  const [state, setState] = useState<"idle" | "loading" | "loaded" | "error">("idle");
+  const [rows, setRows] = useState<FehlendeDatenRow[]>([]);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [includeNoData, setIncludeNoData] = useState(true);
+  const [includeL3Only, setIncludeL3Only] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [confirming, setConfirming] = useState(false);
+  const [result, setResult] = useState<{ ok: number; failures: string[] } | null>(null);
+
+  async function loadPreview() {
+    setState("loading");
+    setLoadError(null);
+    setResult(null);
+    try {
+      const res = await fetch(`/api/eegs/${eegId}/eda/zaehlerstandsgang/fehlende-daten`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setLoadError(data.error || `Fehler ${res.status}`);
+        setState("error");
+        return;
+      }
+      const data: FehlendeDatenPreviewResponse = await res.json();
+      const flat = flattenFehlendeDatenRows(data.items);
+      setRows(flat);
+      setSelected(new Set(flat.map((r) => r.key))); // default: all selected
+      setState("loaded");
+    } catch (err: unknown) {
+      setLoadError((err as Error).message);
+      setState("error");
+    }
+  }
+
+  function toggleRow(key: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  // "Zeiträume komplett ohne Daten" / "mit nur L3-Messwerten" sind abwählbar;
+  // echte Teil-Lücken (partial, einzelne L1/L2-Werte vorhanden) sind nicht
+  // gesondert filterbar und immer sichtbar.
+  const visibleRows = rows.filter(
+    (r) => r.category === "partial" || (r.category === "no_data" && includeNoData) || (r.category === "l3_only" && includeL3Only)
+  );
+  const visibleSelected = visibleRows.filter((r) => selected.has(r.key));
+
+  async function confirmSelected() {
+    setConfirming(true);
+    const failures: string[] = [];
+    for (const row of visibleSelected) {
+      const err = await postZaehlerstandsgang(eegId, row.zaehlpunkt, row.from, row.to);
+      if (err) failures.push(err);
+    }
+    setResult({ ok: visibleSelected.length - failures.length, failures });
+    setConfirming(false);
+    setState("idle");
+    setRows([]);
+    setSelected(new Set());
+    if (failures.length < visibleSelected.length) onSuccess();
+  }
+
+  const groupedByZP = visibleRows.reduce<Map<string, FehlendeDatenRow[]>>((map, row) => {
+    const list = map.get(row.zaehlpunkt) ?? [];
+    list.push(row);
+    map.set(row.zaehlpunkt, list);
+    return map;
+  }, new Map());
+
+  return (
+    <div className="border border-amber-200 bg-amber-50/40 rounded-lg p-4 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-amber-900">Fehlende Daten nachfordern</h3>
+        <p className="text-xs text-amber-800 mt-0.5">
+          Prüft alle Registrierungsperioden aller Zählpunkte dieser EEG (auch ehemalige Mitglieder) auf Zeiträume ohne Messwerte (L1/L2) und fordert die fehlenden Zeiträume gesammelt nach.
+        </p>
+      </div>
+
+      {result && (
+        <div
+          className={`p-3 rounded-lg text-sm whitespace-pre-line ${
+            result.failures.length === 0
+              ? "bg-green-50 border border-green-200 text-green-800"
+              : "bg-red-50 border border-red-200 text-red-800"
+          }`}
+        >
+          {result.ok} Anfrage{result.ok === 1 ? "" : "n"} in die Warteschlange aufgenommen.
+          {result.failures.length > 0 && `\n${result.failures.length} fehlgeschlagen:\n${result.failures.join("\n")}`}
+        </div>
+      )}
+      {loadError && (
+        <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">{loadError}</div>
+      )}
+
+      {state === "idle" || state === "error" ? (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={loadPreview}
+          className="px-4 py-2 bg-amber-700 text-white text-sm font-medium rounded-lg hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          Fehlende Daten prüfen
+        </button>
+      ) : state === "loading" ? (
+        <p className="text-sm text-amber-800">Wird geprüft…</p>
+      ) : rows.length === 0 ? (
+        <p className="text-sm text-amber-800">Keine fehlenden Zeiträume gefunden.</p>
+      ) : (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-4 text-xs text-amber-900">
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeNoData}
+                onChange={(e) => setIncludeNoData(e.target.checked)}
+                className="rounded border-slate-300 text-amber-700 focus:ring-amber-500"
+              />
+              Zeiträume komplett ohne Daten
+            </label>
+            <label className="flex items-center gap-1.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={includeL3Only}
+                onChange={(e) => setIncludeL3Only(e.target.checked)}
+                className="rounded border-slate-300 text-amber-700 focus:ring-amber-500"
+              />
+              Zeiträume mit nur L3-Messwerten
+            </label>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setSelected(new Set([...selected, ...visibleRows.map((r) => r.key)]))}
+              className="text-xs font-medium text-amber-800 hover:underline"
+            >
+              alle auswählen
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelected(new Set([...selected].filter((k) => !visibleRows.some((r) => r.key === k))))}
+              className="text-xs font-medium text-slate-500 hover:underline"
+            >
+              Auswahl leeren
+            </button>
+            <span className="text-xs text-amber-700 ml-auto">{visibleSelected.length} von {visibleRows.length} ausgewählt</span>
+          </div>
+
+          <div className="border border-amber-200 rounded-lg bg-white max-h-72 overflow-y-auto divide-y divide-slate-100">
+            {visibleRows.length === 0 ? (
+              <p className="px-3 py-3 text-sm text-slate-400">Keine Zeiträume für die aktuelle Filterauswahl.</p>
+            ) : (
+              Array.from(groupedByZP.entries()).map(([zp, zpRows]) => (
+                <div key={zp} className="px-3 py-2">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-slate-800 font-medium truncate">{zpRows[0].memberName || "—"}</span>
+                    <span className="font-mono text-xs text-slate-500 truncate">{zp}</span>
+                    {zpRows[0].inFlight && (
+                      <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-yellow-100 text-yellow-800">
+                        bereits angefragt
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    {zpRows.map((row) => (
+                      <label key={row.key} className="flex items-center gap-2 text-xs text-slate-600 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(row.key)}
+                          onChange={() => toggleRow(row.key)}
+                          className="rounded border-slate-300 text-amber-700 focus:ring-amber-500"
+                        />
+                        {row.from} – {row.to}
+                        <CategoryBadge category={row.category} />
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              disabled={disabled || confirming || visibleSelected.length === 0}
+              onClick={confirmSelected}
+              className="px-4 py-2 bg-amber-700 text-white text-sm font-medium rounded-lg hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              {confirming ? "Wird gesendet…" : `Anfordern (${visibleSelected.length})`}
+            </button>
+            <button
+              type="button"
+              disabled={confirming}
+              onClick={() => { setState("idle"); setRows([]); setSelected(new Set()); }}
+              className="text-xs text-slate-500 hover:underline disabled:opacity-50"
+            >
+              Abbrechen
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Zählpunktliste anfordern (EC_PODLIST) ────────────────────────────────────
+
+// Yesterday's date as YYYY-MM-DD — the default DateTimeFrom/DateTimeTo range.
+// Some Netzbetreiber (e.g. Energienetze Steiermark) reject ANFORDERUNG_ECP with
+// response code 181 ("Gemeinschafts-ID nicht vorhanden") when no period is given,
+// even though the schema marks it optional; others (e.g. Netz NÖ) accept it either
+// way and return the "current" list. Pre-filling a period avoids the rejection.
+function yesterday(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d.toISOString().slice(0, 10);
+}
 
 function PODListForm({
   eegId,
@@ -670,6 +1006,8 @@ function PODListForm({
   disabled: boolean;
   onSuccess: () => void;
 }) {
+  const [dateFrom, setDateFrom] = useState(yesterday);
+  const [dateTo, setDateTo] = useState(yesterday);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
@@ -684,7 +1022,7 @@ function PODListForm({
       const res = await fetch(`/api/eegs/${eegId}/eda/podlist`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
+        body: JSON.stringify({ date_from: dateFrom, date_to: dateTo }),
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
@@ -702,7 +1040,37 @@ function PODListForm({
   return (
     <form onSubmit={submit} className="space-y-4 max-w-md">
       <p className="text-sm text-slate-600">
-        ANFORDERUNG_ECP (CPRequest 01.12) — Aktuelle Zählpunktliste vom Netzbetreiber anfordern.
+        ANFORDERUNG_ECP (CPRequest 01.12) — Zählpunktliste für den angegebenen Zeitraum vom Netzbetreiber anfordern.
+      </p>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            Von
+          </label>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            disabled={disabled || loading}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-slate-50"
+          />
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">
+            Bis
+          </label>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            disabled={disabled || loading}
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:bg-slate-50"
+          />
+        </div>
+      </div>
+      <p className="text-xs text-slate-500">
+        Beide Felder leer lassen, um ohne Zeitraum anzufragen (manche Netzbetreiber liefern dann den aktuellen Stand).
       </p>
 
       {success && (
@@ -732,12 +1100,10 @@ function PODListForm({
 function WiderrufForm({
   eegId,
   disabled,
-  netzbetreiberId,
   onSuccess,
 }: {
   eegId: string;
   disabled: boolean;
-  netzbetreiberId: string;
   onSuccess: () => void;
 }) {
   const [zaehlpunkt, setZaehlpunkt] = useState("");
@@ -753,11 +1119,6 @@ function WiderrufForm({
     setLoading(true);
     setError(null);
     setSuccess(false);
-    if (netzbetreiberId && zaehlpunkt.length >= 8 && zaehlpunkt.substring(0, 8) !== netzbetreiberId) {
-      setError(`Zählpunkt-Präfix „${zaehlpunkt.substring(0, 8)}" passt nicht zum konfigurierten Netzbetreiber „${netzbetreiberId}"`);
-      setLoading(false);
-      return;
-    }
 
     try {
       const body: Record<string, unknown> = {

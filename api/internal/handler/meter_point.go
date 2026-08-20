@@ -324,6 +324,11 @@ func (h *MeterPointHandler) DeleteMeterPoint(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	if active, err := h.edaProcRepo.HasActiveProcess(r.Context(), meterPointID); err == nil && active {
+		jsonError(w, "Zählpunkt hat einen laufenden EDA-Vorgang (z.B. Anmeldung ausstehend) — bitte Bestätigung abwarten, sonst geht sie beim Löschen verloren", http.StatusConflict)
+		return
+	}
+
 	if err := h.meterPointRepo.Delete(r.Context(), meterPointID); err != nil {
 		jsonError(w, "failed to delete meter point", http.StatusInternalServerError)
 		return

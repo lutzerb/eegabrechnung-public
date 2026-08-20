@@ -103,7 +103,12 @@ export default async function EDAPage({ params, searchParams }: Props) {
     error = (err as { message?: string }).message || "Fehler beim Laden.";
   }
 
-  const edaConfigured = !!(eeg?.eda_marktpartner_id && eeg?.eda_netzbetreiber_id);
+  const edaConfigured = !!(
+    eeg?.eda_marktpartner_id &&
+    (eeg?.eda_netzbetreiber_id || eeg?.gemeinschaft_typ === "BEG") &&
+    eeg?.eda_imap_host && eeg?.has_eda_imap_password &&
+    eeg?.eda_smtp_host && eeg?.has_eda_smtp_password
+  );
   const openCount = processes.filter(
     (p) => !["confirmed", "completed", "rejected", "error"].includes(p.status)
   ).length;
@@ -383,13 +388,14 @@ export default async function EDAPage({ params, searchParams }: Props) {
             activeDirection={messageDirection}
             activeProcess={messageProcess}
             activeZaehlpunkt={messageZaehlpunkt}
+            activeNetzbetreiber={activeNetzbetreiber}
           />
         </div>
       )}
 
       {/* ── TAB: AKTIONEN ────────────────────────────────────── */}
       {activeTab === "aktionen" && (
-        <EDAActionForms eegId={eegId} edaConfigured={edaConfigured} netzbetreiberId={eeg?.eda_netzbetreiber_id ?? ""} members={members} />
+        <EDAActionForms eegId={eegId} edaConfigured={edaConfigured} members={members} />
       )}
 
       {/* ── TAB: FEHLER ──────────────────────────────────────── */}

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -663,6 +664,206 @@ func (r *ReadingRepository) MissingIntervalDetails(ctx context.Context, eegID uu
 		result[i] = *byZP[zp]
 	}
 	return result, nil
+}
+
+// DateRange is an inclusive [From, To] range of calendar dates (YYYY-MM-DD, Vienna).
+// GapCategory classifies why a day counts as missing for CR_REQ_PT re-request purposes.
+type GapCategory string
+
+const (
+	// GapNoData means zero energy_readings of any quality exist for that day —
+	// the Netzbetreiber never sent anything (e.g. a stuck/unanswered CR_REQ_PT).
+	GapNoData GapCategory = "no_data"
+	// GapL3Only means readings exist for that day, but exclusively quality L3
+	// (faulty, excluded from billing) — the Netzbetreiber did respond, just with
+	// unusable data.
+	GapL3Only GapCategory = "l3_only"
+	// GapPartial means some L1/L2 readings exist but fewer than the expected 96
+	// slots — a genuine partial-coverage gap, distinct from the two cases above.
+	GapPartial GapCategory = "partial"
+)
+
+// CategorizedRange is an inclusive [From, To] range of calendar dates
+// (YYYY-MM-DD, Vienna) that all share the same GapCategory.
+type CategorizedRange struct {
+	From     string      `json:"from"`
+	To       string      `json:"to"`
+	Category GapCategory `json:"category"`
+}
+
+// PeriodGap describes missing reading days within one registration period of
+// one Zählpunkt (a meter_point_registration_periods row), collapsed into
+// contiguous, category-tagged date ranges.
+type PeriodGap struct {
+	PeriodID        uuid.UUID          `json:"period_id"`
+	Zaehlpunkt      string             `json:"zaehlpunkt"`
+	MemberName      string             `json:"member_name"`
+	RegistriertSeit string             `json:"registriert_seit"` // YYYY-MM-DD
+	AbgemeldetAm    *string            `json:"abgemeldet_am,omitempty"` // nil = still open
+	MissingRanges   []CategorizedRange `json:"missing_ranges"`
+}
+
+// MissingDataByRegistrationPeriod scans every registration period of every
+// Zählpunkt ever registered in this EEG (meter_point_registration_periods —
+// unlike MissingIntervalDetails, NOT limited to members.status='ACTIVE' and not
+// limited to a meter point's *current* single active window, so it also
+// surfaces gaps for deregistered members and recycled/re-registered
+// Zählpunkte) and returns, per period, the contiguous date ranges within
+// [registriert_seit, min(abgemeldet_am, today)) that lack a full day (96
+// distinct 15-min slots) of quality IN ('L1','L2') energy_readings. Each
+// range is tagged with a GapCategory (no_data / l3_only / partial) so the
+// caller can offer to re-request only a subset — consecutive days are only
+// merged into one range when they share the same category. Periods with zero
+// missing days are omitted from the result. today must be Vienna-local
+// midnight of the current day — it is always used as an upper bound (even for
+// a period whose stored abgemeldet_am lies in the future), so today's
+// still-accumulating data, and any not-yet-reached future deregistration
+// date, is never flagged as missing.
+func (r *ReadingRepository) MissingDataByRegistrationPeriod(ctx context.Context, eegID uuid.UUID, today time.Time) ([]PeriodGap, error) {
+	q := `
+		WITH periods AS (
+		  SELECT p.id AS period_id, p.zaehlpunkt, p.meter_point_id,
+		         p.registriert_seit, p.abgemeldet_am,
+		         m.name1, m.name2,
+		         timezone('Europe/Vienna', p.registriert_seit::timestamp) AS effective_start,
+		         LEAST(
+		           COALESCE(timezone('Europe/Vienna', p.abgemeldet_am::timestamp), $2::timestamptz),
+		           $2::timestamptz
+		         ) AS effective_end
+		  FROM meter_point_registration_periods p
+		  JOIN meter_points mp ON mp.id = p.meter_point_id
+		  JOIN members m ON m.id = mp.member_id
+		  WHERE p.eeg_id = $1
+		    AND p.meter_point_id IS NOT NULL
+		),
+		expected_days AS (
+		  SELECT pr.period_id, pr.zaehlpunkt, pr.registriert_seit, pr.abgemeldet_am, pr.name1, pr.name2,
+		         generate_series(
+		           (pr.effective_start AT TIME ZONE 'Europe/Vienna')::date,
+		           ((pr.effective_end - interval '1 second') AT TIME ZONE 'Europe/Vienna')::date,
+		           '1 day'::interval
+		         )::date AS day
+		  FROM periods pr
+		  WHERE pr.effective_start < pr.effective_end
+		),
+		actual_per_day AS (
+		  SELECT pr.period_id,
+		         (er.ts AT TIME ZONE 'Europe/Vienna')::date AS day,
+		         COUNT(DISTINCT er.ts) FILTER (WHERE er.quality IN ('L1', 'L2')) AS l1l2_count,
+		         COUNT(DISTINCT er.ts) FILTER (WHERE er.quality = 'L3') AS l3_count,
+		         COUNT(DISTINCT er.ts) AS any_count
+		  FROM periods pr
+		  JOIN energy_readings er ON er.meter_point_id = pr.meter_point_id
+		    AND er.ts >= pr.effective_start
+		    AND er.ts < pr.effective_end
+		  GROUP BY pr.period_id, (er.ts AT TIME ZONE 'Europe/Vienna')::date
+		)
+		SELECT ed.period_id, ed.zaehlpunkt, ed.registriert_seit, ed.abgemeldet_am, ed.name1, ed.name2, ed.day::text,
+		       COALESCE(ap.l1l2_count, 0), COALESCE(ap.l3_count, 0), COALESCE(ap.any_count, 0)
+		FROM expected_days ed
+		LEFT JOIN actual_per_day ap ON ap.period_id = ed.period_id AND ap.day = ed.day
+		WHERE COALESCE(ap.l1l2_count, 0) < 96
+		ORDER BY ed.zaehlpunkt, ed.registriert_seit, ed.day
+	`
+	rows, err := r.db.Query(ctx, q, eegID, today)
+	if err != nil {
+		return nil, fmt.Errorf("missing data by registration period query: %w", err)
+	}
+	defer rows.Close()
+
+	type acc struct {
+		zp, regSeit, memberName string
+		abgemeldet              *string
+		days                    []string
+		categories              []GapCategory
+	}
+	byPeriod := map[uuid.UUID]*acc{}
+	var order []uuid.UUID
+	for rows.Next() {
+		var periodID uuid.UUID
+		var zp, day, name1, name2 string
+		var regSeit time.Time
+		var abgemeldet *time.Time
+		var l1l2Count, l3Count, anyCount int
+		if err := rows.Scan(&periodID, &zp, &regSeit, &abgemeldet, &name1, &name2, &day, &l1l2Count, &l3Count, &anyCount); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		a, ok := byPeriod[periodID]
+		if !ok {
+			var abgStr *string
+			if abgemeldet != nil {
+				s := abgemeldet.Format("2006-01-02")
+				abgStr = &s
+			}
+			a = &acc{
+				zp: zp, regSeit: regSeit.Format("2006-01-02"), abgemeldet: abgStr,
+				memberName: strings.TrimSpace(name1 + " " + name2),
+			}
+			byPeriod[periodID] = a
+			order = append(order, periodID)
+		}
+		category := GapPartial
+		switch {
+		case anyCount == 0:
+			category = GapNoData
+		case l1l2Count == 0 && l3Count == anyCount:
+			category = GapL3Only
+		}
+		a.days = append(a.days, day)
+		a.categories = append(a.categories, category)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	result := make([]PeriodGap, 0, len(order))
+	for _, id := range order {
+		a := byPeriod[id]
+		ranges, err := collapseDaysToCategorizedRanges(a.days, a.categories)
+		if err != nil {
+			return nil, fmt.Errorf("collapse ranges: %w", err)
+		}
+		result = append(result, PeriodGap{
+			PeriodID: id, Zaehlpunkt: a.zp, MemberName: a.memberName, RegistriertSeit: a.regSeit,
+			AbgemeldetAm: a.abgemeldet, MissingRanges: ranges,
+		})
+	}
+	return result, nil
+}
+
+// collapseDaysToCategorizedRanges collapses a sorted, distinct list of
+// YYYY-MM-DD day strings (with a parallel per-day GapCategory) into
+// contiguous inclusive CategorizedRanges — consecutive days are only merged
+// when they share the same category, so a "no_data" day is never silently
+// merged into an adjacent "l3_only" or "partial" day. Mirrors
+// formatMissingDays() in web/components/billing-run-form.tsx but returns
+// structured, category-tagged ranges instead of a display string, for the
+// bulk EEG-wide CR_REQ_PT re-request preview.
+func collapseDaysToCategorizedRanges(days []string, categories []GapCategory) ([]CategorizedRange, error) {
+	if len(days) == 0 {
+		return nil, nil
+	}
+	var ranges []CategorizedRange
+	rangeStart, prev, prevCat := days[0], days[0], categories[0]
+	prevT, err := time.Parse("2006-01-02", prev)
+	if err != nil {
+		return nil, err
+	}
+	for i := 1; i < len(days); i++ {
+		d, cat := days[i], categories[i]
+		dT, err := time.Parse("2006-01-02", d)
+		if err != nil {
+			return nil, err
+		}
+		if cat == prevCat && dT.Sub(prevT) == 24*time.Hour {
+			prev, prevT = d, dT
+			continue
+		}
+		ranges = append(ranges, CategorizedRange{From: rangeStart, To: prev, Category: prevCat})
+		rangeStart, prev, prevT, prevCat = d, d, dT, cat
+	}
+	ranges = append(ranges, CategorizedRange{From: rangeStart, To: prev, Category: prevCat})
+	return ranges, nil
 }
 
 // MissingIntervals returns the Zählpunkt identifiers of active meter points that

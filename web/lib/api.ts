@@ -717,6 +717,32 @@ export interface MeterPointHistory {
   processes: EDAProcessEvent[];
 }
 
+// no_data = keine Messwerte jeglicher Qualität; l3_only = nur fehlerhafte
+// (L3, von der Abrechnung ausgeschlossene) Messwerte; partial = einzelne
+// L1/L2-Werte vorhanden, aber unvollständig.
+export type FehlendeDatenCategory = "no_data" | "l3_only" | "partial";
+
+export interface FehlendeDatenRange {
+  from: string; // YYYY-MM-DD
+  to: string; // YYYY-MM-DD
+  category: FehlendeDatenCategory;
+}
+
+export interface FehlendeDatenPreviewItem {
+  zaehlpunkt: string;
+  member_name: string;
+  period_id: string;
+  registriert_seit: string;
+  abgemeldet_am?: string;
+  missing_ranges: FehlendeDatenRange[];
+  in_flight: boolean;
+}
+
+export interface FehlendeDatenPreviewResponse {
+  items: FehlendeDatenPreviewItem[];
+  total_ranges: number;
+}
+
 export interface CreateMeterPointRequest {
   zaehlpunkt: string;
   energierichtung: string; // "CONSUMPTION" | "GENERATION"

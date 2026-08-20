@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import type { EDAMessage } from "@/lib/api";
+import type { EDAMessage, ActiveNetzbetreiber } from "@/lib/api";
 import { byMarktpartnerID } from "@/lib/netzbetreiber";
 import { EDA_PROCESS_TYPE_LABELS, EDA_PROCESS_STATUS_LABELS, EDA_PROCESS_STATUS_STYLES } from "@/lib/eda-status-labels";
 
@@ -16,6 +16,7 @@ interface Props {
   activeDirection?: string;
   activeProcess?: string;
   activeZaehlpunkt?: string;
+  activeNetzbetreiber?: ActiveNetzbetreiber[];
 }
 
 function formatDate(dateStr: string | undefined): string {
@@ -33,8 +34,14 @@ function formatDate(dateStr: string | undefined): string {
   }
 }
 
-function labelAddress(code: string | undefined): string {
+// Netzbetreiber-Namensauflösung: zuerst die für dieses EEG aktiven Netzbetreiber
+// (vom Server über die vollständige Backend-Registry aufgelöst, deckt auch kleine
+// regionale E-Werke ab), erst danach die kleine, im Frontend fest hinterlegte Liste
+// der ~16 großen Netzbetreiber (nur relevant für Portal-Hinweise).
+function labelAddress(code: string | undefined, nbByID?: Map<string, string>): string {
   if (!code) return "—";
+  const fromEeg = nbByID?.get(code.toUpperCase());
+  if (fromEeg) return fromEeg;
   const nb = byMarktpartnerID(code);
   return nb ? nb.name : code;
 }
@@ -117,7 +124,7 @@ const PROCESS_OPTIONS = [
   { value: "FINALE_ANM", label: "Final-Bestätigung" },
 ];
 
-function ExpandedRow({ msg, eegId }: { msg: EDAMessage; eegId: string }) {
+function ExpandedRow({ msg, eegId, nbByID }: { msg: EDAMessage; eegId: string; nbByID: Map<string, string> }) {
   return (
     <tr className="bg-slate-50/80 border-b border-slate-100">
       <td colSpan={7} className="px-6 py-4">
@@ -127,8 +134,8 @@ function ExpandedRow({ msg, eegId }: { msg: EDAMessage; eegId: string }) {
             {msg.from_address && (
               <div>
                 <span className="font-medium text-slate-500">Von:</span>{" "}
-                <span className="text-slate-800" title={msg.from_address}>{labelAddress(msg.from_address)}</span>
-                {byMarktpartnerID(msg.from_address) && (
+                <span className="text-slate-800" title={msg.from_address}>{labelAddress(msg.from_address, nbByID)}</span>
+                {(nbByID.has(msg.from_address.toUpperCase()) || byMarktpartnerID(msg.from_address)) && (
                   <span className="font-mono text-slate-400 ml-1">({msg.from_address})</span>
                 )}
               </div>
@@ -136,8 +143,8 @@ function ExpandedRow({ msg, eegId }: { msg: EDAMessage; eegId: string }) {
             {msg.to_address && (
               <div>
                 <span className="font-medium text-slate-500">An:</span>{" "}
-                <span className="text-slate-800" title={msg.to_address}>{labelAddress(msg.to_address)}</span>
-                {byMarktpartnerID(msg.to_address) && (
+                <span className="text-slate-800" title={msg.to_address}>{labelAddress(msg.to_address, nbByID)}</span>
+                {(nbByID.has(msg.to_address.toUpperCase()) || byMarktpartnerID(msg.to_address)) && (
                   <span className="font-mono text-slate-400 ml-1">({msg.to_address})</span>
                 )}
               </div>
@@ -195,12 +202,14 @@ function ExpandedRow({ msg, eegId }: { msg: EDAMessage; eegId: string }) {
 
 const PAGE_SIZE_OPTIONS = [50, 100, 200, 500];
 
-export function EDAMessagesTable({ messages, eegId, totalCount, page, pageSize, activeDirection = "", activeProcess = "", activeZaehlpunkt = "" }: Props) {
+export function EDAMessagesTable({ messages, eegId, totalCount, page, pageSize, activeDirection = "", activeProcess = "", activeZaehlpunkt = "", activeNetzbetreiber = [] }: Props) {
   const [search, setSearch] = useState(activeZaehlpunkt);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const nbByID = new Map(activeNetzbetreiber.map((nb) => [nb.id.toUpperCase(), nb.name]));
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
   const currentPage = Math.min(page, totalPages);
@@ -380,11 +389,11 @@ export function EDAMessagesTable({ messages, eegId, totalCount, page, pageSize, 
                     <td className="px-4 py-3 text-xs">
                       {msg.direction === "inbound" ? (
                         <span className="text-slate-500 truncate block max-w-[120px]" title={msg.from_address}>
-                          {labelAddress(msg.from_address)}
+                          {labelAddress(msg.from_address, nbByID)}
                         </span>
                       ) : (
                         <span className="text-slate-500 truncate block max-w-[120px]" title={msg.to_address}>
-                          {labelAddress(msg.to_address)}
+                          {labelAddress(msg.to_address, nbByID)}
                         </span>
                       )}
                     </td>
@@ -404,7 +413,7 @@ export function EDAMessagesTable({ messages, eegId, totalCount, page, pageSize, 
                   </tr>,
                 ];
                 if (isExpanded) {
-                  rows.push(<ExpandedRow key={`${msg.id}-exp`} msg={msg} eegId={eegId} />);
+                  rows.push(<ExpandedRow key={`${msg.id}-exp`} msg={msg} eegId={eegId} nbByID={nbByID} />);
                 }
                 return rows;
               })

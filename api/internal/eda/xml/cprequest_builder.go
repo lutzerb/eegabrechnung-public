@@ -340,6 +340,14 @@ type PODListParams struct {
 	MessageID      string // UUID; hyphens are stripped automatically
 	ConversationID string // UUID; hyphens are stripped automatically
 	ECID           string // Gemeinschafts-ID (used as MeteringPoint in XML)
+	// DateFrom/DateTo are optional. Per the ebutilities CPRequest schema, MeteringPoint
+	// carries the Gemeinschafts-ID and DateTimeFrom/DateTimeTo carry the desired period —
+	// some Netzbetreiber (e.g. Netz NÖ) tolerate omitting them and default to "current
+	// status", others (e.g. Energienetze Steiermark) appear to require them and reject
+	// with response code 181 ("Gemeinschafts-ID nicht vorhanden") when absent. Zero value
+	// omits the Extension element, preserving the previous no-date-range behavior.
+	DateFrom time.Time
+	DateTo   time.Time
 }
 
 // BuildPODList builds a CPRequest 01.12 message with MessageCode=ANFORDERUNG_ECP
@@ -390,8 +398,14 @@ func BuildPODList(p PODListParams) (string, error) {
 			ConversationID: convID,
 			ProcessDate:    now.Format(cpDateLayout),
 			MeteringPoint:  p.ECID,
-			// No Extension needed for ANFORDERUNG_ECP
 		},
+	}
+	if !p.DateFrom.IsZero() && !p.DateTo.IsZero() {
+		doc.ProcessDir.Extension = &cpExtension12XML{
+			DateTimeFrom:      formatDateTimeU(p.DateFrom),
+			DateTimeTo:        formatDateTimeU(p.DateTo),
+			AssumptionOfCosts: false,
+		}
 	}
 
 	out, err := xml.MarshalIndent(doc, "", "  ")

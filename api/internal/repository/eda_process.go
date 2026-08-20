@@ -167,6 +167,33 @@ func (r *EDAProcessRepository) FindSentReqPTByZaehlpunkt(ctx context.Context, ee
 	return &p, nil
 }
 
+// ListZaehlpunkteWithInFlightCRReqPT returns the set of Zählpunkte in this EEG
+// that currently have a CR_REQ_PT process in 'pending' or 'sent' status. Used
+// by the "Fehlende Daten nachfordern" preview to flag Zählpunkte that already
+// have a request in flight (which the Netzbetreiber may simply never have
+// answered — the preview still allows re-requesting them, this is only a
+// display hint). A single EEG-wide batch query, unlike the per-ZP
+// FindSentReqPTByZaehlpunkt used by the worker for message matching.
+func (r *EDAProcessRepository) ListZaehlpunkteWithInFlightCRReqPT(ctx context.Context, eegID uuid.UUID) (map[string]bool, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT DISTINCT zaehlpunkt FROM eda_processes
+		WHERE eeg_id = $1 AND process_type = 'CR_REQ_PT' AND status IN ('pending', 'sent')
+	`, eegID)
+	if err != nil {
+		return nil, fmt.Errorf("list in-flight CR_REQ_PT zaehlpunkte: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]bool{}
+	for rows.Next() {
+		var zp string
+		if err := rows.Scan(&zp); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		out[zp] = true
+	}
+	return out, rows.Err()
+}
+
 // SetErrorNotificationSent marks error_notification_sent_at = now() for a process.
 // Used by the worker to ensure the error notification email is sent at most once.
 func (r *EDAProcessRepository) SetErrorNotificationSent(ctx context.Context, id uuid.UUID) error {
@@ -226,4 +253,52 @@ func (r *EDAProcessRepository) HasPendingFactorChangeToday(ctx context.Context, 
 		  AND status NOT IN ('rejected', 'error')
 	`, eegID, zaehlpunkt).Scan(&count)
 	return count > 0, err
+}
+
+// HasActiveAnmeldung returns true if there is already an EC_REQ_ONL process for
+// this Zählpunkt that is pending, sent, first_confirmed, or confirmed — i.e. not
+// yet known to have failed. Used to block a second Anmeldung while one is still
+// in flight or already succeeded, since the Netzbetreiber rejects duplicates and
+// deleting/recreating the meter point in between would otherwise be the only way
+// a user could "retry", which orphans the original process's eventual confirmation.
+func (r *EDAProcessRepository) HasActiveAnmeldung(ctx context.Context, eegID uuid.UUID, zaehlpunkt string) (bool, error) {
+	var count int
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM eda_processes
+		WHERE eeg_id = $1
+		  AND zaehlpunkt = $2
+		  AND process_type = 'EC_REQ_ONL'
+		  AND status NOT IN ('rejected', 'error')
+	`, eegID, zaehlpunkt).Scan(&count)
+	return count > 0, err
+}
+
+// HasActiveProcess returns true if there is an in-flight (pending/sent/
+// first_confirmed) EDA process still attached to this meter point. Used to
+// block meter-point deletion while a process is awaiting Netzbetreiber
+// confirmation: deleting the meter point sets eda_processes.meter_point_id to
+// NULL (ON DELETE SET NULL), and the confirmation handler only applies its
+// effects (registriert_seit, consent_id, member activation) when meter_point_id
+// is set — an in-flight process orphaned this way would confirm successfully on
+// the wire but silently vanish from the app.
+func (r *EDAProcessRepository) HasActiveProcess(ctx context.Context, meterPointID uuid.UUID) (bool, error) {
+	var count int
+	err := r.db.QueryRow(ctx, `
+		SELECT COUNT(*) FROM eda_processes
+		WHERE meter_point_id = $1
+		  AND status IN ('pending', 'sent', 'first_confirmed')
+	`, meterPointID).Scan(&count)
+	return count > 0, err
+}
+
+// SetMeterPointID re-links an eda_processes row to a meter point. Used to
+// recover a process that was orphaned (meter_point_id set to NULL by
+// ON DELETE SET NULL) while still in flight, once its confirmation arrives —
+// see worker.go's ABSCHLUSS_ECON handling.
+func (r *EDAProcessRepository) SetMeterPointID(ctx context.Context, id uuid.UUID, meterPointID uuid.UUID) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE eda_processes SET meter_point_id = $2, updated_at = now() WHERE id = $1`,
+		id, meterPointID,
+	)
+	return err
 }
