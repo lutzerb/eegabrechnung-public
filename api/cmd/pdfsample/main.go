@@ -30,10 +30,10 @@ func main() {
 	}
 	defer os.Remove(logoPath)
 
-	eeg, member, inv, vat, energyRows, generationRows := invoice.SampleFixtureData()
+	eeg, member, inv, vat, energyRows, generationRows, history := invoice.SampleFixtureData()
 	eeg.LogoPath = logoPath
 
-	data, err := invoice.GeneratePDFThemed(inv, eeg, member, vat, nil, energyRows, generationRows, invoice.DefaultOikosTheme())
+	data, err := invoice.GeneratePDFThemed(inv, eeg, member, vat, history, energyRows, generationRows, invoice.DefaultOikosTheme())
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error generating PDF:", err)
 		os.Exit(1)

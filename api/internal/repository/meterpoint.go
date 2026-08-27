@@ -452,13 +452,20 @@ func (r *MeterPointRepository) GetByZaehlpunkt(ctx context.Context, zaehlpunkt s
 // timezone('Europe/Vienna', ...), not a naive UTC cast — otherwise every reading in the
 // first ~1-2 hours of a Vienna day (which falls on the previous UTC calendar day) would
 // be excluded from its own registration window and silently dropped.
+//
+// abgemeldet_am is treated as an INCLUSIVE last active day — symmetric with
+// registriert_seit being an inclusive first active day — so readings dated on the
+// deregistration day itself still attach to this row. The Netzbetreiber keeps
+// delivering real CR_MSG data for that day (confirmed empirically: e-steiermark
+// returned quality-L1 data for a Zählpunkt's abgemeldet_am date), so an exclusive
+// boundary here silently dropped an entire day of otherwise-good readings.
 func (r *MeterPointRepository) GetByZaehlpunktAtTime(ctx context.Context, eegID uuid.UUID, zaehlpunkt string, ts time.Time) (*domain.MeterPoint, error) {
 	q := `SELECT ` + selectMeterPoint + `
 	      FROM meter_points
 	      WHERE eeg_id = $1 AND zaehlpunkt = $2
 	        AND registriert_seit IS NOT NULL
 	        AND timezone('Europe/Vienna', registriert_seit::timestamp) <= $3
-	        AND (abgemeldet_am IS NULL OR timezone('Europe/Vienna', abgemeldet_am::timestamp) > $3)
+	        AND (abgemeldet_am IS NULL OR timezone('Europe/Vienna', (abgemeldet_am + 1)::timestamp) > $3)
 	      ORDER BY registriert_seit DESC
 	      LIMIT 1`
 	var mp domain.MeterPoint

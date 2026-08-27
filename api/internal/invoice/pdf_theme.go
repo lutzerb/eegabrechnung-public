@@ -4,6 +4,9 @@ import (
 	"bytes"
 	_ "embed"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/png"
 	"math"
 	"os"
 	"strconv"
@@ -19,11 +22,13 @@ import (
 // reference PDF ("Oikos" layout). The production GeneratePDF / GenerateCreditNotePDF
 // / GenerateStornorechnung / embedLogo in pdf.go are untouched — helpers here are
 // intentionally duplicated rather than shared, so a bug in the themed layout can
-// never affect the default rendering path. Only small, pure, already-shared
-// helpers (drawTotalRow, drawMpSubRow, drawBarChart, formatKwh, formatAmount,
-// germanMonth, periodLabel) are reused directly from pdf.go — those always render
-// in DejaVu Sans regardless of the chosen theme font (see newThemedPDF), since
-// changing them would touch the production rendering path.
+// never affect the default rendering path. Only small, pure formatters with no
+// font/layout side effects (formatKwh, formatAmount, germanMonth, periodLabel,
+// shortMonth, shortID) are reused directly from pdf.go. Anything that calls
+// pdf.SetFont has a themed counterpart (drawTotalRowThemed, drawMpSubRowThemed,
+// drawBarChartThemed) using the "Theme" font instead of pdf.go's hardcoded
+// DejaVu — otherwise a themed invoice with a non-default font would show those
+// rows/charts in a visibly different typeface/size than the rest of the page.
 
 //go:embed fonts/Roboto-Regular.ttf
 var robotoRegular []byte
@@ -57,14 +62,12 @@ var themeFonts = map[string]themeFontAsset{
 
 // newThemedPDF creates an fpdf instance for the themed renderers. It registers
 // the chosen theme font family under the name "Theme" (falling back to "dejavu"
-// for an unknown/empty value), PLUS "DejaVu" unconditionally so the shared
-// low-level helpers borrowed from pdf.go (drawTotalRow, drawMpSubRow,
-// drawBarChart) keep working — those always render in DejaVu Sans, independent
-// of the chosen theme font.
+// for an unknown/empty value). All themed drawing — including the
+// drawTotalRowThemed/drawMpSubRowThemed/drawBarChartThemed counterparts of
+// pdf.go's shared helpers — uses "Theme", so a themed invoice never mixes in
+// a hardcoded DejaVu fallback the way it used to.
 func newThemedPDF(theme InvoiceTheme) *fpdf.Fpdf {
 	pdf := fpdf.New("P", "mm", "A4", "")
-	pdf.AddUTF8FontFromBytes("DejaVu", "", dejaVuSans)
-	pdf.AddUTF8FontFromBytes("DejaVu", "B", dejaVuSansBold)
 	asset, ok := themeFonts[theme.FontFamily]
 	if !ok {
 		asset = themeFonts["dejavu"]
@@ -84,12 +87,57 @@ type InvoiceTheme struct {
 	FontFamily                string  // dejavu | roboto | opensans | ptserif
 	BaseFontSize              float64 // pt, 8-12 — body text size; other sizes are relative offsets
 	RowSpacing                float64 // scale factor, 0.7-1.3 — multiplies every line/row height and inter-section gap
+	// LogoScale multiplies the logo's auto-height (which otherwise matches the
+	// EEG address block height, see addressBlockHeight). Range enforced by the
+	// handler is 0.5-2.5. The recipient/"Rechnung an" block is drawn at a FIXED
+	// y=45mm in the themed renderers — it doesn't move when the logo grows, so
+	// a large logo + long address + high RowSpacing can visually overlap it;
+	// the frontend warns to check the live preview near the top of the range.
+	LogoScale float64
+	// AlwaysShowZaehlpunkt forces the "Zählpunkt: xxx" sub-heading band in
+	// drawEnergyPeriodTable/drawGenerationPeriodTable even when the invoice
+	// covers only a single Zählpunkt (normally the heading is only shown for
+	// multi-ZP invoices, see showZPHeadings).
+	AlwaysShowZaehlpunkt bool
+	// ChartType selects the Verbrauchsentwicklungsgrafik variant: "absolute"
+	// (kWh bars, drawBarChartThemed) or "percentage" (100%-stacked Community-vs-
+	// Netz/Rest chart, drawPercentBarChartThemed).
+	ChartType string
+	// ChartTitle overrides the chart's title text; empty means "use the chart
+	// type's built-in default" (see drawBarChartThemed/drawPercentBarChartThemed).
+	ChartTitle string
+	// Per-segment colors (RGB) for the percentage chart variant only
+	// (drawPercentBarChartThemed) — the absolute chart (drawBarChartThemed) keeps
+	// its own fixed blue/green so switching invoice_chart_type never silently
+	// changes its established look for existing EEGs.
+	ChartColorCommunityBezug       [3]int
+	ChartColorNetzbezug            [3]int
+	ChartColorCommunityEinspeisung [3]int
+	ChartColorResteinspeisung      [3]int
+	// Legend/axis label overrides (drawBarChartThemed/drawPercentBarChartThemed);
+	// each empty means "use the hardcoded German default" (see orDefault at each
+	// draw site) — same convention as ChartTitle. Community*/Netzbezug/
+	// Resteinspeisung apply to the percentage chart; Bezug/Einspeisung apply to
+	// the absolute chart.
+	ChartLabelCommunity            string
+	ChartLabelCommunityBezug       string
+	ChartLabelCommunityEinspeisung string
+	ChartLabelNetzbezug            string
+	ChartLabelResteinspeisung      string
+	ChartLabelBezug                string
+	ChartLabelEinspeisung          string
 }
 
 // DefaultOikosTheme approximates the accent color and logo placement of the
 // customer-supplied reference PDF used as the initial design inspiration.
 func DefaultOikosTheme() InvoiceTheme {
-	return InvoiceTheme{AccentR: 201, AccentG: 184, AccentB: 154, LogoLeft: true, FontFamily: "dejavu", BaseFontSize: 10, RowSpacing: 1.0}
+	return InvoiceTheme{
+		AccentR: 201, AccentG: 184, AccentB: 154, LogoLeft: true, FontFamily: "dejavu", BaseFontSize: 10, RowSpacing: 1.0, LogoScale: 1.0, ChartType: "absolute",
+		ChartColorCommunityBezug:       [3]int{34, 197, 94},
+		ChartColorNetzbezug:            [3]int{245, 158, 11},
+		ChartColorCommunityEinspeisung: [3]int{34, 197, 94},
+		ChartColorResteinspeisung:      [3]int{59, 130, 246},
+	}
 }
 
 func (t InvoiceTheme) apply(pdf *fpdf.Fpdf) {
@@ -123,6 +171,17 @@ func (t InvoiceTheme) h(base float64) float64 {
 // inter-section vertical gaps in the themed renderers.
 func (t InvoiceTheme) ln(pdf *fpdf.Fpdf, base float64) {
 	pdf.Ln(t.h(base))
+}
+
+// logoH scales the logo's auto-height (normally addressBlockHeight) by
+// LogoScale, falling back to 1.0 (no scaling) when unset (e.g. a zero-value
+// InvoiceTheme constructed directly rather than via DefaultOikosTheme).
+func (t InvoiceTheme) logoH(base float64) float64 {
+	scale := t.LogoScale
+	if scale <= 0 {
+		scale = 1.0
+	}
+	return base * scale
 }
 
 // tint returns a light background mix of the theme accent color with white
@@ -165,6 +224,33 @@ func ThemeFromEEG(eeg *domain.EEG) InvoiceTheme {
 	if eeg.InvoiceRowSpacing > 0 {
 		theme.RowSpacing = eeg.InvoiceRowSpacing
 	}
+	if eeg.InvoiceLogoScale > 0 {
+		theme.LogoScale = eeg.InvoiceLogoScale
+	}
+	theme.AlwaysShowZaehlpunkt = eeg.InvoiceAlwaysShowZaehlpunkt
+	if eeg.InvoiceChartType != "" {
+		theme.ChartType = eeg.InvoiceChartType
+	}
+	theme.ChartTitle = eeg.InvoiceChartTitle
+	if r, g, b, ok := parseHexColor(eeg.InvoiceChartColorCommunityBezug); ok {
+		theme.ChartColorCommunityBezug = [3]int{r, g, b}
+	}
+	if r, g, b, ok := parseHexColor(eeg.InvoiceChartColorNetzbezug); ok {
+		theme.ChartColorNetzbezug = [3]int{r, g, b}
+	}
+	if r, g, b, ok := parseHexColor(eeg.InvoiceChartColorCommunityEinspeisung); ok {
+		theme.ChartColorCommunityEinspeisung = [3]int{r, g, b}
+	}
+	if r, g, b, ok := parseHexColor(eeg.InvoiceChartColorResteinspeisung); ok {
+		theme.ChartColorResteinspeisung = [3]int{r, g, b}
+	}
+	theme.ChartLabelCommunity = eeg.InvoiceChartLabelCommunity
+	theme.ChartLabelCommunityBezug = eeg.InvoiceChartLabelCommunityBezug
+	theme.ChartLabelCommunityEinspeisung = eeg.InvoiceChartLabelCommunityEinspeisung
+	theme.ChartLabelNetzbezug = eeg.InvoiceChartLabelNetzbezug
+	theme.ChartLabelResteinspeisung = eeg.InvoiceChartLabelResteinspeisung
+	theme.ChartLabelBezug = eeg.InvoiceChartLabelBezug
+	theme.ChartLabelEinspeisung = eeg.InvoiceChartLabelEinspeisung
 	return theme
 }
 
@@ -251,10 +337,66 @@ func embedLogoAt(pdf *fpdf.Fpdf, logoPath string, x, y, w, h float64) {
 	imgType := "JPG"
 	if strings.HasSuffix(strings.ToLower(logoPath), ".png") {
 		imgType = "PNG"
+		if trimmed, ok := trimTransparentPadding(data); ok {
+			data = trimmed
+		}
 	}
 	opt := fpdf.ImageOptions{ImageType: imgType, ReadDpi: true}
 	pdf.RegisterImageOptionsReader("logo", opt, bytes.NewReader(data))
 	pdf.ImageOptions("logo", x, y, w, h, false, opt, 0, "")
+}
+
+// trimTransparentPadding crops a PNG's fully-transparent border and re-encodes
+// the result. Customer logo uploads are frequently exported on a padded
+// square canvas (e.g. for social-media use) — without trimming, embedLogoAt's
+// (x, y, h) box places that whitespace, not the visible mark, flush with the
+// address block it's meant to align with, leaving a visual gap at the top.
+// Returns ok=false (caller keeps the original bytes) when the image isn't a
+// decodable PNG or has no transparent border to remove.
+func trimTransparentPadding(data []byte) (out []byte, ok bool) {
+	img, err := png.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, false
+	}
+	bounds := img.Bounds()
+	minX, minY := bounds.Max.X, bounds.Max.Y
+	maxX, maxY := bounds.Min.X, bounds.Min.Y
+	found := false
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			_, _, _, a := img.At(x, y).RGBA()
+			if a == 0 {
+				continue
+			}
+			found = true
+			if x < minX {
+				minX = x
+			}
+			if x > maxX {
+				maxX = x
+			}
+			if y < minY {
+				minY = y
+			}
+			if y > maxY {
+				maxY = y
+			}
+		}
+	}
+	if !found {
+		return nil, false
+	}
+	cropRect := image.Rect(minX, minY, maxX+1, maxY+1)
+	if cropRect == bounds {
+		return nil, false
+	}
+	cropped := image.NewNRGBA(cropRect.Sub(cropRect.Min))
+	draw.Draw(cropped, cropped.Bounds(), img, cropRect.Min, draw.Src)
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, cropped); err != nil {
+		return nil, false
+	}
+	return buf.Bytes(), true
 }
 
 // orDefault returns s, or def when s is empty.
@@ -434,6 +576,33 @@ func monthlyGenerationPriceVaries(items []MonthlyKwh) bool {
 	return false
 }
 
+// monthlyConsumptionMonthCount / monthlyGenerationMonthCount count how many
+// months in a multi-month period actually have billable consumption/
+// generation. Collapsing to the period-total "Summe" row (see
+// eeg.InvoiceShowMonthlyBreakdown) only saves space when there are multiple
+// such months to fold together; with zero or one, the collapsed row shows
+// the same total the itemized row would, minus the price/month label — worth
+// forcing the itemized row open the same way monthlyEnergyPriceVaries does.
+func monthlyConsumptionMonthCount(items []MonthlyKwh) int {
+	n := 0
+	for _, m := range items {
+		if m.ConsumptionKwh != 0 {
+			n++
+		}
+	}
+	return n
+}
+
+func monthlyGenerationMonthCount(items []MonthlyKwh) int {
+	n := 0
+	for _, m := range items {
+		if m.GenerationKwh != 0 {
+			n++
+		}
+	}
+	return n
+}
+
 // aggregateEnergyRows collapses monthly EnergyPeriodRow entries into one row
 // per Zählpunkt (summed kWh columns, ZeitraumVon/Bis spanning the full group),
 // preserving the order Zählpunkte first appear in. Used when the "individuell"
@@ -538,7 +707,7 @@ func drawEnergyPeriodTable(pdf *fpdf.Fpdf, rows []EnergyPeriodRow, theme Invoice
 			distinctZPs[r.Zaehlpunkt] = true
 		}
 	}
-	showZPHeadings := len(distinctZPs) > 1
+	showZPHeadings := len(distinctZPs) > 1 || theme.AlwaysShowZaehlpunkt
 
 	labelVon := orDefault(eeg.InvoiceEnergyLabelZeitraumVon, "Zeitraum von")
 	labelBis := orDefault(eeg.InvoiceEnergyLabelZeitraumBis, "Zeitraum bis")
@@ -651,7 +820,7 @@ func drawGenerationPeriodTable(pdf *fpdf.Fpdf, rows []GenerationPeriodRow, theme
 			distinctZPs[r.Zaehlpunkt] = true
 		}
 	}
-	showZPHeadings := len(distinctZPs) > 1
+	showZPHeadings := len(distinctZPs) > 1 || theme.AlwaysShowZaehlpunkt
 
 	labelVon := orDefault(eeg.InvoiceEnergyLabelZeitraumVon, "Zeitraum von")
 	labelBis := orDefault(eeg.InvoiceEnergyLabelZeitraumBis, "Zeitraum bis")
@@ -741,10 +910,10 @@ func drawGenerationPeriodTable(pdf *fpdf.Fpdf, rows []GenerationPeriodRow, theme
 // include the unbordered VAT/Saldo section below the table — that's plain
 // label/value text without a header row to tear away from, so a page break
 // inside it reads fine.
-func themedPricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domain.EEG, vat VATOptions, colDesc, rowH float64, effShowCons, effShowGen bool) float64 {
+func themedPricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domain.EEG, vat VATOptions, colDesc, rowH float64, effShowCons, effShowGen bool, periodStart, periodEnd time.Time) float64 {
 	h := rowH // banner
 	h += rowH // column header
-	multiMonth := len(vat.MonthlyLineItems) > 1
+	multiMonth := periodSpansMultipleMonths(periodStart, periodEnd)
 	showConsRows := multiMonth && effShowCons
 	showGenRows := multiMonth && effShowGen
 	if multiMonth {
@@ -796,7 +965,509 @@ func themedPricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domain.EE
 		}
 		h += wrappingLineRowHeight(pdf, theme, colDesc, rowH, label)
 	}
+	for _, em := range vat.ExtraMeterLines {
+		h += wrappingLineRowHeight(pdf, theme, colDesc, rowH, fmt.Sprintf("%s (Zusatzzähler)", em.Label))
+	}
 	return h
+}
+
+// drawTotalRowThemed is drawTotalRow's (pdf.go) theme-aware counterpart —
+// same "Summe" row layout, but uses the "Theme" family instead of hardcoded
+// DejaVu 10pt. drawTotalRow itself stays untouched (like embedLogo vs.
+// embedLogoAt) so the standard design's own callers are unaffected. size is
+// the caller's already-resolved theme.size(delta) — passed in rather than
+// hardcoded so this row always matches whatever size the surrounding line
+// items use, even when that differs between callers (e.g. GeneratePDFThemed's
+// pricing table matches the period tables above it at theme.size(-1), while
+// GenerateCreditNotePDFThemed's has no such table above it and stays at
+// theme.size(0)).
+func drawTotalRowThemed(pdf *fpdf.Fpdf, size float64, colDesc, colKwh, colPrice, colAmount, rowH float64, label string, totalKwh, totalAmount float64, negative bool) {
+	amountStr := formatAmount(totalAmount)
+	if negative {
+		amountStr = "-" + amountStr
+	}
+	pdf.SetFont("Theme", "B", size)
+	pdf.CellFormat(colDesc, rowH, label, "1", 0, "L", false, 0, "")
+	pdf.CellFormat(colKwh, rowH, formatKwh(totalKwh), "1", 0, "R", false, 0, "")
+	pdf.CellFormat(colPrice, rowH, "", "1", 0, "R", false, 0, "")
+	pdf.CellFormat(colAmount, rowH, amountStr, "1", 1, "R", false, 0, "")
+	pdf.SetFont("Theme", "", size)
+}
+
+// drawMpSubRowThemed is drawMpSubRow's (pdf.go) theme-aware counterpart —
+// same layout/columns, but "Theme" family scaled off theme.BaseFontSize
+// instead of hardcoded DejaVu 7.5pt/10pt.
+func drawMpSubRowThemed(pdf *fpdf.Fpdf, theme InvoiceTheme, mps []MeterPointKwh) {
+	const (
+		colDesc  = 80.0
+		colKwh   = 30.0
+		colPrice = 40.0
+		subH     = 4.5
+	)
+	if len(mps) == 0 {
+		return
+	}
+	pdf.SetFont("Theme", "", theme.size(-2.5))
+	pdf.SetTextColor(120, 120, 120)
+	if len(mps) == 1 {
+		pdf.CellFormat(colDesc+colKwh+colPrice, subH, "ZP: "+mps[0].Zaehlpunkt, "LB", 0, "L", false, 0, "")
+		pdf.CellFormat(0, subH, "", "RB", 1, "", false, 0, "")
+	} else {
+		for i, mp := range mps {
+			isLast := i == len(mps)-1
+			lBorder, bBorder, rBorder := "L", "", "R"
+			if isLast {
+				lBorder, bBorder, rBorder = "LB", "B", "RB"
+			}
+			pdf.CellFormat(colDesc, subH, "  "+mp.Zaehlpunkt, lBorder, 0, "L", false, 0, "")
+			pdf.CellFormat(colKwh, subH, formatKwh(mp.Kwh), bBorder, 0, "R", false, 0, "")
+			pdf.CellFormat(colPrice, subH, "", bBorder, 0, "", false, 0, "")
+			pdf.CellFormat(0, subH, "", rBorder, 1, "", false, 0, "")
+		}
+	}
+	pdf.SetFont("Theme", "", theme.size(0))
+	pdf.SetTextColor(0, 0, 0)
+}
+
+// drawBarChartThemed is drawBarChart's (pdf.go) theme-aware counterpart —
+// identical chart math/layout, but title/axis/month/legend/unit labels use
+// the "Theme" family (scaled off theme.BaseFontSize) instead of hardcoded
+// DejaVu, so the chart's typography matches the rest of a themed invoice.
+func drawBarChartThemed(pdf *fpdf.Fpdf, theme InvoiceTheme, data []MonthlyKwh) {
+	if len(data) == 0 {
+		return
+	}
+
+	// Ensure enough vertical space — add a page if < 52mm remain
+	_, pageH := pdf.GetPageSize()
+	_, _, mBottom, _ := pdf.GetMargins()
+	bottomBound := pageH - mBottom
+	if pdf.GetY()+60 > bottomBound {
+		pdf.AddPage()
+	}
+
+	// Determine whether we have both consumption and generation data
+	hasBoth := false
+	for _, d := range data {
+		if d.ConsumptionKwh > 0 && d.GenerationKwh > 0 {
+			hasBoth = true
+			break
+		}
+	}
+	hasCons := false
+	hasGen := false
+	for _, d := range data {
+		if d.ConsumptionKwh > 0 {
+			hasCons = true
+		}
+		if d.GenerationKwh > 0 {
+			hasGen = true
+		}
+	}
+
+	// Find max kWh for y-scale
+	maxKwh := 0.0
+	for _, d := range data {
+		if d.ConsumptionKwh > maxKwh {
+			maxKwh = d.ConsumptionKwh
+		}
+		if d.GenerationKwh > maxKwh {
+			maxKwh = d.GenerationKwh
+		}
+	}
+	if maxKwh == 0 {
+		return
+	}
+
+	// Round up max to a "nice" ceiling
+	magnitude := math.Pow(10, math.Floor(math.Log10(maxKwh)))
+	niceMax := math.Ceil(maxKwh/magnitude) * magnitude
+	if niceMax == 0 {
+		niceMax = 1
+	}
+
+	// Layout constants
+	leftLabelW := 16.0 // space for y-axis labels
+	startX := 20.0 + leftLabelW
+	chartW := 170.0 - leftLabelW
+	chartH := 34.0
+	nTicks := 4
+
+	// Title
+	pdf.SetFont("Theme", "B", theme.size(0))
+	pdf.SetTextColor(60, 60, 60)
+	pdf.SetXY(20, pdf.GetY())
+	pdf.CellFormat(170, 5, orDefault(theme.ChartTitle, "Wie hat sich Ihr Verbrauch / Ihre Einspeisung entwickelt?"), "", 1, "L", false, 0, "")
+	startY := pdf.GetY() + 5.0 // extra gap below the title before the chart area starts
+
+	// Y-axis gridlines + labels
+	pdf.SetFont("Theme", "", theme.size(-4))
+	for i := 0; i <= nTicks; i++ {
+		frac := float64(i) / float64(nTicks)
+		tickY := startY + chartH - frac*chartH
+		val := niceMax * frac
+
+		// Gridline (skip baseline)
+		if i > 0 {
+			pdf.SetDrawColor(210, 210, 210)
+			pdf.SetLineWidth(0.2)
+			pdf.Line(startX, tickY, startX+chartW, tickY)
+		}
+
+		// Label (right-align in the label column)
+		pdf.SetTextColor(120, 120, 120)
+		label := fmt.Sprintf("%.0f", val)
+		pdf.SetXY(20, tickY-2.0)
+		pdf.CellFormat(leftLabelW-2, 4, label, "", 0, "R", false, 0, "")
+	}
+
+	// Axes
+	pdf.SetDrawColor(140, 140, 140)
+	pdf.SetLineWidth(0.4)
+	pdf.Line(startX, startY, startX, startY+chartH)               // Y-axis
+	pdf.Line(startX, startY+chartH, startX+chartW, startY+chartH) // X-axis
+
+	// Bars
+	n := len(data)
+	groupW := chartW / float64(n)
+	gap := groupW * 0.12
+
+	for i, d := range data {
+		groupX := startX + float64(i)*groupW
+
+		if hasBoth {
+			// Two bars per month
+			bw := (groupW - 3*gap) / 2
+
+			if d.ConsumptionKwh > 0 {
+				bh := d.ConsumptionKwh / niceMax * chartH
+				pdf.SetFillColor(59, 130, 246)
+				pdf.Rect(groupX+gap, startY+chartH-bh, bw, bh, "F")
+			}
+			if d.GenerationKwh > 0 {
+				bh := d.GenerationKwh / niceMax * chartH
+				pdf.SetFillColor(34, 197, 94)
+				pdf.Rect(groupX+2*gap+bw, startY+chartH-bh, bw, bh, "F")
+			}
+		} else {
+			bw := groupW - 2*gap
+			if d.ConsumptionKwh > 0 {
+				bh := d.ConsumptionKwh / niceMax * chartH
+				pdf.SetFillColor(59, 130, 246)
+				pdf.Rect(groupX+gap, startY+chartH-bh, bw, bh, "F")
+			} else if d.GenerationKwh > 0 {
+				bh := d.GenerationKwh / niceMax * chartH
+				pdf.SetFillColor(34, 197, 94)
+				pdf.Rect(groupX+gap, startY+chartH-bh, bw, bh, "F")
+			}
+		}
+
+		// Month label (e.g. "Jän" + year suffix if January or first bar)
+		pdf.SetFont("Theme", "", theme.size(-4))
+		pdf.SetTextColor(80, 80, 80)
+		label := shortMonth(d.Month.Month())
+		if d.Month.Month() == time.January || i == 0 {
+			label += fmt.Sprintf(" %d", d.Month.Year())
+		}
+		pdf.SetXY(groupX, startY+chartH+2.5)
+		pdf.CellFormat(groupW, 3.5, label, "", 0, "C", false, 0, "")
+	}
+
+	// Legend
+	legendY := startY + chartH + 9.0
+	pdf.SetFont("Theme", "", theme.size(-3))
+	pdf.SetTextColor(60, 60, 60)
+	lx := startX
+	if hasCons {
+		pdf.SetFillColor(59, 130, 246)
+		pdf.Rect(lx, legendY, 3.5, 2.5, "F")
+		pdf.SetXY(lx+4.5, legendY-0.5)
+		pdf.CellFormat(25, 3.5, orDefault(theme.ChartLabelBezug, "Bezug (kWh)"), "", 0, "L", false, 0, "")
+		lx += 31
+	}
+	if hasGen {
+		pdf.SetFillColor(34, 197, 94)
+		pdf.Rect(lx, legendY, 3.5, 2.5, "F")
+		pdf.SetXY(lx+4.5, legendY-0.5)
+		pdf.CellFormat(30, 3.5, orDefault(theme.ChartLabelEinspeisung, "Einspeisung (kWh)"), "", 0, "L", false, 0, "")
+	}
+
+	// Unit label top-right of chart
+	pdf.SetFont("Theme", "", theme.size(-4))
+	pdf.SetTextColor(120, 120, 120)
+	pdf.SetXY(startX+chartW-15, startY-3.5)
+	pdf.CellFormat(15, 3.5, "kWh", "", 0, "R", false, 0, "")
+
+	// Reset drawing state
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetFillColor(255, 255, 255)
+	pdf.SetLineWidth(0.2)
+	pdf.SetXY(20, legendY+5)
+}
+
+// clamp01 constrains v to [0,1] — defensive against float rounding when
+// combining a MonthlyKwh's community-split totals (fetched via a separate
+// query than the period totals, see billing.Service.chartHistory).
+func clamp01(v float64) float64 {
+	if v < 0 {
+		return 0
+	}
+	if v > 1 {
+		return 1
+	}
+	return v
+}
+
+// labelTextColor picks near-black or white text for legibility against an
+// arbitrary fill color (standard perceived-luminance heuristic), since the
+// percentage chart's segment colors are user-configurable and can no longer
+// assume a fixed set of colors with known-good contrast text.
+func labelTextColor(rgb [3]int) (r, g, b int) {
+	luminance := 0.299*float64(rgb[0]) + 0.587*float64(rgb[1]) + 0.114*float64(rgb[2])
+	if luminance > 150 {
+		return 40, 40, 40
+	}
+	return 255, 255, 255
+}
+
+// drawPercentBarChartThemed is the hybrid counterpart of drawBarChartThemed:
+// the Y-axis and bar heights show absolute kWh (Gesamtverbrauch/-einspeisung,
+// same dynamic niceMax scale as the absolute chart), but each bar is stacked
+// into two segments — community-covered vs. Netzbezug (Bezug side) or
+// community-absorbed vs. Resteinspeisung (Einspeisung side) — sized to their
+// actual kWh share of the bar, and each segment is labeled with its
+// percentage (not its kWh value). Selected via theme.ChartType == "percentage"
+// (see GeneratePDFThemed/GenerateCreditNotePDFThemed). Reuses
+// drawBarChartThemed's geometry and niceMax scaling; only the bar drawing
+// (stacked with % labels, not grouped by raw height) differs.
+//
+// Percentages are ConsumptionKwh/TotalConsumptionKwh and
+// GenerationKwh/TotalGenerationKwh — NOT ConsumptionKwh/GenerationKwh alone,
+// which are already the community-covered amounts (see MonthlyKwh's doc
+// comment) and would divide a value by itself, always yielding 100%.
+func drawPercentBarChartThemed(pdf *fpdf.Fpdf, theme InvoiceTheme, data []MonthlyKwh) {
+	if len(data) == 0 {
+		return
+	}
+
+	// Ensure enough vertical space — add a page if < 52mm remain
+	_, pageH := pdf.GetPageSize()
+	_, _, mBottom, _ := pdf.GetMargins()
+	bottomBound := pageH - mBottom
+	if pdf.GetY()+60 > bottomBound {
+		pdf.AddPage()
+	}
+
+	// Presence is based on the TOTAL (physical) amount, not the community-covered
+	// share — a month can have 0% community share (all Netzbezug) and must still
+	// show a bar, unlike the absolute chart where a 0-height community bar isn't
+	// useful to draw.
+	hasCons := false
+	hasGen := false
+	for _, d := range data {
+		if d.TotalConsumptionKwh > 0 {
+			hasCons = true
+		}
+		if d.TotalGenerationKwh > 0 {
+			hasGen = true
+		}
+	}
+	hasBoth := false
+	for _, d := range data {
+		if d.TotalConsumptionKwh > 0 && d.TotalGenerationKwh > 0 {
+			hasBoth = true
+			break
+		}
+	}
+
+	// Find max kWh for the Y-scale (same "nice ceiling" approach as drawBarChartThemed).
+	maxKwh := 0.0
+	for _, d := range data {
+		if d.TotalConsumptionKwh > maxKwh {
+			maxKwh = d.TotalConsumptionKwh
+		}
+		if d.TotalGenerationKwh > maxKwh {
+			maxKwh = d.TotalGenerationKwh
+		}
+	}
+	if maxKwh == 0 {
+		return
+	}
+	magnitude := math.Pow(10, math.Floor(math.Log10(maxKwh)))
+	niceMax := math.Ceil(maxKwh/magnitude) * magnitude
+	if niceMax == 0 {
+		niceMax = 1
+	}
+
+	leftLabelW := 16.0
+	startX := 20.0 + leftLabelW
+	chartW := 170.0 - leftLabelW
+	chartH := 34.0
+	nTicks := 4
+
+	// Title
+	pdf.SetFont("Theme", "B", theme.size(0))
+	pdf.SetTextColor(60, 60, 60)
+	pdf.SetXY(20, pdf.GetY())
+	pdf.CellFormat(170, 5, orDefault(theme.ChartTitle, "Wie hat sich Ihr Verbrauch / Ihre Einspeisung und Ihr Community-Anteil entwickelt?"), "", 1, "L", false, 0, "")
+	startY := pdf.GetY() + 5.0 // extra gap below the title before the chart area starts
+
+	// Y-axis gridlines + labels — dynamic kWh scale.
+	pdf.SetFont("Theme", "", theme.size(-4))
+	for i := 0; i <= nTicks; i++ {
+		frac := float64(i) / float64(nTicks)
+		tickY := startY + chartH - frac*chartH
+		val := niceMax * frac
+		if i > 0 {
+			pdf.SetDrawColor(210, 210, 210)
+			pdf.SetLineWidth(0.2)
+			pdf.Line(startX, tickY, startX+chartW, tickY)
+		}
+		pdf.SetTextColor(120, 120, 120)
+		label := fmt.Sprintf("%.0f", val)
+		pdf.SetXY(20, tickY-2.0)
+		pdf.CellFormat(leftLabelW-2, 4, label, "", 0, "R", false, 0, "")
+	}
+
+	// Axes
+	pdf.SetDrawColor(140, 140, 140)
+	pdf.SetLineWidth(0.4)
+	pdf.Line(startX, startY, startX, startY+chartH)
+	pdf.Line(startX, startY+chartH, startX+chartW, startY+chartH)
+
+	// drawStack draws one bar reaching up to total/niceMax*chartH: the
+	// community segment from the baseline upward, then otherColor stacked
+	// above it up to the bar's full height. Each segment is labeled with its
+	// %-share (not its kWh value). When a segment is too short (<4mm) for its
+	// label to sit inside legibly, the label moves just above the bar instead
+	// of being dropped — the "other" (top) segment's overflow label sits
+	// directly above the bar, and the community (bottom) segment's overflow
+	// label stacks above that (or directly above the bar if only the
+	// community label overflows), so no percentage is ever silently omitted.
+	baseline := startY + chartH
+	const labelLineH = 3.5
+	const minLabelH = 4.0
+	drawStack := func(x, w, total, commPct float64, commColor, otherColor [3]int) {
+		barH := total / niceMax * chartH
+		commH := commPct * barH
+		otherH := barH - commH
+		barTop := baseline - barH
+		pdf.SetFillColor(commColor[0], commColor[1], commColor[2])
+		pdf.Rect(x, baseline-commH, w, commH, "F")
+		pdf.SetFillColor(otherColor[0], otherColor[1], otherColor[2])
+		pdf.Rect(x, barTop, w, otherH, "F")
+
+		pdf.SetFont("Theme", "", theme.size(-4))
+		nextExternalY := barTop // stacks upward as overflow labels are added
+
+		otR, otG, otB := labelTextColor(otherColor)
+		otherLabel := fmt.Sprintf("%.0f%%", (1-commPct)*100)
+		if otherH >= minLabelH {
+			pdf.SetTextColor(otR, otG, otB)
+			pdf.SetXY(x, barTop+otherH/2-labelLineH/2)
+			pdf.CellFormat(w, labelLineH, otherLabel, "", 0, "C", false, 0, "")
+		} else {
+			nextExternalY -= labelLineH + 0.5
+			pdf.SetTextColor(60, 60, 60)
+			pdf.SetXY(x, nextExternalY)
+			pdf.CellFormat(w, labelLineH, otherLabel, "", 0, "C", false, 0, "")
+		}
+
+		cR, cG, cB := labelTextColor(commColor)
+		commLabel := fmt.Sprintf("%.0f%%", commPct*100)
+		if commH >= minLabelH {
+			pdf.SetTextColor(cR, cG, cB)
+			pdf.SetXY(x, baseline-commH/2-labelLineH/2)
+			pdf.CellFormat(w, labelLineH, commLabel, "", 0, "C", false, 0, "")
+		} else {
+			nextExternalY -= labelLineH + 0.5
+			pdf.SetTextColor(60, 60, 60)
+			pdf.SetXY(x, nextExternalY)
+			pdf.CellFormat(w, labelLineH, commLabel, "", 0, "C", false, 0, "")
+		}
+	}
+
+	n := len(data)
+	groupW := chartW / float64(n)
+	gap := groupW * 0.12
+
+	for i, d := range data {
+		groupX := startX + float64(i)*groupW
+
+		if hasBoth {
+			bw := (groupW - 3*gap) / 2
+			if d.TotalConsumptionKwh > 0 {
+				drawStack(groupX+gap, bw, d.TotalConsumptionKwh, clamp01(d.ConsumptionKwh/d.TotalConsumptionKwh), theme.ChartColorCommunityBezug, theme.ChartColorNetzbezug)
+			}
+			if d.TotalGenerationKwh > 0 {
+				drawStack(groupX+2*gap+bw, bw, d.TotalGenerationKwh, clamp01(d.GenerationKwh/d.TotalGenerationKwh), theme.ChartColorCommunityEinspeisung, theme.ChartColorResteinspeisung)
+			}
+		} else {
+			bw := groupW - 2*gap
+			if d.TotalConsumptionKwh > 0 {
+				drawStack(groupX+gap, bw, d.TotalConsumptionKwh, clamp01(d.ConsumptionKwh/d.TotalConsumptionKwh), theme.ChartColorCommunityBezug, theme.ChartColorNetzbezug)
+			} else if d.TotalGenerationKwh > 0 {
+				drawStack(groupX+gap, bw, d.TotalGenerationKwh, clamp01(d.GenerationKwh/d.TotalGenerationKwh), theme.ChartColorCommunityEinspeisung, theme.ChartColorResteinspeisung)
+			}
+		}
+
+		// Month label (e.g. "Jän" + year suffix if January or first bar)
+		pdf.SetFont("Theme", "", theme.size(-4))
+		pdf.SetTextColor(80, 80, 80)
+		label := shortMonth(d.Month.Month())
+		if d.Month.Month() == time.January || i == 0 {
+			label += fmt.Sprintf(" %d", d.Month.Year())
+		}
+		pdf.SetXY(groupX, startY+chartH+2.5)
+		pdf.CellFormat(groupW, 3.5, label, "", 0, "C", false, 0, "")
+	}
+
+	// Legend — only the swatches actually used on this chart. Community is
+	// shown once when both bars use the same color (the default), or as two
+	// separate entries when the admin gave Bezug/Einspeisung community
+	// segments different colors.
+	legendY := startY + chartH + 9.0
+	pdf.SetFont("Theme", "", theme.size(-3))
+	pdf.SetTextColor(60, 60, 60)
+	lx := startX
+	swatch := func(label string, c [3]int, labelW float64) {
+		pdf.SetFillColor(c[0], c[1], c[2])
+		pdf.Rect(lx, legendY, 3.5, 2.5, "F")
+		pdf.SetXY(lx+4.5, legendY-0.5)
+		pdf.CellFormat(labelW, 3.5, label, "", 0, "L", false, 0, "")
+		lx += labelW + 6
+	}
+	sameCommunityColor := theme.ChartColorCommunityBezug == theme.ChartColorCommunityEinspeisung
+	if sameCommunityColor && (hasCons || hasGen) {
+		swatch(orDefault(theme.ChartLabelCommunity, "Community-Anteil"), theme.ChartColorCommunityBezug, 30)
+	} else {
+		if hasCons {
+			swatch(orDefault(theme.ChartLabelCommunityBezug, "Community-Anteil (Bezug)"), theme.ChartColorCommunityBezug, 42)
+		}
+		if hasGen {
+			swatch(orDefault(theme.ChartLabelCommunityEinspeisung, "Community-Anteil (Einspeisung)"), theme.ChartColorCommunityEinspeisung, 48)
+		}
+	}
+	if hasCons {
+		swatch(orDefault(theme.ChartLabelNetzbezug, "Netzbezug"), theme.ChartColorNetzbezug, 25)
+	}
+	if hasGen {
+		swatch(orDefault(theme.ChartLabelResteinspeisung, "Resteinspeisung"), theme.ChartColorResteinspeisung, 30)
+	}
+
+	// Unit label top-right of chart
+	pdf.SetFont("Theme", "", theme.size(-4))
+	pdf.SetTextColor(120, 120, 120)
+	pdf.SetXY(startX+chartW-15, startY-3.5)
+	pdf.CellFormat(15, 3.5, "kWh", "", 0, "R", false, 0, "")
+
+	// Reset drawing state
+	pdf.SetTextColor(0, 0, 0)
+	pdf.SetDrawColor(0, 0, 0)
+	pdf.SetFillColor(255, 255, 255)
+	pdf.SetLineWidth(0.2)
+	pdf.SetXY(20, legendY+5)
 }
 
 // GeneratePDFThemed renders a consumer/prosumer "Rechnung" with the Oikos-style
@@ -826,7 +1497,7 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 	if theme.LogoLeft {
 		logoX, addrX, addrW = 20.0, 130.0, 60.0
 	}
-	embedLogoAt(pdf, eeg.LogoPath, logoX, 15, 0, addressBlockHeight(eeg, theme))
+	embedLogoAt(pdf, eeg.LogoPath, logoX, 15, 0, theme.logoH(addressBlockHeight(eeg, theme)))
 
 	pdf.SetXY(addrX, 15)
 	pdf.SetFont("Theme", "B", theme.size(1))
@@ -893,8 +1564,8 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 	// kWh" cell can't represent multiple different rates. Drives both the
 	// measurement tables below and the pricing table further down, so the two
 	// halves of the invoice always stay consistent with each other.
-	effShowCons := eeg.InvoiceShowMonthlyBreakdown || monthlyEnergyPriceVaries(vat.MonthlyLineItems)
-	effShowGen := eeg.InvoiceShowMonthlyBreakdown || monthlyGenerationPriceVaries(vat.MonthlyLineItems)
+	effShowCons := eeg.InvoiceShowMonthlyBreakdown || monthlyEnergyPriceVaries(vat.MonthlyLineItems) || monthlyConsumptionMonthCount(vat.MonthlyLineItems) <= 1
+	effShowGen := eeg.InvoiceShowMonthlyBreakdown || monthlyGenerationPriceVaries(vat.MonthlyLineItems) || monthlyGenerationMonthCount(vat.MonthlyLineItems) <= 1
 
 	// ── Energy breakdown table (Netzbezug/Community-Verbrauch, see EnergyPeriodRow) ─
 	drawEnergyPeriodTable(pdf, energyRows, theme, eeg, !effShowCons)
@@ -903,32 +1574,41 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 	drawGenerationPeriodTable(pdf, generationRows, theme, eeg, !effShowGen)
 
 	// ── Pricing table: same content/branches as GeneratePDF, restyled ────────
-	colDesc := 80.0
-	colKwh := 30.0
-	colPrice := 40.0
+	// Column widths match drawEnergyPeriodTable/drawGenerationPeriodTable's
+	// (colVon+colBis=60, colGesamt=38, colCommunity/colAbnahme=36, remainder=36)
+	// so the "Monatsabrechnung" table's three right columns (kWh/Preis/Betrag)
+	// sit directly below the period tables' three right columns above it.
+	colDesc := 60.0
+	colKwh := 38.0
+	colPrice := 36.0
 	colAmount := 0.0
 	rowH := theme.h(8.0)
 	vatH := theme.h(6.0)
 
-	ensurePageSpace(pdf, themedPricingTableHeight(pdf, theme, eeg, vat, colDesc, rowH, effShowCons, effShowGen))
+	// Body/header font size matches the period tables above (theme.size(-1),
+	// see drawEnergyPeriodTable/drawGenerationPeriodTable) so the whole
+	// "Monatsabrechnung" block reads at the same size as the tables it sits
+	// directly below, instead of jumping back up to the theme's base size.
+	pdf.SetFont("Theme", "", theme.size(-1))
+	ensurePageSpace(pdf, themedPricingTableHeight(pdf, theme, eeg, vat, colDesc, rowH, effShowCons, effShowGen, inv.PeriodStart, inv.PeriodEnd))
 
 	// Banner title row spanning full width — matches printableWidth exactly so it
 	// aligns with the column row below (colAmount=0 auto-fills to the same edge).
-	pdf.SetFont("Theme", "B", theme.size(0))
+	pdf.SetFont("Theme", "B", theme.size(-1))
 	theme.apply(pdf)
 	pdf.CellFormat(printableWidth(pdf), rowH, "Monatsabrechnung", "1", 1, "C", true, 0, "")
 
-	pdf.SetFont("Theme", "B", theme.size(0))
+	pdf.SetFont("Theme", "B", theme.size(-1))
 	theme.apply(pdf)
 	pdf.CellFormat(colDesc, rowH, "Beschreibung", "1", 0, "L", true, 0, "")
 	pdf.CellFormat(colKwh, rowH, "kWh", "1", 0, "R", true, 0, "")
 	pdf.CellFormat(colPrice, rowH, "Preis je kWh", "1", 0, "R", true, 0, "")
 	pdf.CellFormat(colAmount, rowH, "Betrag", "1", 1, "R", true, 0, "")
 
-	pdf.SetFont("Theme", "", theme.size(0))
+	pdf.SetFont("Theme", "", theme.size(-1))
 	pdf.SetFillColor(255, 255, 255)
 
-	multiMonth := len(vat.MonthlyLineItems) > 1
+	multiMonth := periodSpansMultipleMonths(inv.PeriodStart, inv.PeriodEnd)
 	showConsRows := multiMonth && effShowCons
 	showGenRows := multiMonth && effShowGen
 	if multiMonth {
@@ -952,7 +1632,7 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 			}
 		}
 		if vat.ConsumptionKwh > 0 || vat.GenerationKwh == 0 {
-			drawTotalRow(pdf, colDesc, colKwh, colPrice, colAmount, rowH, "Summe Bezug", totalConsKwh, totalConsAmount, false)
+			drawTotalRowThemed(pdf, theme.size(-1), colDesc, colKwh, colPrice, colAmount, rowH, "Summe Bezug", totalConsKwh, totalConsAmount, false)
 		}
 		totalGenKwh := 0.0
 		totalGenAmount := 0.0
@@ -974,7 +1654,7 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 			}
 		}
 		if vat.GenerationKwh > 0 {
-			drawTotalRow(pdf, colDesc, colKwh, colPrice, colAmount, rowH, "Summe Einspeisung", totalGenKwh, totalGenAmount, true)
+			drawTotalRowThemed(pdf, theme.size(-1), colDesc, colKwh, colPrice, colAmount, rowH, "Summe Einspeisung", totalGenKwh, totalGenAmount, true)
 		}
 		feeMonths := vat.FeeMonths
 		if feeMonths < 1 {
@@ -1005,6 +1685,12 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 			label = fmt.Sprintf("Zählpunktsgebühr (%d × %s × %d Monate)", vat.ZaehlpunktsGebuehrCount, formatAmount(vat.ZaehlpunktsGebuehrEur), vat.FeeMonths)
 		}
 		drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH, label, "", "", formatAmount(vat.ZaehlpunktsGebuehrTotal))
+	}
+
+	// Zusatzzähler — manually-read submeters (e.g. Wärmepumpe), one line each.
+	for _, em := range vat.ExtraMeterLines {
+		label := fmt.Sprintf("%s (Zusatzzähler)", em.Label)
+		drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH, label, formatKwh(em.Kwh), fmt.Sprintf("%.4f ct", em.PriceCt), formatAmount(em.Amount))
 	}
 
 	// ── VAT breakdown ─────────────────────────────────────────────────────────
@@ -1158,7 +1844,11 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 	theme.ln(pdf, 4)
 
 	if len(history) > 0 {
-		drawBarChart(pdf, history)
+		if theme.ChartType == "percentage" {
+			drawPercentBarChartThemed(pdf, theme, history)
+		} else {
+			drawBarChartThemed(pdf, theme, history)
+		}
 		theme.ln(pdf, 2)
 	}
 
@@ -1222,11 +1912,12 @@ func drawThemedTotalLine(pdf *fpdf.Fpdf, label string, theme InvoiceTheme) {
 // creditNotePricingTableHeight is the GenerateCreditNotePDFThemed counterpart
 // of themedPricingTableHeight (see there) — same page-break-avoidance purpose,
 // mirrors this function's own banner/header/line-item/drawMpSubRow branches.
-func creditNotePricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domain.EEG, generationMeterPoints []MeterPointKwh, monthlyItems []MonthlyKwh, colDesc, rowH float64) float64 {
+func creditNotePricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domain.EEG, generationMeterPoints []MeterPointKwh, monthlyItems []MonthlyKwh, colDesc, rowH float64, periodStart, periodEnd time.Time) float64 {
 	h := rowH // banner
 	h += rowH // column header
-	showGenRows := len(monthlyItems) > 1 && (eeg.InvoiceShowMonthlyBreakdown || monthlyGenerationPriceVaries(monthlyItems))
-	if len(monthlyItems) > 1 {
+	multiMonth := periodSpansMultipleMonths(periodStart, periodEnd)
+	showGenRows := multiMonth && (eeg.InvoiceShowMonthlyBreakdown || monthlyGenerationPriceVaries(monthlyItems) || monthlyGenerationMonthCount(monthlyItems) <= 1)
+	if multiMonth {
 		for _, m := range monthlyItems {
 			if m.GenerationKwh == 0 {
 				continue
@@ -1240,8 +1931,8 @@ func creditNotePricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domai
 	} else {
 		h += rowH // single Einspeisung row
 	}
-	// drawMpSubRow's subH is fixed at 4.5 and not theme-scaled (shared helper
-	// from pdf.go, always DejaVu regardless of theme — see newThemedPDF).
+	// drawMpSubRowThemed's subH is fixed at 4.5 and not theme-scaled — only
+	// the font (family + size) is theme-aware, row height stays constant.
 	if mpCount := len(generationMeterPoints); mpCount > 0 {
 		if mpCount == 1 {
 			h += 4.5
@@ -1279,7 +1970,7 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 	if theme.LogoLeft {
 		logoX, addrX, addrW = 20.0, 130.0, 60.0
 	}
-	embedLogoAt(pdf, eeg.LogoPath, logoX, 15, 0, addressBlockHeight(eeg, theme))
+	embedLogoAt(pdf, eeg.LogoPath, logoX, 15, 0, theme.logoH(addressBlockHeight(eeg, theme)))
 
 	pdf.SetXY(addrX, 15)
 	pdf.SetFont("Theme", "B", theme.size(1))
@@ -1348,7 +2039,7 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 	rowH := theme.h(8.0)
 	vatH := theme.h(6.0)
 
-	ensurePageSpace(pdf, creditNotePricingTableHeight(pdf, theme, eeg, generationMeterPoints, monthlyItems, colDesc, rowH))
+	ensurePageSpace(pdf, creditNotePricingTableHeight(pdf, theme, eeg, generationMeterPoints, monthlyItems, colDesc, rowH, inv.PeriodStart, inv.PeriodEnd))
 
 	pdf.SetFont("Theme", "B", theme.size(0))
 	theme.apply(pdf)
@@ -1369,8 +2060,9 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 	// InvoiceShowMonthlyBreakdown setting collapses monthly rows to the period
 	// total, unless the tariff price actually varied across months, in which
 	// case monthly rows are forced regardless.
-	showGenRows := len(monthlyItems) > 1 && (eeg.InvoiceShowMonthlyBreakdown || monthlyGenerationPriceVaries(monthlyItems))
-	if len(monthlyItems) > 1 {
+	multiMonth := periodSpansMultipleMonths(inv.PeriodStart, inv.PeriodEnd)
+	showGenRows := multiMonth && (eeg.InvoiceShowMonthlyBreakdown || monthlyGenerationPriceVaries(monthlyItems) || monthlyGenerationMonthCount(monthlyItems) <= 1)
+	if multiMonth {
 		totalGenKwh := 0.0
 		totalGenAmount := 0.0
 		for _, m := range monthlyItems {
@@ -1390,12 +2082,12 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 					"Einspeisung Strom "+monthLabel, formatKwh(m.GenerationKwh), fmt.Sprintf("%.4f ct", mPriceCt), formatAmount(genAmount))
 			}
 		}
-		drawTotalRow(pdf, colDesc, colKwh, colPrice, colAmount, rowH, "Summe Einspeisung", totalGenKwh, totalGenAmount, false)
-		drawMpSubRow(pdf, generationMeterPoints)
+		drawTotalRowThemed(pdf, theme.size(0), colDesc, colKwh, colPrice, colAmount, rowH, "Summe Einspeisung", totalGenKwh, totalGenAmount, false)
+		drawMpSubRowThemed(pdf, theme, generationMeterPoints)
 	} else {
 		drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
 			"Einspeisung Strom "+period, formatKwh(generationKwh), fmt.Sprintf("%.4f ct", producerPriceCt), formatAmount(netAmount))
-		drawMpSubRow(pdf, generationMeterPoints)
+		drawMpSubRowThemed(pdf, theme, generationMeterPoints)
 	}
 
 	// ── VAT section ──────────────────────────────────────────────────────────
@@ -1456,7 +2148,11 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 	}
 
 	if len(history) > 0 {
-		drawBarChart(pdf, history)
+		if theme.ChartType == "percentage" {
+			drawPercentBarChartThemed(pdf, theme, history)
+		} else {
+			drawBarChartThemed(pdf, theme, history)
+		}
 		theme.ln(pdf, 2)
 	}
 
@@ -1509,7 +2205,7 @@ func GenerateStornorechnungThemed(inv *domain.Invoice, eeg *domain.EEG, member *
 	if theme.LogoLeft {
 		logoX, addrX, addrW = 20.0, 130.0, 60.0
 	}
-	embedLogoAt(pdf, eeg.LogoPath, logoX, 15, 0, addressBlockHeight(eeg, theme))
+	embedLogoAt(pdf, eeg.LogoPath, logoX, 15, 0, theme.logoH(addressBlockHeight(eeg, theme)))
 
 	pdf.SetXY(addrX, 15)
 	pdf.SetFont("Theme", "B", theme.size(1))

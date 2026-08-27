@@ -85,6 +85,22 @@ export interface EEG {
   // "individuell" design: list every calendar month individually on multi-month
   // invoices vs. collapse to the period total per Zählpunkt/direction (default true)
   invoice_show_monthly_breakdown?: boolean;
+  invoice_logo_scale?: number; // scale factor, 0.5-1.5, default 1.0
+  invoice_always_show_zaehlpunkt?: boolean;
+  invoice_chart_type?: string; // absolute | percentage, default absolute
+  invoice_chart_title?: string; // custom chart title; empty = chart type's built-in default
+  invoice_chart_color_community_bezug?: string; // hex; percentage chart only
+  invoice_chart_color_netzbezug?: string; // hex; percentage chart only
+  invoice_chart_color_community_einspeisung?: string; // hex; percentage chart only
+  invoice_chart_color_resteinspeisung?: string; // hex; percentage chart only
+  // Legend/axis label overrides for the chart; empty = hardcoded German default
+  invoice_chart_label_community?: string; // percentage chart, same-color case
+  invoice_chart_label_community_bezug?: string; // percentage chart
+  invoice_chart_label_community_einspeisung?: string; // percentage chart
+  invoice_chart_label_netzbezug?: string; // percentage chart
+  invoice_chart_label_resteinspeisung?: string; // percentage chart
+  invoice_chart_label_bezug?: string; // absolute chart
+  invoice_chart_label_einspeisung?: string; // absolute chart
   // Zusatzzähler feature toggle — manually-read submeters (e.g. Wärmepumpe), default off
   extra_meters_enabled?: boolean;
   created_at?: string;
@@ -227,6 +243,21 @@ export interface UpdateEEGRequest {
   invoice_energy_label_resteinspeisung?: string;
   invoice_show_zero_fees?: boolean;
   invoice_show_monthly_breakdown?: boolean;
+  invoice_logo_scale?: number;
+  invoice_always_show_zaehlpunkt?: boolean;
+  invoice_chart_type?: string;
+  invoice_chart_title?: string;
+  invoice_chart_color_community_bezug?: string;
+  invoice_chart_color_netzbezug?: string;
+  invoice_chart_color_community_einspeisung?: string;
+  invoice_chart_color_resteinspeisung?: string;
+  invoice_chart_label_community?: string;
+  invoice_chart_label_community_bezug?: string;
+  invoice_chart_label_community_einspeisung?: string;
+  invoice_chart_label_netzbezug?: string;
+  invoice_chart_label_resteinspeisung?: string;
+  invoice_chart_label_bezug?: string;
+  invoice_chart_label_einspeisung?: string;
   extra_meters_enabled?: boolean;
 }
 

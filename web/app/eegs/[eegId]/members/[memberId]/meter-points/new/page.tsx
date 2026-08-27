@@ -112,6 +112,7 @@ export default async function NewMeterPointPage({ params, searchParams }: Props)
           },
           body: JSON.stringify({
             zaehlpunkt,
+            energy_direction: energierichtung,
             valid_from: validFrom || undefined,
             participation_factor: participationFactor,
           }),

@@ -691,8 +691,10 @@ func (h *MemberPortalHandler) ChangeParticipationFactor(w http.ResponseWriter, r
 		return
 	}
 
+	// Scoped to THIS EEG — an unscoped lookup could resolve to a different tenant's
+	// active row for the same Zählpunkt string.
 	var mpID *uuid.UUID
-	if mp, err := h.meterPointRepo.GetByZaehlpunkt(r.Context(), req.Zaehlpunkt); err == nil {
+	if mp, err := h.meterPointRepo.GetLatestByZaehlpunktInEEG(r.Context(), eegID, req.Zaehlpunkt); err == nil {
 		id := mp.ID
 		mpID = &id
 	}

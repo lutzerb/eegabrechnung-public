@@ -232,7 +232,27 @@ func (h *EDAHandler) Anmeldung(w http.ResponseWriter, r *http.Request) {
 	msgID := uuid.NewString()
 	convID := uuid.NewString()
 
-	energyDirection := req.EnergyDirection
+	// Resolve meter_point_id if available (best effort), scoped to THIS EEG — a
+	// Zählpunkt string can be simultaneously active in a different EEG (Mehrfachteilnahme
+	// modeled as separate meter_points rows), so an unscoped lookup could resolve to
+	// another tenant's row. GetLatestByZaehlpunktInEEG covers both the active case and
+	// re-registration after a deregistration (e.g. Zählpunkt-Lieferantenwechsel).
+	var mpID *uuid.UUID
+	var storedDirection string
+	if mp, err := h.mpRepo.GetLatestByZaehlpunktInEEG(r.Context(), eegID, req.Zaehlpunkt); err == nil {
+		id := mp.ID
+		mpID = &id
+		storedDirection = mp.Energierichtung
+	}
+
+	// The meter point's own Energierichtung is authoritative — it must never
+	// silently diverge from what was registered with the Netzbetreiber for this
+	// Zählpunkt. Only fall back to the client-supplied value (and finally to
+	// CONSUMPTION) when no meter point row exists yet to read it from.
+	energyDirection := storedDirection
+	if energyDirection == "" {
+		energyDirection = req.EnergyDirection
+	}
 	if energyDirection == "" {
 		energyDirection = "CONSUMPTION"
 	}
@@ -252,19 +272,6 @@ func (h *EDAHandler) Anmeldung(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		jsonError(w, fmt.Sprintf("build XML: %v", err), http.StatusInternalServerError)
 		return
-	}
-
-	// Resolve meter_point_id if available (best effort). Prefer the active row; fall
-	// back to the most recent row for this Zählpunkt so a re-registration after a
-	// deregistration (e.g. Zählpunkt-Lieferantenwechsel) still links correctly —
-	// otherwise the confirmation later has no meter point to apply itself to.
-	var mpID *uuid.UUID
-	if mp, err := h.mpRepo.GetByZaehlpunkt(r.Context(), req.Zaehlpunkt); err == nil {
-		id := mp.ID
-		mpID = &id
-	} else if mp, err := h.mpRepo.GetLatestByZaehlpunktInEEG(r.Context(), eegID, req.Zaehlpunkt); err == nil {
-		id := mp.ID
-		mpID = &id
 	}
 
 	now := time.Now()
@@ -469,8 +476,10 @@ func (h *EDAHandler) TeilnahmefaktorAendern(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Scoped to THIS EEG — see comment in Anmeldung above on why an unscoped lookup
+	// is unsafe when the same Zählpunkt is active in another EEG.
 	var mpID *uuid.UUID
-	if mp, err := h.mpRepo.GetByZaehlpunkt(r.Context(), req.Zaehlpunkt); err == nil {
+	if mp, err := h.mpRepo.GetLatestByZaehlpunktInEEG(r.Context(), eegID, req.Zaehlpunkt); err == nil {
 		id := mp.ID
 		mpID = &id
 	}
@@ -629,8 +638,10 @@ func (h *EDAHandler) ZaehlerstandsgangAnfordern(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	// Scoped to THIS EEG — see comment in Anmeldung above on why an unscoped lookup
+	// is unsafe when the same Zählpunkt is active in another EEG.
 	var mpID *uuid.UUID
-	if mp, err := h.mpRepo.GetByZaehlpunkt(r.Context(), req.Zaehlpunkt); err == nil {
+	if mp, err := h.mpRepo.GetLatestByZaehlpunktInEEG(r.Context(), eegID, req.Zaehlpunkt); err == nil {
 		id := mp.ID
 		mpID = &id
 	}
@@ -1007,8 +1018,10 @@ func (h *EDAHandler) WiderrufEEG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Look up meter point to get the stored consent_id.
-	mp, err := h.mpRepo.GetByZaehlpunkt(r.Context(), req.Zaehlpunkt)
+	// Look up meter point to get the stored consent_id — scoped to THIS EEG, since an
+	// unscoped lookup could resolve to a different tenant's active row for the same
+	// Zählpunkt string and revoke consent that isn't ours to revoke.
+	mp, err := h.mpRepo.GetLatestByZaehlpunktInEEG(r.Context(), eegID, req.Zaehlpunkt)
 	if err != nil {
 		jsonError(w, fmt.Sprintf("Zählpunkt %s nicht gefunden", req.Zaehlpunkt), http.StatusNotFound)
 		return

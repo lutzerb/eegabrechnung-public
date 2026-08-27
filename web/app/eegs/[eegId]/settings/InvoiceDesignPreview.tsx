@@ -22,7 +22,27 @@ interface Props {
   initialLabelAbnahmeEnergiegemeinschaft: string;
   initialLabelResteinspeisung: string;
   initialShowMonthlyBreakdown: boolean;
+  initialLogoScale: number;
+  initialAlwaysShowZaehlpunkt: boolean;
+  initialChartType: string;
+  initialChartTitle: string;
+  initialChartColorCommunityBezug: string;
+  initialChartColorNetzbezug: string;
+  initialChartColorCommunityEinspeisung: string;
+  initialChartColorResteinspeisung: string;
+  initialChartLabelCommunity: string;
+  initialChartLabelCommunityBezug: string;
+  initialChartLabelCommunityEinspeisung: string;
+  initialChartLabelNetzbezug: string;
+  initialChartLabelResteinspeisung: string;
+  initialChartLabelBezug: string;
+  initialChartLabelEinspeisung: string;
 }
+
+const DEFAULT_CHART_TITLES: Record<string, string> = {
+  absolute: "Wie hat sich Ihr Verbrauch / Ihre Einspeisung entwickelt?",
+  percentage: "Wie hat sich Ihr Verbrauch / Ihre Einspeisung und Ihr Community-Anteil entwickelt?",
+};
 
 const FONT_FAMILIES = [
   { value: "dejavu", label: "DejaVu Sans (Standard)" },
@@ -34,6 +54,8 @@ const FONT_FAMILIES = [
 const FONT_SIZES = [8, 9, 10, 11, 12];
 
 const ROW_SPACINGS = [0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3];
+
+const LOGO_SCALES = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0, 2.25, 2.5];
 
 const inputClass =
   "w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent";
@@ -59,6 +81,21 @@ export default function InvoiceDesignPreview({
   initialLabelAbnahmeEnergiegemeinschaft,
   initialLabelResteinspeisung,
   initialShowMonthlyBreakdown,
+  initialLogoScale,
+  initialAlwaysShowZaehlpunkt,
+  initialChartType,
+  initialChartTitle,
+  initialChartColorCommunityBezug,
+  initialChartColorNetzbezug,
+  initialChartColorCommunityEinspeisung,
+  initialChartColorResteinspeisung,
+  initialChartLabelCommunity,
+  initialChartLabelCommunityBezug,
+  initialChartLabelCommunityEinspeisung,
+  initialChartLabelNetzbezug,
+  initialChartLabelResteinspeisung,
+  initialChartLabelBezug,
+  initialChartLabelEinspeisung,
 }: Props) {
   const [design, setDesign] = useState(initialDesign || "standard");
   const [accentColor, setAccentColor] = useState(initialAccentColor || "#c9b89a");
@@ -80,6 +117,25 @@ export default function InvoiceDesignPreview({
   );
   const [labelResteinspeisung, setLabelResteinspeisung] = useState(initialLabelResteinspeisung || "Resteinspeisung kWh");
   const [showMonthlyBreakdown, setShowMonthlyBreakdown] = useState(initialShowMonthlyBreakdown);
+  const [logoScale, setLogoScale] = useState(initialLogoScale || 1.0);
+  const [alwaysShowZaehlpunkt, setAlwaysShowZaehlpunkt] = useState(initialAlwaysShowZaehlpunkt);
+  const [chartType, setChartType] = useState(initialChartType || "absolute");
+  const [chartTitle, setChartTitle] = useState(initialChartTitle || "");
+  const [chartColorCommunityBezug, setChartColorCommunityBezug] = useState(initialChartColorCommunityBezug || "#22c55e");
+  const [chartColorNetzbezug, setChartColorNetzbezug] = useState(initialChartColorNetzbezug || "#f59e0b");
+  const [chartColorCommunityEinspeisung, setChartColorCommunityEinspeisung] = useState(
+    initialChartColorCommunityEinspeisung || "#22c55e"
+  );
+  const [chartColorResteinspeisung, setChartColorResteinspeisung] = useState(initialChartColorResteinspeisung || "#3b82f6");
+  const [chartLabelCommunity, setChartLabelCommunity] = useState(initialChartLabelCommunity || "");
+  const [chartLabelCommunityBezug, setChartLabelCommunityBezug] = useState(initialChartLabelCommunityBezug || "");
+  const [chartLabelCommunityEinspeisung, setChartLabelCommunityEinspeisung] = useState(
+    initialChartLabelCommunityEinspeisung || ""
+  );
+  const [chartLabelNetzbezug, setChartLabelNetzbezug] = useState(initialChartLabelNetzbezug || "");
+  const [chartLabelResteinspeisung, setChartLabelResteinspeisung] = useState(initialChartLabelResteinspeisung || "");
+  const [chartLabelBezug, setChartLabelBezug] = useState(initialChartLabelBezug || "");
+  const [chartLabelEinspeisung, setChartLabelEinspeisung] = useState(initialChartLabelEinspeisung || "");
 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -115,6 +171,21 @@ export default function InvoiceDesignPreview({
             invoice_energy_label_abnahme_energiegemeinschaft: labelAbnahmeEnergiegemeinschaft,
             invoice_energy_label_resteinspeisung: labelResteinspeisung,
             invoice_show_monthly_breakdown: showMonthlyBreakdown,
+            invoice_logo_scale: logoScale,
+            invoice_always_show_zaehlpunkt: alwaysShowZaehlpunkt,
+            invoice_chart_type: chartType,
+            invoice_chart_title: chartTitle,
+            invoice_chart_color_community_bezug: chartColorCommunityBezug,
+            invoice_chart_color_netzbezug: chartColorNetzbezug,
+            invoice_chart_color_community_einspeisung: chartColorCommunityEinspeisung,
+            invoice_chart_color_resteinspeisung: chartColorResteinspeisung,
+            invoice_chart_label_community: chartLabelCommunity,
+            invoice_chart_label_community_bezug: chartLabelCommunityBezug,
+            invoice_chart_label_community_einspeisung: chartLabelCommunityEinspeisung,
+            invoice_chart_label_netzbezug: chartLabelNetzbezug,
+            invoice_chart_label_resteinspeisung: chartLabelResteinspeisung,
+            invoice_chart_label_bezug: chartLabelBezug,
+            invoice_chart_label_einspeisung: chartLabelEinspeisung,
           }),
         });
         if (cancelled) return;
@@ -164,6 +235,21 @@ export default function InvoiceDesignPreview({
     labelAbnahmeEnergiegemeinschaft,
     labelResteinspeisung,
     showMonthlyBreakdown,
+    logoScale,
+    alwaysShowZaehlpunkt,
+    chartType,
+    chartTitle,
+    chartColorCommunityBezug,
+    chartColorNetzbezug,
+    chartColorCommunityEinspeisung,
+    chartColorResteinspeisung,
+    chartLabelCommunity,
+    chartLabelCommunityBezug,
+    chartLabelCommunityEinspeisung,
+    chartLabelNetzbezug,
+    chartLabelResteinspeisung,
+    chartLabelBezug,
+    chartLabelEinspeisung,
   ]);
 
   useEffect(() => {
@@ -362,6 +448,250 @@ export default function InvoiceDesignPreview({
               </p>
             </div>
 
+            <div>
+              <label className={labelClass}>Logogröße</label>
+              <select
+                name="invoice_logo_scale"
+                value={logoScale}
+                onChange={(e) => setLogoScale(parseFloat(e.target.value))}
+                className={inputClass}
+              >
+                {LOGO_SCALES.map((s) => (
+                  <option key={s} value={s}>
+                    {Math.round(s * 100)} % {s === 1.0 ? "(Standard)" : s < 1.0 ? "(kleiner)" : "(größer)"}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-slate-400 mt-1">
+                Skaliert die Höhe des Firmenlogos relativ zur Höhe des Adressblocks. Bei sehr großen Werten und
+                langen Adressen kann das Logo mit dem Empfängerblock kollidieren — im Zweifel in der Vorschau
+                prüfen.
+              </p>
+            </div>
+
+            <div>
+              <label className={labelClass}>Verbrauchsentwicklungsgrafik</label>
+              <div className="flex gap-4">
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="radio"
+                    name="invoice_chart_type"
+                    value="absolute"
+                    checked={chartType === "absolute"}
+                    onChange={() => setChartType("absolute")}
+                    className="h-4 w-4 border-slate-300 text-blue-700 focus:ring-blue-500"
+                  />
+                  Absolute Werte (kWh)
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="radio"
+                    name="invoice_chart_type"
+                    value="percentage"
+                    checked={chartType === "percentage"}
+                    onChange={() => setChartType("percentage")}
+                    className="h-4 w-4 border-slate-300 text-blue-700 focus:ring-blue-500"
+                  />
+                  Community-Anteil (%)
+                </label>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Zeigt statt absoluter kWh-Balken pro Monat den prozentualen Anteil von Community-Bezug/Netzbezug
+                (und bei Einspeisung: Community-Abnahme/Resteinspeisung) als gestapelten Balken.
+              </p>
+            </div>
+
+            <div>
+              <label className={labelClass}>Grafik-Titel</label>
+              <input
+                type="text"
+                name="invoice_chart_title"
+                value={chartTitle}
+                onChange={(e) => setChartTitle(e.target.value)}
+                placeholder={DEFAULT_CHART_TITLES[chartType] || DEFAULT_CHART_TITLES.absolute}
+                className={inputClass}
+              />
+              <p className="text-xs text-slate-400 mt-1">
+                Überschrift über der Verbrauchsentwicklungsgrafik. Leer lassen für die Standard-Überschrift
+                (abhängig von der oben gewählten Grafik-Variante).
+              </p>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-slate-800 mb-1">Grafikfarben</p>
+              <p className="text-xs text-slate-500 mb-3">
+                Community-Anteil (Bezug/Einspeisung) wirken auf beide Grafik-Varianten; Netzbezug und
+                Resteinspeisung nur auf die Community-Anteil-(%)-Variante.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className={labelClass}>Community-Anteil (Bezug)</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={chartColorCommunityBezug}
+                      onChange={(e) => setChartColorCommunityBezug(e.target.value)}
+                      className="h-10 w-14 rounded border border-slate-300 cursor-pointer"
+                    />
+                    <input
+                      type="text"
+                      name="invoice_chart_color_community_bezug"
+                      value={chartColorCommunityBezug}
+                      onChange={(e) => setChartColorCommunityBezug(e.target.value)}
+                      pattern="^#[0-9a-fA-F]{6}$"
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>Netzbezug</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={chartColorNetzbezug}
+                      onChange={(e) => setChartColorNetzbezug(e.target.value)}
+                      className="h-10 w-14 rounded border border-slate-300 cursor-pointer"
+                    />
+                    <input
+                      type="text"
+                      name="invoice_chart_color_netzbezug"
+                      value={chartColorNetzbezug}
+                      onChange={(e) => setChartColorNetzbezug(e.target.value)}
+                      pattern="^#[0-9a-fA-F]{6}$"
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>Community-Anteil (Einspeisung)</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={chartColorCommunityEinspeisung}
+                      onChange={(e) => setChartColorCommunityEinspeisung(e.target.value)}
+                      className="h-10 w-14 rounded border border-slate-300 cursor-pointer"
+                    />
+                    <input
+                      type="text"
+                      name="invoice_chart_color_community_einspeisung"
+                      value={chartColorCommunityEinspeisung}
+                      onChange={(e) => setChartColorCommunityEinspeisung(e.target.value)}
+                      pattern="^#[0-9a-fA-F]{6}$"
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>Resteinspeisung</label>
+                  <div className="flex items-center gap-3">
+                    <input
+                      type="color"
+                      value={chartColorResteinspeisung}
+                      onChange={(e) => setChartColorResteinspeisung(e.target.value)}
+                      className="h-10 w-14 rounded border border-slate-300 cursor-pointer"
+                    />
+                    <input
+                      type="text"
+                      name="invoice_chart_color_resteinspeisung"
+                      value={chartColorResteinspeisung}
+                      onChange={(e) => setChartColorResteinspeisung(e.target.value)}
+                      pattern="^#[0-9a-fA-F]{6}$"
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-sm font-medium text-slate-800 mb-1">Grafik-Beschriftungen</p>
+              <p className="text-xs text-slate-500 mb-3">
+                Legendentexte der Verbrauchsentwicklungsgrafik. Community-Anteil (Bezug/Einspeisung) wirken nur,
+                wenn die beiden Community-Farben oben unterschiedlich sind — sonst gilt "Community-Anteil"
+                gemeinsam. Bezug/Einspeisung gelten nur für die Absolute-Werte-Variante. Leer lassen für die
+                Standardbezeichnung.
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="col-span-2">
+                  <label className={labelClass}>Community-Anteil (bei gleicher Farbe)</label>
+                  <input
+                    type="text"
+                    name="invoice_chart_label_community"
+                    value={chartLabelCommunity}
+                    onChange={(e) => setChartLabelCommunity(e.target.value)}
+                    placeholder="Community-Anteil"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Community-Anteil (Bezug)</label>
+                  <input
+                    type="text"
+                    name="invoice_chart_label_community_bezug"
+                    value={chartLabelCommunityBezug}
+                    onChange={(e) => setChartLabelCommunityBezug(e.target.value)}
+                    placeholder="Community-Anteil (Bezug)"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Community-Anteil (Einspeisung)</label>
+                  <input
+                    type="text"
+                    name="invoice_chart_label_community_einspeisung"
+                    value={chartLabelCommunityEinspeisung}
+                    onChange={(e) => setChartLabelCommunityEinspeisung(e.target.value)}
+                    placeholder="Community-Anteil (Einspeisung)"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Netzbezug</label>
+                  <input
+                    type="text"
+                    name="invoice_chart_label_netzbezug"
+                    value={chartLabelNetzbezug}
+                    onChange={(e) => setChartLabelNetzbezug(e.target.value)}
+                    placeholder="Netzbezug"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Resteinspeisung</label>
+                  <input
+                    type="text"
+                    name="invoice_chart_label_resteinspeisung"
+                    value={chartLabelResteinspeisung}
+                    onChange={(e) => setChartLabelResteinspeisung(e.target.value)}
+                    placeholder="Resteinspeisung"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Bezug (kWh)</label>
+                  <input
+                    type="text"
+                    name="invoice_chart_label_bezug"
+                    value={chartLabelBezug}
+                    onChange={(e) => setChartLabelBezug(e.target.value)}
+                    placeholder="Bezug (kWh)"
+                    className={inputClass}
+                  />
+                </div>
+                <div>
+                  <label className={labelClass}>Einspeisung (kWh)</label>
+                  <input
+                    type="text"
+                    name="invoice_chart_label_einspeisung"
+                    value={chartLabelEinspeisung}
+                    onChange={(e) => setChartLabelEinspeisung(e.target.value)}
+                    placeholder="Einspeisung (kWh)"
+                    className={inputClass}
+                  />
+                </div>
+              </div>
+            </div>
+
             <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
               <input
                 type="checkbox"
@@ -378,6 +708,24 @@ export default function InvoiceDesignPreview({
                   Zeile pro Monat. Hat sich der Tarif innerhalb der Periode tatsächlich monatlich geändert (z.B.
                   monatlicher Tarifplan bei quartalsweiser Abrechnung), wird trotzdem automatisch monatlich
                   angezeigt — sonst wäre der Preis je kWh nicht mehr eindeutig.
+                </span>
+              </label>
+            </div>
+
+            <div className="flex items-center gap-3">
+              <input
+                type="checkbox"
+                id="invoice_always_show_zaehlpunkt"
+                name="invoice_always_show_zaehlpunkt"
+                checked={alwaysShowZaehlpunkt}
+                onChange={(e) => setAlwaysShowZaehlpunkt(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+              />
+              <label htmlFor="invoice_always_show_zaehlpunkt" className="text-sm text-slate-700">
+                Zählpunkt(e) immer anzeigen
+                <span className="block text-xs text-slate-500 mt-0.5">
+                  Normalerweise wird die Zählpunkt-Zwischenüberschrift nur angezeigt, wenn eine Rechnung mehr
+                  als einen Zählpunkt umfasst. Diese Option zeigt sie immer an, auch bei nur einem Zählpunkt.
                 </span>
               </label>
             </div>

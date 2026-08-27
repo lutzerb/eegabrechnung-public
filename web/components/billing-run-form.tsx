@@ -92,6 +92,7 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
     const m = now.getMonth() === 0 ? 12 : now.getMonth();
     return `${y}-${String(m).padStart(2, "0")}`;
   });
+  const [selectedQuarter, setSelectedQuarter] = useState<string>("");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
   const [billingType, setBillingType] = useState("all");
@@ -189,6 +190,7 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
 
   const handleMonthSelect = (month: string) => {
     setSelectedMonth(month);
+    setSelectedQuarter("");
     if (!month) return;
     const [y, m] = month.split("-").map(Number);
     const fmt = (d: Date) =>
@@ -196,6 +198,31 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
     setPeriodStart(fmt(new Date(y, m - 1, 1)));
     setPeriodEnd(fmt(new Date(y, m, 0)));
   };
+
+  const handleQuarterSelect = (quarter: string) => {
+    setSelectedQuarter(quarter);
+    setSelectedMonth("");
+    if (!quarter) return;
+    const [yStr, qStr] = quarter.split("-Q");
+    const y = Number(yStr);
+    const q = Number(qStr);
+    const startMonth = (q - 1) * 3;
+    const fmt = (d: Date) =>
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+    setPeriodStart(fmt(new Date(y, startMonth, 1)));
+    setPeriodEnd(fmt(new Date(y, startMonth + 3, 0)));
+  };
+
+  const quarterOptions = (() => {
+    const currentYear = new Date().getFullYear();
+    const opts: { value: string; label: string }[] = [];
+    for (let year = currentYear; year >= currentYear - 2; year--) {
+      for (let q = 4; q >= 1; q--) {
+        opts.push({ value: `${year}-Q${q}`, label: `Q${q} ${year}` });
+      }
+    }
+    return opts;
+  })();
 
   const memberLabel = (m: Member) => [m.name1, m.name2].filter(Boolean).join(" ") || m.name || m.id;
   const memberMap = new Map(members.map(m => [m.id, memberLabel(m)]));
@@ -368,6 +395,22 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
             />
           </div>
+
+          <div className="w-48">
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Quartal</label>
+            <select
+              value={selectedQuarter}
+              onChange={(e) => handleQuarterSelect(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+            >
+              <option value="">– auswählen –</option>
+              {quarterOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-4 items-end">
@@ -377,7 +420,7 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
               type="date"
               required
               value={periodStart}
-              onChange={(e) => { setPeriodStart(e.target.value); setSelectedMonth(""); }}
+              onChange={(e) => { setPeriodStart(e.target.value); setSelectedMonth(""); setSelectedQuarter(""); }}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
             />
           </div>
@@ -389,7 +432,7 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
               required
               value={periodEnd}
               min={periodStart}
-              onChange={(e) => { setPeriodEnd(e.target.value); setSelectedMonth(""); }}
+              onChange={(e) => { setPeriodEnd(e.target.value); setSelectedMonth(""); setSelectedQuarter(""); }}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
             />
           </div>

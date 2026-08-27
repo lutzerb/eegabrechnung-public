@@ -19,7 +19,10 @@ import (
 // and the Einspeisung branch of the pricing table render in the preview, and
 // both the consumption and the generation breakdown table at the top of the
 // invoice (see drawEnergyPeriodTable / drawGenerationPeriodTable) are shown.
-func SampleFixtureData() (*domain.EEG, *domain.Member, *domain.Invoice, VATOptions, []EnergyPeriodRow, []GenerationPeriodRow) {
+// The returned history covers 6 months with a varying (not perfectly flat)
+// community share so both drawBarChartThemed and drawPercentBarChartThemed
+// render something representative in the design preview.
+func SampleFixtureData() (*domain.EEG, *domain.Member, *domain.Invoice, VATOptions, []EnergyPeriodRow, []GenerationPeriodRow, []MonthlyKwh) {
 	const zp1 = "AT0010000000000000000000000000001"
 	const zp2 = "AT0010000000000000000000000000002"
 	const zp3 = "AT0010000000000000000000000000003"
@@ -216,5 +219,20 @@ func SampleFixtureData() (*domain.EEG, *domain.Member, *domain.Invoice, VATOptio
 		},
 	}
 
-	return eeg, member, inv, vat, energyRows, generationRows
+	// 6-month chart history (Dez 2025 - Mai 2026), varying community share so
+	// both the absolute and percentage chart variants show something
+	// representative rather than flat/static-looking bars. ConsumptionKwh/
+	// GenerationKwh are the community-covered (billed) amounts — see
+	// MonthlyKwh's doc comment — TotalConsumptionKwh/TotalGenerationKwh are
+	// the member's physical totals, always >= the community amount.
+	history := []MonthlyKwh{
+		{Month: time.Date(2025, 12, 1, 0, 0, 0, 0, time.UTC), ConsumptionKwh: 145.00, TotalConsumptionKwh: 210.00},
+		{Month: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), ConsumptionKwh: 150.00, TotalConsumptionKwh: 240.00},
+		{Month: time.Date(2026, 2, 1, 0, 0, 0, 0, time.UTC), ConsumptionKwh: 140.00, TotalConsumptionKwh: 190.00},
+		{Month: time.Date(2026, 3, 1, 0, 0, 0, 0, time.UTC), ConsumptionKwh: 130.00, TotalConsumptionKwh: 175.00, GenerationKwh: 28.00, TotalGenerationKwh: 35.00},
+		{Month: time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC), ConsumptionKwh: 76.00, TotalConsumptionKwh: 106.57, GenerationKwh: genAprKwh * 0.8, TotalGenerationKwh: genAprKwh},
+		{Month: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC), ConsumptionKwh: 106.00, TotalConsumptionKwh: 145.84, GenerationKwh: genMayKwh * 0.75, TotalGenerationKwh: genMayKwh},
+	}
+
+	return eeg, member, inv, vat, energyRows, generationRows, history
 }

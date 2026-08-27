@@ -16,12 +16,28 @@ import (
 // MonthlyKwh is an energy summary for one calendar month.
 // EnergyPriceCt and ProducerPriceCt are set when used as invoice line items (multi-month billing)
 // so each month can carry its own tariff price. Zero means "use period-level price".
+//
+// IMPORTANT: ConsumptionKwh/GenerationKwh here are already the COMMUNITY-COVERED
+// amounts (wh_self / wh_community) — the same figures billed as "Bezug Strom"/
+// "Einspeisung Strom" on the invoice — NOT the member's total physical
+// consumption/feed-in. This matches MonthlySummaryForMember's query. See
+// EnergyPeriodRow/GenerationPeriodRow for the analogous current-period fields
+// where WhSelf/WhCommunity carry the same meaning.
+//
+// TotalConsumptionKwh/TotalGenerationKwh (wh_total) are only populated for the
+// chart history fetch when the "individuell" design's percentage chart is
+// selected (see billing.Service.chartHistory) — zero means "split not
+// fetched", not "no consumption/generation that month". Netzbezug/
+// Resteinspeisung are derived at draw time as TotalConsumptionKwh-ConsumptionKwh
+// / TotalGenerationKwh-GenerationKwh.
 type MonthlyKwh struct {
-	Month           time.Time
-	ConsumptionKwh  float64
-	GenerationKwh   float64
-	EnergyPriceCt   float64 // ct/kWh for this month's Bezug (0 = use period-level price)
-	ProducerPriceCt float64 // ct/kWh for this month's Einspeisung
+	Month               time.Time
+	ConsumptionKwh      float64
+	GenerationKwh       float64
+	TotalConsumptionKwh float64
+	TotalGenerationKwh  float64
+	EnergyPriceCt       float64 // ct/kWh for this month's Bezug (0 = use period-level price)
+	ProducerPriceCt     float64 // ct/kWh for this month's Einspeisung
 }
 
 // MeterPointKwh carries a meter point ID and its billed energy for the invoice period.
@@ -143,6 +159,17 @@ func germanMonth(m time.Month) string {
 // periodLabel returns a human-readable period string like "Jänner 2026".
 func periodLabel(periodStart time.Time) string {
 	return fmt.Sprintf("%s %d", germanMonth(periodStart.Month()), periodStart.Year())
+}
+
+// periodSpansMultipleMonths reports whether an invoice's billing period covers
+// more than one calendar month. This — not how many of those months happen to
+// have billable data — is what decides the multi-month per-month-labeled table
+// layout: a quarterly period with readings in only one calendar month (e.g. a
+// producer just onboarded mid-quarter) must still label that row by its own
+// month, not fall back to the single-month layout and mislabel it with the
+// period's first month.
+func periodSpansMultipleMonths(periodStart, periodEnd time.Time) bool {
+	return periodStart.Year() != periodEnd.Year() || periodStart.Month() != periodEnd.Month()
 }
 
 // formatAmount formats a float as German locale currency string e.g. "1.234,56 €".
@@ -626,7 +653,7 @@ func GenerateCreditNotePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.
 	pdf.SetFillColor(255, 255, 255)
 	netAmount := generationKwh * producerPriceCt / 100
 
-	if len(monthlyItems) > 1 {
+	if periodSpansMultipleMonths(inv.PeriodStart, inv.PeriodEnd) {
 		// ── Multi-month credit note: one row per calendar month ───────────────
 		totalGenKwh := 0.0
 		totalGenAmount := 0.0
@@ -879,7 +906,7 @@ func GeneratePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, va
 	pdf.SetFont("DejaVu", "", 10)
 	pdf.SetFillColor(255, 255, 255)
 
-	multiMonth := len(vat.MonthlyLineItems) > 1
+	multiMonth := periodSpansMultipleMonths(inv.PeriodStart, inv.PeriodEnd)
 	if multiMonth {
 		// ── Multi-month: one row per calendar month ───────────────────────────
 		// All Bezug rows first, then all Einspeisung rows.

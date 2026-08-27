@@ -199,6 +199,55 @@ func (s *Service) generationPeriodRows(ctx context.Context, memberID uuid.UUID, 
 	return result
 }
 
+// chartHistory builds the MonthlyKwh slice for the invoice "Verbrauchsentwicklung"
+// chart over [from,to] (used by both RunBilling and RegeneratePDF, previously
+// duplicated inline at each call site). MonthlySummaryForMember's ConsumptionKwh/
+// GenerationKwh are already the community-covered amounts (wh_self/wh_community —
+// same as the invoice's "Bezug Strom"/"Einspeisung Strom" line items), NOT the
+// member's physical totals. When includeSplit is true this additionally fetches
+// the TOTAL (wh_total) via MonthlyEnergyByMeterPointForMember/
+// MonthlyGenerationByMeterPointForMember (already used for the current-period
+// energyPeriodRows/generationPeriodRows tables), sums it across the member's
+// Zählpunkte per month, and merges it in as TotalConsumptionKwh/TotalGenerationKwh
+// — two extra queries, only run when the "individuell" design's percentage chart
+// is selected (see drawPercentBarChartThemed), same opt-in/fail-soft precedent as
+// energyPeriodRows/generationPeriodRows.
+func (s *Service) chartHistory(ctx context.Context, memberID uuid.UUID, from, to time.Time, includeSplit bool) []invoice.MonthlyKwh {
+	rawHistory, err := s.readingRepo.MonthlySummaryForMember(ctx, memberID, from, to)
+	if err != nil {
+		return nil
+	}
+	result := make([]invoice.MonthlyKwh, 0, len(rawHistory))
+	for _, h := range rawHistory {
+		result = append(result, invoice.MonthlyKwh{Month: h.Month, ConsumptionKwh: h.ConsumptionKwh, GenerationKwh: h.GenerationKwh})
+	}
+	if !includeSplit {
+		return result
+	}
+	// Keyed by "YYYY-MM" rather than the raw time.Time — both queries compute
+	// month via the identical date_trunc(...) SQL expression so the instants
+	// match, but pgx timestamptz decoding isn't a documented map-key-equality
+	// guarantee, so a normalized string key sidesteps that entirely.
+	totalCons := map[string]float64{}
+	if rows, err := s.readingRepo.MonthlyEnergyByMeterPointForMember(ctx, memberID, from, to); err == nil {
+		for _, r := range rows {
+			totalCons[r.Month.Format("2006-01")] += r.WhTotal
+		}
+	}
+	totalGen := map[string]float64{}
+	if rows, err := s.readingRepo.MonthlyGenerationByMeterPointForMember(ctx, memberID, from, to); err == nil {
+		for _, r := range rows {
+			totalGen[r.Month.Format("2006-01")] += r.WhTotal
+		}
+	}
+	for i := range result {
+		key := result[i].Month.Format("2006-01")
+		result[i].TotalConsumptionKwh = totalCons[key]
+		result[i].TotalGenerationKwh = totalGen[key]
+	}
+	return result
+}
+
 // SendAllResult holds the outcome of a bulk email send.
 type SendAllResult struct {
 	Sent    int      `json:"sent"`
@@ -569,6 +618,24 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 	for _, sum := range sums {
 		consumptionKwh := sum.ConsumptionKwh
 		generationKwh := sum.GenerationKwh
+
+		// A billing-type-scoped run only concerns members who actually have
+		// meter points of that direction. Without this, a pure producer (no
+		// consumption meter points at all) still received an invoice on a
+		// consumption_only run — generationKwh got zeroed below but the fixed
+		// fees (meter/participation/Zählpunktsgebühr) were charged anyway,
+		// billing them for Bezug they don't have. Same issue in reverse for
+		// production_only and pure consumers.
+		switch opts.BillingType {
+		case "consumption_only":
+			if consumptionKwh == 0 {
+				continue
+			}
+		case "production_only":
+			if generationKwh == 0 {
+				continue
+			}
+		}
 
 		// Fetch member early — needed for effective period and credit-note VAT
 		member, memberErr := s.memberRepo.GetByID(ctx, sum.MemberID)
@@ -989,21 +1056,11 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		// Fetch last 6 months of energy history for the bar chart.
 		// Go back 5 full months before the billing period start so we end with the current period.
 		historyFrom := time.Date(periodStart.Year(), periodStart.Month()-5, 1, 0, 0, 0, 0, time.UTC)
-		rawHistory, histErr := s.readingRepo.MonthlySummaryForMember(ctx, sum.MemberID, historyFrom, periodEnd)
-		var chartHistory []invoice.MonthlyKwh
-		if histErr == nil {
-			for _, h := range rawHistory {
-				chartHistory = append(chartHistory, invoice.MonthlyKwh{
-					Month:          h.Month,
-					ConsumptionKwh: h.ConsumptionKwh,
-					GenerationKwh:  h.GenerationKwh,
-				})
-			}
-		}
+		individuell := eeg.InvoiceDesign == "individuell"
+		chartHistory := s.chartHistory(ctx, sum.MemberID, historyFrom, periodEnd, individuell && eeg.InvoiceChartType == "percentage")
 
 		// Generate PDF — credit note or regular invoice; "individuell" design uses
 		// the themed renderers (see internal/invoice/pdf_theme.go) instead.
-		individuell := eeg.InvoiceDesign == "individuell"
 		var pdfData []byte
 		if isCreditNote {
 			if individuell {
@@ -1224,19 +1281,11 @@ func (s *Service) RegeneratePDF(ctx context.Context, invoiceID uuid.UUID) ([]byt
 
 	// Energy history for chart
 	historyFrom := time.Date(inv.PeriodStart.Year(), inv.PeriodStart.Month()-5, 1, 0, 0, 0, 0, time.UTC)
-	rawHistory, _ := s.readingRepo.MonthlySummaryForMember(ctx, inv.MemberID, historyFrom, inv.PeriodEnd)
-	var chartHistory []invoice.MonthlyKwh
-	for _, h := range rawHistory {
-		chartHistory = append(chartHistory, invoice.MonthlyKwh{
-			Month:          h.Month,
-			ConsumptionKwh: h.ConsumptionKwh,
-			GenerationKwh:  h.GenerationKwh,
-		})
-	}
+	individuell := eeg.InvoiceDesign == "individuell"
+	chartHistory := s.chartHistory(ctx, inv.MemberID, historyFrom, inv.PeriodEnd, individuell && eeg.InvoiceChartType == "percentage")
 
 	// Generate PDF
 	isCreditNote := inv.DocumentType == "credit_note"
-	individuell := eeg.InvoiceDesign == "individuell"
 	var pdfData []byte
 	if isCreditNote {
 		// monthlyItems not available during regeneration — falls back to single-month layout

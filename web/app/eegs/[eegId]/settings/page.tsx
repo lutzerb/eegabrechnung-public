@@ -156,6 +156,22 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
       invoice_energy_label_resteinspeisung: (formData.get("invoice_energy_label_resteinspeisung") as string) || "Resteinspeisung kWh",
       invoice_show_zero_fees: formData.get("invoice_show_zero_fees") === "on",
       invoice_show_monthly_breakdown: formData.get("invoice_show_monthly_breakdown") === "on",
+      invoice_logo_scale: parseFloat(formData.get("invoice_logo_scale") as string) || 1.0,
+      invoice_always_show_zaehlpunkt: formData.get("invoice_always_show_zaehlpunkt") === "on",
+      invoice_chart_type: (formData.get("invoice_chart_type") as string) || "absolute",
+      invoice_chart_title: (formData.get("invoice_chart_title") as string) || "",
+      invoice_chart_color_community_bezug: (formData.get("invoice_chart_color_community_bezug") as string) || "#22c55e",
+      invoice_chart_color_netzbezug: (formData.get("invoice_chart_color_netzbezug") as string) || "#f59e0b",
+      invoice_chart_color_community_einspeisung:
+        (formData.get("invoice_chart_color_community_einspeisung") as string) || "#22c55e",
+      invoice_chart_color_resteinspeisung: (formData.get("invoice_chart_color_resteinspeisung") as string) || "#3b82f6",
+      invoice_chart_label_community: (formData.get("invoice_chart_label_community") as string) || "",
+      invoice_chart_label_community_bezug: (formData.get("invoice_chart_label_community_bezug") as string) || "",
+      invoice_chart_label_community_einspeisung: (formData.get("invoice_chart_label_community_einspeisung") as string) || "",
+      invoice_chart_label_netzbezug: (formData.get("invoice_chart_label_netzbezug") as string) || "",
+      invoice_chart_label_resteinspeisung: (formData.get("invoice_chart_label_resteinspeisung") as string) || "",
+      invoice_chart_label_bezug: (formData.get("invoice_chart_label_bezug") as string) || "",
+      invoice_chart_label_einspeisung: (formData.get("invoice_chart_label_einspeisung") as string) || "",
       extra_meters_enabled: formData.get("extra_meters_enabled") === "on",
     };
 
@@ -352,6 +368,53 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
               name="invoice_show_monthly_breakdown"
               value={(eeg as any).invoice_show_monthly_breakdown !== false ? "on" : ""}
             />
+            <input type="hidden" name="invoice_logo_scale" value={String((eeg as any).invoice_logo_scale || 1.0)} />
+            <input
+              type="hidden"
+              name="invoice_always_show_zaehlpunkt"
+              value={(eeg as any).invoice_always_show_zaehlpunkt ? "on" : ""}
+            />
+            <input type="hidden" name="invoice_chart_type" value={(eeg as any).invoice_chart_type || "absolute"} />
+            <input type="hidden" name="invoice_chart_title" value={(eeg as any).invoice_chart_title || ""} />
+            <input
+              type="hidden"
+              name="invoice_chart_color_community_bezug"
+              value={(eeg as any).invoice_chart_color_community_bezug || "#22c55e"}
+            />
+            <input
+              type="hidden"
+              name="invoice_chart_color_netzbezug"
+              value={(eeg as any).invoice_chart_color_netzbezug || "#f59e0b"}
+            />
+            <input
+              type="hidden"
+              name="invoice_chart_color_community_einspeisung"
+              value={(eeg as any).invoice_chart_color_community_einspeisung || "#22c55e"}
+            />
+            <input
+              type="hidden"
+              name="invoice_chart_color_resteinspeisung"
+              value={(eeg as any).invoice_chart_color_resteinspeisung || "#3b82f6"}
+            />
+            <input type="hidden" name="invoice_chart_label_community" value={(eeg as any).invoice_chart_label_community || ""} />
+            <input
+              type="hidden"
+              name="invoice_chart_label_community_bezug"
+              value={(eeg as any).invoice_chart_label_community_bezug || ""}
+            />
+            <input
+              type="hidden"
+              name="invoice_chart_label_community_einspeisung"
+              value={(eeg as any).invoice_chart_label_community_einspeisung || ""}
+            />
+            <input type="hidden" name="invoice_chart_label_netzbezug" value={(eeg as any).invoice_chart_label_netzbezug || ""} />
+            <input
+              type="hidden"
+              name="invoice_chart_label_resteinspeisung"
+              value={(eeg as any).invoice_chart_label_resteinspeisung || ""}
+            />
+            <input type="hidden" name="invoice_chart_label_bezug" value={(eeg as any).invoice_chart_label_bezug || ""} />
+            <input type="hidden" name="invoice_chart_label_einspeisung" value={(eeg as any).invoice_chart_label_einspeisung || ""} />
           </>
         )}
         {/* energy_price / producer_price always hidden (managed in tariffs) */}
@@ -809,6 +872,21 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
             initialLabelAbnahmeEnergiegemeinschaft={(eeg as any).invoice_energy_label_abnahme_energiegemeinschaft || "Abnahme durch Energiegemeinschaft kWh"}
             initialLabelResteinspeisung={(eeg as any).invoice_energy_label_resteinspeisung || "Resteinspeisung kWh"}
             initialShowMonthlyBreakdown={(eeg as any).invoice_show_monthly_breakdown !== false}
+            initialLogoScale={(eeg as any).invoice_logo_scale || 1.0}
+            initialAlwaysShowZaehlpunkt={(eeg as any).invoice_always_show_zaehlpunkt === true}
+            initialChartType={(eeg as any).invoice_chart_type || "absolute"}
+            initialChartTitle={(eeg as any).invoice_chart_title || ""}
+            initialChartColorCommunityBezug={(eeg as any).invoice_chart_color_community_bezug || "#22c55e"}
+            initialChartColorNetzbezug={(eeg as any).invoice_chart_color_netzbezug || "#f59e0b"}
+            initialChartColorCommunityEinspeisung={(eeg as any).invoice_chart_color_community_einspeisung || "#22c55e"}
+            initialChartColorResteinspeisung={(eeg as any).invoice_chart_color_resteinspeisung || "#3b82f6"}
+            initialChartLabelCommunity={(eeg as any).invoice_chart_label_community || ""}
+            initialChartLabelCommunityBezug={(eeg as any).invoice_chart_label_community_bezug || ""}
+            initialChartLabelCommunityEinspeisung={(eeg as any).invoice_chart_label_community_einspeisung || ""}
+            initialChartLabelNetzbezug={(eeg as any).invoice_chart_label_netzbezug || ""}
+            initialChartLabelResteinspeisung={(eeg as any).invoice_chart_label_resteinspeisung || ""}
+            initialChartLabelBezug={(eeg as any).invoice_chart_label_bezug || ""}
+            initialChartLabelEinspeisung={(eeg as any).invoice_chart_label_einspeisung || ""}
           />
         )}
 

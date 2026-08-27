@@ -67,6 +67,15 @@ func validInvoiceDesign(design string) bool {
 	}
 }
 
+func validInvoiceChartType(t string) bool {
+	switch t {
+	case "", "absolute", "percentage":
+		return true
+	default:
+		return false
+	}
+}
+
 func validInvoiceFontFamily(family string) bool {
 	switch family {
 	case "", "dejavu", "roboto", "opensans", "ptserif":
@@ -88,6 +97,14 @@ func validInvoiceFontSize(size int) bool {
 
 func validInvoiceRowSpacing(spacing float64) bool {
 	return spacing == 0 || (spacing >= 0.7 && spacing <= 1.3)
+}
+
+// validInvoiceLogoScale allows up to 2.5x. The themed renderer's recipient
+// block sits at a fixed y=45mm — a large logo can grow tall enough (long
+// address + high row spacing) to overlap it, so EEGs pushing the top of this
+// range should check the live preview.
+func validInvoiceLogoScale(scale float64) bool {
+	return scale == 0 || (scale >= 0.5 && scale <= 2.5)
 }
 
 func publicLogoURL(eeg domain.EEG) string {
@@ -204,6 +221,21 @@ type eegRequest struct {
 	InvoiceEnergyLabelGesamteinspeisung          string  `json:"invoice_energy_label_gesamteinspeisung"`
 	InvoiceEnergyLabelAbnahmeEnergiegemeinschaft string  `json:"invoice_energy_label_abnahme_energiegemeinschaft"`
 	InvoiceEnergyLabelResteinspeisung            string  `json:"invoice_energy_label_resteinspeisung"`
+	InvoiceLogoScale                             float64 `json:"invoice_logo_scale"`
+	InvoiceAlwaysShowZaehlpunkt                  bool    `json:"invoice_always_show_zaehlpunkt"`
+	InvoiceChartType                             string  `json:"invoice_chart_type"`
+	InvoiceChartTitle                            string  `json:"invoice_chart_title"`
+	InvoiceChartColorCommunityBezug              string  `json:"invoice_chart_color_community_bezug"`
+	InvoiceChartColorNetzbezug                   string  `json:"invoice_chart_color_netzbezug"`
+	InvoiceChartColorCommunityEinspeisung        string  `json:"invoice_chart_color_community_einspeisung"`
+	InvoiceChartColorResteinspeisung             string  `json:"invoice_chart_color_resteinspeisung"`
+	InvoiceChartLabelCommunity                   string  `json:"invoice_chart_label_community"`
+	InvoiceChartLabelCommunityBezug              string  `json:"invoice_chart_label_community_bezug"`
+	InvoiceChartLabelCommunityEinspeisung        string  `json:"invoice_chart_label_community_einspeisung"`
+	InvoiceChartLabelNetzbezug                   string  `json:"invoice_chart_label_netzbezug"`
+	InvoiceChartLabelResteinspeisung             string  `json:"invoice_chart_label_resteinspeisung"`
+	InvoiceChartLabelBezug                       string  `json:"invoice_chart_label_bezug"`
+	InvoiceChartLabelEinspeisung                 string  `json:"invoice_chart_label_einspeisung"`
 	// Zusatzzähler feature toggle — see domain.EEG for field meaning
 	ExtraMetersEnabled bool `json:"extra_meters_enabled"`
 }
@@ -525,6 +557,30 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid invoice_row_spacing", http.StatusBadRequest)
 		return
 	}
+	if !validInvoiceLogoScale(req.InvoiceLogoScale) {
+		jsonError(w, "invalid invoice_logo_scale", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceChartType(req.InvoiceChartType) {
+		jsonError(w, "invalid invoice_chart_type", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceAccentColor(req.InvoiceChartColorCommunityBezug) {
+		jsonError(w, "invalid invoice_chart_color_community_bezug", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceAccentColor(req.InvoiceChartColorNetzbezug) {
+		jsonError(w, "invalid invoice_chart_color_netzbezug", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceAccentColor(req.InvoiceChartColorCommunityEinspeisung) {
+		jsonError(w, "invalid invoice_chart_color_community_einspeisung", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceAccentColor(req.InvoiceChartColorResteinspeisung) {
+		jsonError(w, "invalid invoice_chart_color_resteinspeisung", http.StatusBadRequest)
+		return
+	}
 
 	if req.Name != "" {
 		existing.Name = req.Name
@@ -746,6 +802,33 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 	}
 	existing.InvoiceShowZeroFees = req.InvoiceShowZeroFees
 	existing.InvoiceShowMonthlyBreakdown = req.InvoiceShowMonthlyBreakdown
+	if req.InvoiceLogoScale > 0 {
+		existing.InvoiceLogoScale = req.InvoiceLogoScale
+	}
+	existing.InvoiceAlwaysShowZaehlpunkt = req.InvoiceAlwaysShowZaehlpunkt
+	if req.InvoiceChartType != "" {
+		existing.InvoiceChartType = req.InvoiceChartType
+	}
+	existing.InvoiceChartTitle = req.InvoiceChartTitle
+	if req.InvoiceChartColorCommunityBezug != "" {
+		existing.InvoiceChartColorCommunityBezug = req.InvoiceChartColorCommunityBezug
+	}
+	if req.InvoiceChartColorNetzbezug != "" {
+		existing.InvoiceChartColorNetzbezug = req.InvoiceChartColorNetzbezug
+	}
+	if req.InvoiceChartColorCommunityEinspeisung != "" {
+		existing.InvoiceChartColorCommunityEinspeisung = req.InvoiceChartColorCommunityEinspeisung
+	}
+	if req.InvoiceChartColorResteinspeisung != "" {
+		existing.InvoiceChartColorResteinspeisung = req.InvoiceChartColorResteinspeisung
+	}
+	existing.InvoiceChartLabelCommunity = req.InvoiceChartLabelCommunity
+	existing.InvoiceChartLabelCommunityBezug = req.InvoiceChartLabelCommunityBezug
+	existing.InvoiceChartLabelCommunityEinspeisung = req.InvoiceChartLabelCommunityEinspeisung
+	existing.InvoiceChartLabelNetzbezug = req.InvoiceChartLabelNetzbezug
+	existing.InvoiceChartLabelResteinspeisung = req.InvoiceChartLabelResteinspeisung
+	existing.InvoiceChartLabelBezug = req.InvoiceChartLabelBezug
+	existing.InvoiceChartLabelEinspeisung = req.InvoiceChartLabelEinspeisung
 
 	if err := h.eegRepo.Update(r.Context(), existing); err != nil {
 		jsonError(w, "failed to update EEG", http.StatusInternalServerError)
@@ -958,6 +1041,21 @@ type previewDesignRequest struct {
 	InvoiceEnergyLabelAbnahmeEnergiegemeinschaft string  `json:"invoice_energy_label_abnahme_energiegemeinschaft"`
 	InvoiceEnergyLabelResteinspeisung            string  `json:"invoice_energy_label_resteinspeisung"`
 	InvoiceShowMonthlyBreakdown                  bool    `json:"invoice_show_monthly_breakdown"`
+	InvoiceLogoScale                             float64 `json:"invoice_logo_scale"`
+	InvoiceAlwaysShowZaehlpunkt                  bool    `json:"invoice_always_show_zaehlpunkt"`
+	InvoiceChartType                             string  `json:"invoice_chart_type"`
+	InvoiceChartTitle                            string  `json:"invoice_chart_title"`
+	InvoiceChartColorCommunityBezug              string  `json:"invoice_chart_color_community_bezug"`
+	InvoiceChartColorNetzbezug                   string  `json:"invoice_chart_color_netzbezug"`
+	InvoiceChartColorCommunityEinspeisung        string  `json:"invoice_chart_color_community_einspeisung"`
+	InvoiceChartColorResteinspeisung             string  `json:"invoice_chart_color_resteinspeisung"`
+	InvoiceChartLabelCommunity                   string  `json:"invoice_chart_label_community"`
+	InvoiceChartLabelCommunityBezug              string  `json:"invoice_chart_label_community_bezug"`
+	InvoiceChartLabelCommunityEinspeisung        string  `json:"invoice_chart_label_community_einspeisung"`
+	InvoiceChartLabelNetzbezug                   string  `json:"invoice_chart_label_netzbezug"`
+	InvoiceChartLabelResteinspeisung             string  `json:"invoice_chart_label_resteinspeisung"`
+	InvoiceChartLabelBezug                       string  `json:"invoice_chart_label_bezug"`
+	InvoiceChartLabelEinspeisung                 string  `json:"invoice_chart_label_einspeisung"`
 }
 
 // PreviewInvoiceDesign godoc
@@ -1005,6 +1103,30 @@ func (h *EEGHandler) PreviewInvoiceDesign(w http.ResponseWriter, r *http.Request
 		jsonError(w, "invalid invoice_row_spacing", http.StatusBadRequest)
 		return
 	}
+	if !validInvoiceLogoScale(req.InvoiceLogoScale) {
+		jsonError(w, "invalid invoice_logo_scale", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceChartType(req.InvoiceChartType) {
+		jsonError(w, "invalid invoice_chart_type", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceAccentColor(req.InvoiceChartColorCommunityBezug) {
+		jsonError(w, "invalid invoice_chart_color_community_bezug", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceAccentColor(req.InvoiceChartColorNetzbezug) {
+		jsonError(w, "invalid invoice_chart_color_netzbezug", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceAccentColor(req.InvoiceChartColorCommunityEinspeisung) {
+		jsonError(w, "invalid invoice_chart_color_community_einspeisung", http.StatusBadRequest)
+		return
+	}
+	if !validInvoiceAccentColor(req.InvoiceChartColorResteinspeisung) {
+		jsonError(w, "invalid invoice_chart_color_resteinspeisung", http.StatusBadRequest)
+		return
+	}
 
 	// Start from the REAL EEG record (name, address, UID, IBAN/BIC, logo, invoice
 	// texts, payment-notice config, ...) so the preview reflects the actual
@@ -1029,17 +1151,32 @@ func (h *EEGHandler) PreviewInvoiceDesign(w http.ResponseWriter, r *http.Request
 	previewEEG.InvoiceEnergyLabelAbnahmeEnergiegemeinschaft = req.InvoiceEnergyLabelAbnahmeEnergiegemeinschaft
 	previewEEG.InvoiceEnergyLabelResteinspeisung = req.InvoiceEnergyLabelResteinspeisung
 	previewEEG.InvoiceShowMonthlyBreakdown = req.InvoiceShowMonthlyBreakdown
+	previewEEG.InvoiceLogoScale = req.InvoiceLogoScale
+	previewEEG.InvoiceAlwaysShowZaehlpunkt = req.InvoiceAlwaysShowZaehlpunkt
+	previewEEG.InvoiceChartType = req.InvoiceChartType
+	previewEEG.InvoiceChartTitle = req.InvoiceChartTitle
+	previewEEG.InvoiceChartColorCommunityBezug = req.InvoiceChartColorCommunityBezug
+	previewEEG.InvoiceChartColorNetzbezug = req.InvoiceChartColorNetzbezug
+	previewEEG.InvoiceChartColorCommunityEinspeisung = req.InvoiceChartColorCommunityEinspeisung
+	previewEEG.InvoiceChartColorResteinspeisung = req.InvoiceChartColorResteinspeisung
+	previewEEG.InvoiceChartLabelCommunity = req.InvoiceChartLabelCommunity
+	previewEEG.InvoiceChartLabelCommunityBezug = req.InvoiceChartLabelCommunityBezug
+	previewEEG.InvoiceChartLabelCommunityEinspeisung = req.InvoiceChartLabelCommunityEinspeisung
+	previewEEG.InvoiceChartLabelNetzbezug = req.InvoiceChartLabelNetzbezug
+	previewEEG.InvoiceChartLabelResteinspeisung = req.InvoiceChartLabelResteinspeisung
+	previewEEG.InvoiceChartLabelBezug = req.InvoiceChartLabelBezug
+	previewEEG.InvoiceChartLabelEinspeisung = req.InvoiceChartLabelEinspeisung
 
-	_, member, inv, vat, energyRows, generationRows := invoice.SampleFixtureData()
+	_, member, inv, vat, energyRows, generationRows, history := invoice.SampleFixtureData()
 	member.EegID = previewEEG.ID
 	inv.EegID = previewEEG.ID
 
 	var pdfData []byte
 	var err error
 	if req.InvoiceDesign == "individuell" {
-		pdfData, err = invoice.GeneratePDFThemed(inv, &previewEEG, member, vat, nil, energyRows, generationRows, invoice.ThemeFromEEG(&previewEEG))
+		pdfData, err = invoice.GeneratePDFThemed(inv, &previewEEG, member, vat, history, energyRows, generationRows, invoice.ThemeFromEEG(&previewEEG))
 	} else {
-		pdfData, err = invoice.GeneratePDF(inv, &previewEEG, member, vat, nil)
+		pdfData, err = invoice.GeneratePDF(inv, &previewEEG, member, vat, history)
 	}
 	if err != nil {
 		jsonError(w, "failed to render preview", http.StatusInternalServerError)

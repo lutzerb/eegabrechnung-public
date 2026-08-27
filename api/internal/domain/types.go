@@ -207,6 +207,40 @@ type EEG struct {
 	// Line/row spacing scale factor for the "individuell" design (see
 	// InvoiceTheme.RowSpacing / theme.h() in pdf_theme.go); 1.0 = unscaled.
 	InvoiceRowSpacing float64 `json:"invoice_row_spacing"`
+	// Logo height scale factor for the "individuell" design (see
+	// InvoiceTheme.LogoScale in pdf_theme.go); 1.0 = unscaled (auto-matches
+	// the EEG address block height). Valid range 0.5-2.5.
+	InvoiceLogoScale float64 `json:"invoice_logo_scale"`
+	// Forces the "individuell" design's Zählpunkt sub-heading band to show
+	// even when the invoice covers only a single Zählpunkt (see
+	// InvoiceTheme.AlwaysShowZaehlpunkt / showZPHeadings in pdf_theme.go).
+	InvoiceAlwaysShowZaehlpunkt bool `json:"invoice_always_show_zaehlpunkt"`
+	// Which Verbrauchsentwicklungsgrafik the "individuell" design shows: "absolute"
+	// (default, kWh bar chart) or "percentage" (100%-stacked Community-vs-Netz/Rest
+	// chart, see InvoiceTheme.ChartType / drawPercentBarChartThemed in pdf_theme.go).
+	InvoiceChartType string `json:"invoice_chart_type"`
+	// Optional custom title for the Verbrauchsentwicklungsgrafik; empty falls back
+	// to the chart type's built-in default title (see InvoiceTheme.ChartTitle).
+	InvoiceChartTitle string `json:"invoice_chart_title"`
+	// Per-segment hex colors for the percentage chart variant only (see
+	// InvoiceTheme.ChartColor* / drawPercentBarChartThemed in pdf_theme.go) — the
+	// absolute chart (drawBarChartThemed) keeps its own fixed blue/green.
+	InvoiceChartColorCommunityBezug       string `json:"invoice_chart_color_community_bezug"`
+	InvoiceChartColorNetzbezug            string `json:"invoice_chart_color_netzbezug"`
+	InvoiceChartColorCommunityEinspeisung string `json:"invoice_chart_color_community_einspeisung"`
+	InvoiceChartColorResteinspeisung      string `json:"invoice_chart_color_resteinspeisung"`
+	// Legend/axis label overrides for the Verbrauchsentwicklungsgrafik (see
+	// InvoiceTheme.ChartLabel* / drawBarChartThemed / drawPercentBarChartThemed) —
+	// empty falls back to the hardcoded German default, same convention as
+	// InvoiceChartTitle. Community*/Netzbezug/Resteinspeisung apply to the
+	// percentage chart variant; Bezug/Einspeisung apply to the absolute chart.
+	InvoiceChartLabelCommunity            string `json:"invoice_chart_label_community"`
+	InvoiceChartLabelCommunityBezug       string `json:"invoice_chart_label_community_bezug"`
+	InvoiceChartLabelCommunityEinspeisung string `json:"invoice_chart_label_community_einspeisung"`
+	InvoiceChartLabelNetzbezug            string `json:"invoice_chart_label_netzbezug"`
+	InvoiceChartLabelResteinspeisung      string `json:"invoice_chart_label_resteinspeisung"`
+	InvoiceChartLabelBezug                string `json:"invoice_chart_label_bezug"`
+	InvoiceChartLabelEinspeisung          string `json:"invoice_chart_label_einspeisung"`
 	// ExtraMetersEnabled toggles the Zusatzzähler feature (manually-read submeters,
 	// e.g. Wärmepumpe) for this EEG. Default false — the UI only shows the extra-meter
 	// management pages/cards when this is on.
