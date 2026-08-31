@@ -28,10 +28,12 @@ interface TariffSchedule {
   meter_fee_eur_override?: number | null;
   participation_fee_eur_override?: number | null;
   zaehlpunkts_gebuehr_eur_override?: number | null;
+  servicegebuehr_bezug_ct_kwh_override?: number | null;
+  servicegebuehr_einspeisung_ct_kwh_override?: number | null;
 }
 
 const OVERRIDE_FIELDS: Array<{
-  key: "free_kwh_override" | "discount_pct_override" | "meter_fee_eur_override" | "participation_fee_eur_override" | "zaehlpunkts_gebuehr_eur_override";
+  key: "free_kwh_override" | "discount_pct_override" | "meter_fee_eur_override" | "participation_fee_eur_override" | "zaehlpunkts_gebuehr_eur_override" | "servicegebuehr_bezug_ct_kwh_override" | "servicegebuehr_einspeisung_ct_kwh_override";
   label: string;
   unit: string;
   step: string;
@@ -41,6 +43,8 @@ const OVERRIDE_FIELDS: Array<{
   { key: "meter_fee_eur_override", label: "Fixgebühr", unit: "EUR", step: "0.01" },
   { key: "participation_fee_eur_override", label: "Mitgliedsbeitrag", unit: "EUR", step: "0.01" },
   { key: "zaehlpunkts_gebuehr_eur_override", label: "Zählpunktsgebühr", unit: "EUR/ZP", step: "0.01" },
+  { key: "servicegebuehr_bezug_ct_kwh_override", label: "Servicegebühr Bezug", unit: "ct/kWh", step: "0.01" },
+  { key: "servicegebuehr_einspeisung_ct_kwh_override", label: "Servicegebühr Einspeisung", unit: "ct/kWh", step: "0.01" },
 ];
 
 const MONTH_NAMES = ["Jänner","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
@@ -458,6 +462,8 @@ export default function TariffManager({ eegId, eegEnergyPrice, eegProducerPrice,
         meter_fee_eur_override: data.meter_fee_eur_override ?? null,
         participation_fee_eur_override: data.participation_fee_eur_override ?? null,
         zaehlpunkts_gebuehr_eur_override: data.zaehlpunkts_gebuehr_eur_override ?? null,
+        servicegebuehr_bezug_ct_kwh_override: data.servicegebuehr_bezug_ct_kwh_override ?? null,
+        servicegebuehr_einspeisung_ct_kwh_override: data.servicegebuehr_einspeisung_ct_kwh_override ?? null,
       });
     } catch { setError("Fehler beim Laden der Einträge."); }
     finally { setLoadingEntries(false); }

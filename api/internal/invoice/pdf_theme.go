@@ -603,6 +603,69 @@ func monthlyGenerationMonthCount(items []MonthlyKwh) int {
 	return n
 }
 
+// realBilledPeriod derives the "Abrechnungszeitraum" shown on the themed
+// invoice header from the energy/generation rows that were actually billed,
+// instead of the invoice's nominal PeriodStart/PeriodEnd. Those rows are only
+// created for calendar months where a Zählpunkt actually had reading data
+// (see energyPeriodRows/generationPeriodRows in billing.go), so a meter point
+// that only became active partway through a longer billing period — e.g.
+// registered on 1.5. during a Q2 2026 run — correctly narrows the printed
+// period to its own first/last billed month instead of showing the full
+// outer billing-run range. Falls back to (fallbackFrom, fallbackTo) when
+// neither slice has rows (e.g. an EEG imbalance edge case or a query error
+// upstream, which already fails soft to nil per energyPeriodRows' contract).
+func realBilledPeriod(energyRows []EnergyPeriodRow, generationRows []GenerationPeriodRow, fallbackFrom, fallbackTo time.Time) (time.Time, time.Time) {
+	from, to := fallbackFrom, fallbackTo
+	found := false
+	for _, r := range energyRows {
+		if !found || r.ZeitraumVon.Before(from) {
+			from = r.ZeitraumVon
+		}
+		if !found || r.ZeitraumBis.After(to) {
+			to = r.ZeitraumBis
+		}
+		found = true
+	}
+	for _, r := range generationRows {
+		if !found || r.ZeitraumVon.Before(from) {
+			from = r.ZeitraumVon
+		}
+		if !found || r.ZeitraumBis.After(to) {
+			to = r.ZeitraumBis
+		}
+		found = true
+	}
+	return from, to
+}
+
+// realBilledPeriodFromMonthly is the GenerateCreditNotePDFThemed counterpart of
+// realBilledPeriod: credit notes have no per-Zählpunkt period rows, so the real
+// billed range is instead derived from monthlyItems (built from
+// MonthlySummaryForMember, which — like energyPeriodRows/generationPeriodRows —
+// only contains calendar months with actual reading data), narrowed to the
+// months that actually carried generation kWh. Falls back to
+// (fallbackFrom, fallbackTo) when monthlyItems is empty (e.g. during
+// RegeneratePDF, which doesn't recompute it) or every month billed 0 kWh.
+func realBilledPeriodFromMonthly(monthlyItems []MonthlyKwh, fallbackFrom, fallbackTo time.Time) (time.Time, time.Time) {
+	from, to := fallbackFrom, fallbackTo
+	found := false
+	for _, m := range monthlyItems {
+		if m.GenerationKwh == 0 {
+			continue
+		}
+		monthStart := time.Date(m.Month.Year(), m.Month.Month(), 1, 0, 0, 0, 0, m.Month.Location())
+		monthEnd := monthStart.AddDate(0, 1, -1)
+		if !found || monthStart.Before(from) {
+			from = monthStart
+		}
+		if !found || monthEnd.After(to) {
+			to = monthEnd
+		}
+		found = true
+	}
+	return from, to
+}
+
 // aggregateEnergyRows collapses monthly EnergyPeriodRow entries into one row
 // per Zählpunkt (summed kWh columns, ZeitraumVon/Bis spanning the full group),
 // preserving the order Zählpunkte first appear in. Used when the "individuell"
@@ -946,7 +1009,7 @@ func themedPricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domain.EE
 			feeMonths = 1
 		}
 		feeTotal := (vat.MeterFeeEur + vat.ParticipationFeeEur) * float64(feeMonths)
-		if feeTotal > 0 || eeg.InvoiceShowZeroFees {
+		if feeTotal > 0 || eeg.InvoiceShowZeroFeeFixgebuehr {
 			feeLabel := "Messstellengebühr / Teilnahmegebühr"
 			if feeMonths > 1 {
 				feeLabel = fmt.Sprintf("Messstellengebühr / Teilnahmegebühr (%d Monate)", feeMonths)
@@ -958,12 +1021,18 @@ func themedPricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domain.EE
 	} else {
 		h += rowH
 	}
-	if vat.ZaehlpunktsGebuehrTotal > 0 || eeg.InvoiceShowZeroFees {
+	if vat.ZaehlpunktsGebuehrTotal > 0 || eeg.InvoiceShowZeroFeeZaehlpunktsgebuehr {
 		label := fmt.Sprintf("Zählpunktsgebühr (%d × %s)", vat.ZaehlpunktsGebuehrCount, formatAmount(vat.ZaehlpunktsGebuehrEur))
 		if vat.FeeMonths > 1 {
 			label = fmt.Sprintf("Zählpunktsgebühr (%d × %s × %d Monate)", vat.ZaehlpunktsGebuehrCount, formatAmount(vat.ZaehlpunktsGebuehrEur), vat.FeeMonths)
 		}
 		h += wrappingLineRowHeight(pdf, theme, colDesc, rowH, label)
+	}
+	if vat.ServiceFeeBezugTotal > 0 || eeg.InvoiceShowZeroFeeServicegebuehrBezug {
+		h += wrappingLineRowHeight(pdf, theme, colDesc, rowH, "Servicegebühr Bezug")
+	}
+	if vat.ServiceFeeEinspeisungTotal > 0 || eeg.InvoiceShowZeroFeeServicegebuehrEinspeisung {
+		h += wrappingLineRowHeight(pdf, theme, colDesc, rowH, "Servicegebühr Einspeisung")
 	}
 	for _, em := range vat.ExtraMeterLines {
 		h += wrappingLineRowHeight(pdf, theme, colDesc, rowH, fmt.Sprintf("%s (Zusatzzähler)", em.Label))
@@ -1547,7 +1616,8 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 	pdf.SetFont("Theme", "B", theme.size(3))
 	pdf.CellFormat(0, theme.h(8), "Rechnung - "+eeg.DisplayNameOrName(), "", 1, "L", false, 0, "")
 	pdf.SetFont("Theme", "", theme.size(0))
-	pdf.CellFormat(0, theme.h(6), fmt.Sprintf("Abrechnungszeitraum: %s – %s", inv.PeriodStart.Format("02.01.2006"), inv.PeriodEnd.Format("02.01.2006")), "", 1, "L", false, 0, "")
+	displayFrom, displayTo := realBilledPeriod(energyRows, generationRows, inv.PeriodStart, inv.PeriodEnd)
+	pdf.CellFormat(0, theme.h(6), fmt.Sprintf("Abrechnungszeitraum: %s – %s", displayFrom.Format("02.01.2006"), displayTo.Format("02.01.2006")), "", 1, "L", false, 0, "")
 	theme.ln(pdf, 4)
 
 	// ── Pre-text (optional) ──────────────────────────────────────────────────
@@ -1665,7 +1735,7 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 		if feeMonths > 1 {
 			feeLabel = fmt.Sprintf("Messstellengebühr / Teilnahmegebühr (%d Monate)", feeMonths)
 		}
-		if feeTotal > 0 || eeg.InvoiceShowZeroFees {
+		if feeTotal > 0 || eeg.InvoiceShowZeroFeeFixgebuehr {
 			drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH, feeLabel, "", "", formatAmount(feeTotal))
 		}
 	} else if vat.GenerationKwh > 0 {
@@ -1679,12 +1749,31 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 			"Bezug Strom "+period, formatKwh(inv.ConsumptionKwh), fmt.Sprintf("%.4f ct", vat.EnergyPrice), formatAmount(vat.EnergyNet))
 	}
 
-	if vat.ZaehlpunktsGebuehrTotal > 0 || eeg.InvoiceShowZeroFees {
+	if vat.ZaehlpunktsGebuehrTotal > 0 || eeg.InvoiceShowZeroFeeZaehlpunktsgebuehr {
 		label := fmt.Sprintf("Zählpunktsgebühr (%d × %s)", vat.ZaehlpunktsGebuehrCount, formatAmount(vat.ZaehlpunktsGebuehrEur))
 		if vat.FeeMonths > 1 {
 			label = fmt.Sprintf("Zählpunktsgebühr (%d × %s × %d Monate)", vat.ZaehlpunktsGebuehrCount, formatAmount(vat.ZaehlpunktsGebuehrEur), vat.FeeMonths)
 		}
 		drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH, label, "", "", formatAmount(vat.ZaehlpunktsGebuehrTotal))
+	}
+
+	// Servicegebühr Bezug/Einspeisung — own kWh × ct/kWh rows, both shown as positive charges
+	// (folded into ConsumptionNet, see VATOptions doc comment — a "-" sign here would
+	// double-subtract the Einspeisung fee from the invoice total).
+	if vat.ServiceFeeBezugTotal > 0 || eeg.InvoiceShowZeroFeeServicegebuehrBezug {
+		drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
+			"Servicegebühr Bezug", formatKwh(vat.ServiceFeeBezugKwh), fmt.Sprintf("%.4f ct", vat.ServiceFeeBezugCtKwh), formatAmount(vat.ServiceFeeBezugTotal))
+	}
+	if vat.ServiceFeeEinspeisungTotal > 0 || eeg.InvoiceShowZeroFeeServicegebuehrEinspeisung {
+		drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
+			"Servicegebühr Einspeisung", formatKwh(vat.ServiceFeeEinspeisungKwh), fmt.Sprintf("%.4f ct", vat.ServiceFeeEinspeisungCtKwh), formatAmount(vat.ServiceFeeEinspeisungTotal))
+	}
+
+	// Werbebonus — Mitglieder-werben-Mitglieder-Prämie, already folded into
+	// ConsumptionNet above; shown as its own negative row for transparency.
+	if vat.WerbebonusTotal > 0 {
+		drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
+			"Werbebonus (Mitglied geworben)", "", "", "-"+formatAmount(vat.WerbebonusTotal))
 	}
 
 	// Zusatzzähler — manually-read submeters (e.g. Wärmepumpe), one line each.
@@ -1912,9 +2001,12 @@ func drawThemedTotalLine(pdf *fpdf.Fpdf, label string, theme InvoiceTheme) {
 // creditNotePricingTableHeight is the GenerateCreditNotePDFThemed counterpart
 // of themedPricingTableHeight (see there) — same page-break-avoidance purpose,
 // mirrors this function's own banner/header/line-item/drawMpSubRow branches.
-func creditNotePricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domain.EEG, generationMeterPoints []MeterPointKwh, monthlyItems []MonthlyKwh, colDesc, rowH float64, periodStart, periodEnd time.Time) float64 {
+func creditNotePricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domain.EEG, generationMeterPoints []MeterPointKwh, monthlyItems []MonthlyKwh, colDesc, rowH float64, periodStart, periodEnd time.Time, werbebonusNet float64) float64 {
 	h := rowH // banner
 	h += rowH // column header
+	if werbebonusNet > 0 {
+		h += rowH // Werbebonus row
+	}
 	multiMonth := periodSpansMultipleMonths(periodStart, periodEnd)
 	showGenRows := multiMonth && (eeg.InvoiceShowMonthlyBreakdown || monthlyGenerationPriceVaries(monthlyItems) || monthlyGenerationMonthCount(monthlyItems) <= 1)
 	if multiMonth {
@@ -1949,7 +2041,10 @@ func creditNotePricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domai
 // and pricing table the same way GeneratePDFThemed does. No energy breakdown
 // table: Netzbezug is a consumption concept, not applicable to a producer credit
 // note.
-func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, producerPriceCt, generationKwh float64, generationMeterPoints []MeterPointKwh, monthlyItems []MonthlyKwh, history []MonthlyKwh, theme InvoiceTheme) ([]byte, error) {
+// werbebonusNet is an optional Migration-114 referral bonus (net, pre-VAT),
+// already folded into inv.GenerationNetAmount/GenerationVatAmount by the
+// caller — pass 0 when none applies. See GenerateCreditNotePDF's doc comment.
+func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, producerPriceCt, generationKwh float64, generationMeterPoints []MeterPointKwh, monthlyItems []MonthlyKwh, history []MonthlyKwh, theme InvoiceTheme, werbebonusNet float64) ([]byte, error) {
 	pdf := newThemedPDF(theme)
 	pdf.AddPage()
 	pdf.SetMargins(20, 20, 20)
@@ -2021,7 +2116,8 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 	pdf.SetFont("Theme", "B", theme.size(3))
 	pdf.CellFormat(0, theme.h(8), "Gutschrift - "+eeg.DisplayNameOrName(), "", 1, "L", false, 0, "")
 	pdf.SetFont("Theme", "", theme.size(0))
-	pdf.CellFormat(0, theme.h(6), fmt.Sprintf("Abrechnungszeitraum: %s – %s", inv.PeriodStart.Format("02.01.2006"), inv.PeriodEnd.Format("02.01.2006")), "", 1, "L", false, 0, "")
+	displayFrom, displayTo := realBilledPeriodFromMonthly(monthlyItems, inv.PeriodStart, inv.PeriodEnd)
+	pdf.CellFormat(0, theme.h(6), fmt.Sprintf("Abrechnungszeitraum: %s – %s", displayFrom.Format("02.01.2006"), displayTo.Format("02.01.2006")), "", 1, "L", false, 0, "")
 	theme.ln(pdf, 4)
 
 	// ── Pre-text ────────────────────────────────────────────────────────────
@@ -2039,7 +2135,7 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 	rowH := theme.h(8.0)
 	vatH := theme.h(6.0)
 
-	ensurePageSpace(pdf, creditNotePricingTableHeight(pdf, theme, eeg, generationMeterPoints, monthlyItems, colDesc, rowH, inv.PeriodStart, inv.PeriodEnd))
+	ensurePageSpace(pdf, creditNotePricingTableHeight(pdf, theme, eeg, generationMeterPoints, monthlyItems, colDesc, rowH, inv.PeriodStart, inv.PeriodEnd, werbebonusNet))
 
 	pdf.SetFont("Theme", "B", theme.size(0))
 	theme.apply(pdf)
@@ -2090,21 +2186,32 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 		drawMpSubRowThemed(pdf, theme, generationMeterPoints)
 	}
 
+	// Werbebonus — shown separately so the "Einspeisung Strom" row above stays a
+	// pure kWh × Tarif figure; the Nettobetrag/Gutschriftbetrag below folds it in
+	// via inv.GenerationNetAmount.
+	if werbebonusNet > 0 {
+		drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
+			"Werbebonus (Mitglied geworben)", "", "", formatAmount(werbebonusNet))
+	}
+
 	// ── VAT section ──────────────────────────────────────────────────────────
 	vatText := GenerationVATText(member)
 	genVatPct := inv.GenerationVatPct
 	genVatAmount := inv.GenerationVatAmount
 	genRC := GenerationReverseCharge(member)
-	totalDisplay := netAmount + genVatAmount
+	// Nettobetrag reads from inv.GenerationNetAmount (not the locally recomputed
+	// netAmount) so it includes any Werbebonus folded in by the caller.
+	nettoDisplay := inv.GenerationNetAmount
+	totalDisplay := nettoDisplay + genVatAmount
 	payDisplay := totalDisplay
 	if genRC {
-		payDisplay = netAmount
+		payDisplay = nettoDisplay
 	}
 
 	theme.ln(pdf, 1)
 	pdf.SetFont("Theme", "", theme.size(0))
 	pdf.CellFormat(colDesc+colKwh+colPrice, vatH, "Nettobetrag", "0", 0, "R", false, 0, "")
-	pdf.CellFormat(colAmount, vatH, formatAmount(netAmount), "0", 1, "R", false, 0, "")
+	pdf.CellFormat(colAmount, vatH, formatAmount(nettoDisplay), "0", 1, "R", false, 0, "")
 
 	if genVatPct > 0 {
 		if genRC {

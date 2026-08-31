@@ -258,6 +258,7 @@ func (h *MemberEmailHandler) SendCampaign(w http.ResponseWriter, r *http.Request
 
 	// Send emails asynchronously so the HTTP response returns immediately.
 	smtpCfg := invoice.SMTPConfig{Host: eeg.SMTPHost, From: eeg.SMTPFrom, Username: eeg.SMTPUser, Password: eeg.SMTPPassword}
+	bonusLabel := formatEuro(eeg.ReferralBonusEur)
 	go func() {
 		sent := 0
 		for _, m := range members {
@@ -269,8 +270,16 @@ func (h *MemberEmailHandler) SendCampaign(w http.ResponseWriter, r *http.Request
 					continue
 				}
 			}
-			personalizedSubject := applyEmailPlaceholders(subject, m, eeg.DisplayNameOrName())
-			personalizedBody := applyEmailPlaceholders(htmlBody, m, eeg.DisplayNameOrName())
+			// Only generated when the campaign text actually references it, to avoid
+			// a referral-code write for every recipient of every campaign.
+			referralLink := ""
+			if strings.Contains(subject, "{{werbelink}}") || strings.Contains(htmlBody, "{{werbelink}}") {
+				if code, err := h.memberRepo.GetOrCreateReferralCode(context.Background(), m.ID); err == nil {
+					referralLink = fmt.Sprintf("%s/onboarding/%s?ref=%s", eeg.PortalBaseURL, eeg.ID, code)
+				}
+			}
+			personalizedSubject := applyEmailPlaceholders(subject, m, eeg.DisplayNameOrName(), referralLink, bonusLabel)
+			personalizedBody := applyEmailPlaceholders(htmlBody, m, eeg.DisplayNameOrName(), referralLink, bonusLabel)
 			memID := m.ID
 			if err := h.sendHTMLEmail(context.Background(), smtpCfg, eeg.ID, &memID, m.Email, eeg.Name, personalizedSubject, personalizedBody, attachments); err != nil {
 				slog.Error("failed to send campaign email", "member_id", m.ID, "error", err)
@@ -346,8 +355,9 @@ func (h *MemberEmailHandler) sendHTMLEmail(ctx context.Context, smtpCfg invoice.
 }
 
 // applyEmailPlaceholders replaces known {{placeholder}} tokens with member-specific values.
-// Supported: {{vorname}}, {{nachname}}, {{name}}, {{mitglieds_nr}}, {{eeg_name}}, {{email}}
-func applyEmailPlaceholders(s string, m domain.Member, eegName string) string {
+// Supported: {{vorname}}, {{nachname}}, {{name}}, {{mitglieds_nr}}, {{eeg_name}}, {{email}},
+// {{werbelink}} (member's personal referral link), {{werbebonus_betrag}} (EEG's referral bonus amount).
+func applyEmailPlaceholders(s string, m domain.Member, eegName, referralLink, bonusLabel string) string {
 	fullName := strings.TrimSpace(m.Name1 + " " + m.Name2)
 	return strings.NewReplacer(
 		"{{vorname}}", m.Name1,
@@ -356,5 +366,14 @@ func applyEmailPlaceholders(s string, m domain.Member, eegName string) string {
 		"{{mitglieds_nr}}", m.MitgliedsNr,
 		"{{eeg_name}}", eegName,
 		"{{email}}", m.Email,
+		"{{werbelink}}", referralLink,
+		"{{werbebonus_betrag}}", bonusLabel,
 	).Replace(s)
+}
+
+// formatEuro formats a float as German locale currency, e.g. "5,00 €".
+func formatEuro(v float64) string {
+	s := fmt.Sprintf("%.2f", v)
+	s = strings.Replace(s, ".", ",", 1)
+	return s + " €"
 }

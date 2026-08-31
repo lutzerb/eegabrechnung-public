@@ -107,6 +107,12 @@ interface MeterPoint {
   participation_factor: number;
 }
 
+interface ReferralInfo {
+  code: string;
+  share_url: string;
+  bonus_eur: number;
+}
+
 interface Props {
   member: { id: string; name1: string; name2: string; email: string; mitglieds_nr: string; status: string; iban?: string };
   eeg: { id: string; name: string };
@@ -115,10 +121,12 @@ interface Props {
   meterPoints: MeterPoint[];
   showFullEnergy: boolean;
   hasPassword: boolean;
+  referral: ReferralInfo | null;
 }
 
-export default function PortalDashboardClient({ member, eeg, invoices, documents, meterPoints, showFullEnergy, hasPassword }: Props) {
-  const [activeTab, setActiveTab] = useState<"energy" | "invoices" | "downloads" | "zaehlpunkte" | "profil">("energy");
+export default function PortalDashboardClient({ member, eeg, invoices, documents, meterPoints, showFullEnergy, hasPassword, referral }: Props) {
+  const [activeTab, setActiveTab] = useState<"energy" | "invoices" | "downloads" | "zaehlpunkte" | "werben" | "profil">("energy");
+  const [linkCopied, setLinkCopied] = useState(false);
   const [currentIban, setCurrentIban] = useState(member.iban || "");
   const [editingIban, setEditingIban] = useState(false);
   const [newIban, setNewIban] = useState("");
@@ -466,6 +474,14 @@ export default function PortalDashboardClient({ member, eeg, invoices, documents
             Zählpunkte
           </button>
           <button
+            onClick={() => setActiveTab("werben")}
+            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+              activeTab === "werben" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            Mitglieder werben
+          </button>
+          <button
             onClick={() => setActiveTab("profil")}
             className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
               activeTab === "profil" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
@@ -793,6 +809,48 @@ export default function PortalDashboardClient({ member, eeg, invoices, documents
         )}
 
         {/* Profil Tab */}
+        {/* Werben Tab */}
+        {activeTab === "werben" && (
+          <div className="space-y-4">
+            <div className="bg-white rounded-xl border border-slate-200 p-5">
+              <p className="font-medium text-slate-900 text-sm mb-1">Mitglieder werben Mitglieder</p>
+              {referral ? (
+                <>
+                  <p className="text-xs text-slate-500 mb-4">
+                    Teilen Sie Ihren persönlichen Einladungslink. Wenn ein neues Mitglied darüber
+                    beitritt, kann Ihnen eine Prämie von {fmtEur(referral.bonus_eur)} gutgeschrieben
+                    werden — die Vergabe erfolgt manuell durch die Verwaltung.
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      readOnly
+                      value={referral.share_url}
+                      onFocus={(e) => e.target.select()}
+                      className="flex-1 px-3 py-1.5 border border-slate-300 rounded-md text-xs font-mono text-slate-700 bg-slate-50"
+                    />
+                    <button
+                      onClick={() => {
+                        navigator.clipboard.writeText(referral.share_url).then(() => {
+                          setLinkCopied(true);
+                          setTimeout(() => setLinkCopied(false), 2000);
+                        });
+                      }}
+                      className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded-md hover:bg-blue-700 transition-colors flex-shrink-0"
+                    >
+                      {linkCopied ? "Kopiert!" : "Link kopieren"}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-slate-500">
+                  Ihr Einladungslink konnte nicht geladen werden. Bitte versuchen Sie es später erneut.
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         {activeTab === "profil" && (
           <div className="space-y-4">
             {ibanSuccess && (

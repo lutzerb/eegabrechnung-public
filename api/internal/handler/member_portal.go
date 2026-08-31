@@ -563,6 +563,37 @@ type portalMeterPoint struct {
 	ParticipationFactor float64   `json:"participation_factor"`
 }
 
+// GetReferral handles GET /api/v1/public/portal/referral
+//
+// Returns the member's personal "Mitglieder werben Mitglieder" invite link
+// (lazily generating a referral code on first use) plus the EEG's current
+// referral bonus amount, for display in the portal's "Mitglieder werben" section.
+func (h *MemberPortalHandler) GetReferral(w http.ResponseWriter, r *http.Request) {
+	memberID, eegID, ok := h.portalAuth(r)
+	if !ok {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	code, err := h.memberRepo.GetOrCreateReferralCode(r.Context(), memberID)
+	if err != nil {
+		slog.Error("failed to get/create referral code", "error", err, "member_id", memberID)
+		jsonError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	eeg, err := h.eegRepo.GetByIDInternal(r.Context(), eegID)
+	if err != nil {
+		jsonError(w, "EEG not found", http.StatusNotFound)
+		return
+	}
+
+	jsonOK(w, map[string]any{
+		"code":      code,
+		"share_url": fmt.Sprintf("%s/onboarding/%s?ref=%s", eeg.PortalBaseURL, eegID, code),
+		"bonus_eur": eeg.ReferralBonusEur,
+	})
+}
+
 // GetMeterPoints handles GET /api/v1/public/portal/meter-points
 func (h *MemberPortalHandler) GetMeterPoints(w http.ResponseWriter, r *http.Request) {
 	memberID, eegID, ok := h.portalAuth(r)

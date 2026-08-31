@@ -65,10 +65,10 @@ func TestGenerateCreditNotePDFThemed(t *testing.T) {
 		ID: invoiceID, MemberID: memberID, EegID: eegID,
 		PeriodStart:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		PeriodEnd:     time.Date(2026, 1, 31, 23, 59, 59, 0, time.UTC),
-		GenerationKwh: 500, TotalAmount: -40, DocumentType: "credit_note",
+		GenerationKwh: 500, TotalAmount: -40, GenerationNetAmount: 40, DocumentType: "credit_note",
 	}
 
-	data, err := GenerateCreditNotePDFThemed(inv, eeg, member, 8, 500, nil, nil, nil, DefaultOikosTheme())
+	data, err := GenerateCreditNotePDFThemed(inv, eeg, member, 8, 500, nil, nil, nil, DefaultOikosTheme(), 0)
 	mustBePDF(t, data, err)
 }
 
@@ -85,15 +85,15 @@ func TestCreditNotePaymentNoticeMode(t *testing.T) {
 		ID: invoiceID, MemberID: memberID, EegID: eegID,
 		PeriodStart:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		PeriodEnd:     time.Date(2026, 1, 31, 23, 59, 59, 0, time.UTC),
-		GenerationKwh: 500, TotalAmount: -40, DocumentType: "credit_note",
+		GenerationKwh: 500, TotalAmount: -40, GenerationNetAmount: 40, DocumentType: "credit_note",
 	}
 
 	base := &domain.EEG{ID: eegID, Name: "Sonnenschein EEG", ProducerPrice: 8, GenerateCreditNotes: true, InvoicePaymentNoticeMode: "sepa_lastschrift"}
-	withNotice, err := GenerateCreditNotePDF(inv, base, member, 8, 500, nil, nil, nil)
+	withNotice, err := GenerateCreditNotePDF(inv, base, member, 8, 500, nil, nil, nil, 0)
 	mustBePDF(t, withNotice, err)
 
 	none := &domain.EEG{ID: eegID, Name: "Sonnenschein EEG", ProducerPrice: 8, GenerateCreditNotes: true, InvoicePaymentNoticeMode: "none"}
-	withoutNotice, err := GenerateCreditNotePDF(inv, none, member, 8, 500, nil, nil, nil)
+	withoutNotice, err := GenerateCreditNotePDF(inv, none, member, 8, 500, nil, nil, nil, 0)
 	mustBePDF(t, withoutNotice, err)
 	if len(withoutNotice) >= len(withNotice) {
 		t.Errorf("expected mode=none PDF to be shorter (Auszahlung section omitted): none=%d bytes, sepa_lastschrift=%d bytes", len(withoutNotice), len(withNotice))
@@ -104,7 +104,7 @@ func TestCreditNotePaymentNoticeMode(t *testing.T) {
 		InvoicePaymentNoticeMode: "custom",
 		InvoicePaymentNoticeText: "Auszahlung von {betrag} an {iban} von {eeg_iban}.",
 	}
-	customData, err := GenerateCreditNotePDF(inv, custom, member, 8, 500, nil, nil, nil)
+	customData, err := GenerateCreditNotePDF(inv, custom, member, 8, 500, nil, nil, nil, 0)
 	mustBePDF(t, customData, err)
 }
 

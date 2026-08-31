@@ -36,17 +36,18 @@ type Config struct {
 
 // Service handles billing aggregation and invoice generation.
 type Service struct {
-	db             *pgxpool.Pool
-	eegRepo        *repository.EEGRepository
-	memberRepo     *repository.MemberRepository
-	readingRepo    *repository.ReadingRepository
-	invoiceRepo    *repository.InvoiceRepository
-	billingRunRepo *repository.BillingRunRepository
-	tariffRepo     *repository.TariffRepository
-	emailLogRepo   *repository.EmailLogRepository
-	meterPointRepo *repository.MeterPointRepository
-	extraMeterRepo *repository.ExtraMeterRepository
-	cfg            Config
+	db                *pgxpool.Pool
+	eegRepo           *repository.EEGRepository
+	memberRepo        *repository.MemberRepository
+	readingRepo       *repository.ReadingRepository
+	invoiceRepo       *repository.InvoiceRepository
+	billingRunRepo    *repository.BillingRunRepository
+	tariffRepo        *repository.TariffRepository
+	emailLogRepo      *repository.EmailLogRepository
+	meterPointRepo    *repository.MeterPointRepository
+	extraMeterRepo    *repository.ExtraMeterRepository
+	referralBonusRepo *repository.ReferralBonusRepository
+	cfg               Config
 }
 
 func NewService(
@@ -60,19 +61,21 @@ func NewService(
 	emailLogRepo *repository.EmailLogRepository,
 	meterPointRepo *repository.MeterPointRepository,
 	extraMeterRepo *repository.ExtraMeterRepository,
+	referralBonusRepo *repository.ReferralBonusRepository,
 	cfg ...Config,
 ) *Service {
 	s := &Service{
-		db:             db,
-		eegRepo:        eegRepo,
-		memberRepo:     memberRepo,
-		readingRepo:    readingRepo,
-		invoiceRepo:    invoiceRepo,
-		billingRunRepo: billingRunRepo,
-		tariffRepo:     tariffRepo,
-		emailLogRepo:   emailLogRepo,
-		meterPointRepo: meterPointRepo,
-		extraMeterRepo: extraMeterRepo,
+		db:                db,
+		eegRepo:           eegRepo,
+		memberRepo:        memberRepo,
+		readingRepo:       readingRepo,
+		invoiceRepo:       invoiceRepo,
+		billingRunRepo:    billingRunRepo,
+		tariffRepo:        tariffRepo,
+		emailLogRepo:      emailLogRepo,
+		meterPointRepo:    meterPointRepo,
+		extraMeterRepo:    extraMeterRepo,
+		referralBonusRepo: referralBonusRepo,
 	}
 	if len(cfg) > 0 {
 		s.cfg = cfg[0]
@@ -147,6 +150,49 @@ func (s *Service) meterPointKwhBreakdown(ctx context.Context, memberID uuid.UUID
 	return consMPs, genMPs
 }
 
+// meterPointsByZaehlpunkt fetches a member's meter points keyed by Zaehlpunkt,
+// used by energyPeriodRows/generationPeriodRows to clamp each row to its
+// meter point's actual active window. Returns nil (unclamped fallback) on a
+// query error, same fail-soft precedent as those callers.
+func (s *Service) meterPointsByZaehlpunkt(ctx context.Context, memberID uuid.UUID) map[string]domain.MeterPoint {
+	mps, err := s.meterPointRepo.ListByMember(ctx, memberID)
+	if err != nil {
+		return nil
+	}
+	result := make(map[string]domain.MeterPoint, len(mps))
+	for _, mp := range mps {
+		result[mp.Zaehlpunkt] = mp
+	}
+	return result
+}
+
+// clampRowToRegistration narrows a per-month period row's [von,bis] to the
+// meter point's actual active window (registriert_seit/abgemeldet_am). The
+// underlying kWh sum already only reflects readings that exist (a Zählpunkt
+// registered on 10.4. has no earlier readings to sum), but the row's printed
+// dates previously always used the full calendar month regardless — e.g.
+// showing "01.04.2026 – 30.04.2026" for a ZP only active from 10.4. onward,
+// within a wider Q2 billing run. registriert_seit/abgemeldet_am nil (never
+// explicitly set, e.g. legacy meter points predating this tracking) leaves
+// that bound unclamped. abgemeldet_am is the first inactive day (exclusive),
+// mirroring the convention in reading.go's MissingIntervals. Returns
+// ok=false if the clamp collapses the row entirely (should be dropped).
+func clampRowToRegistration(von, bis time.Time, mp domain.MeterPoint) (time.Time, time.Time, bool) {
+	if mp.RegistriertSeit != nil {
+		start := time.Date(mp.RegistriertSeit.Year(), mp.RegistriertSeit.Month(), mp.RegistriertSeit.Day(), 0, 0, 0, 0, von.Location())
+		if start.After(von) {
+			von = start
+		}
+	}
+	if mp.AbgemeldetAm != nil {
+		end := time.Date(mp.AbgemeldetAm.Year(), mp.AbgemeldetAm.Month(), mp.AbgemeldetAm.Day(), 0, 0, 0, 0, bis.Location()).AddDate(0, 0, -1)
+		if end.Before(bis) {
+			bis = end
+		}
+	}
+	return von, bis, !bis.Before(von)
+}
+
 // energyPeriodRows builds the Netzbezug/Community-Verbrauch breakdown table data
 // for the "individuell" invoice design (see internal/invoice/pdf_theme.go). Only
 // called when eeg.InvoiceDesign == "individuell" — it's an extra query the
@@ -157,10 +203,18 @@ func (s *Service) energyPeriodRows(ctx context.Context, memberID uuid.UUID, from
 	if err != nil {
 		return nil
 	}
+	mpByZP := s.meterPointsByZaehlpunkt(ctx, memberID)
 	result := make([]invoice.EnergyPeriodRow, 0, len(rows))
 	for _, r := range rows {
 		monthStart := time.Date(r.Month.Year(), r.Month.Month(), 1, 0, 0, 0, 0, r.Month.Location())
 		monthEnd := monthStart.AddDate(0, 1, -1)
+		if mp, ok := mpByZP[r.Zaehlpunkt]; ok {
+			var keep bool
+			monthStart, monthEnd, keep = clampRowToRegistration(monthStart, monthEnd, mp)
+			if !keep {
+				continue
+			}
+		}
 		result = append(result, invoice.EnergyPeriodRow{
 			Zaehlpunkt:            r.Zaehlpunkt,
 			ZeitraumVon:           monthStart,
@@ -183,10 +237,18 @@ func (s *Service) generationPeriodRows(ctx context.Context, memberID uuid.UUID, 
 	if err != nil {
 		return nil
 	}
+	mpByZP := s.meterPointsByZaehlpunkt(ctx, memberID)
 	result := make([]invoice.GenerationPeriodRow, 0, len(rows))
 	for _, r := range rows {
 		monthStart := time.Date(r.Month.Year(), r.Month.Month(), 1, 0, 0, 0, 0, r.Month.Location())
 		monthEnd := monthStart.AddDate(0, 1, -1)
+		if mp, ok := mpByZP[r.Zaehlpunkt]; ok {
+			var keep bool
+			monthStart, monthEnd, keep = clampRowToRegistration(monthStart, monthEnd, mp)
+			if !keep {
+				continue
+			}
+		}
 		result = append(result, invoice.GenerationPeriodRow{
 			Zaehlpunkt:           r.Zaehlpunkt,
 			ZeitraumVon:          monthStart,
@@ -673,6 +735,15 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 				zpGebuehr = *v
 			}
 		}
+		serviceFeeBezugRate, serviceFeeEinspeisungRate := eeg.ServicegebuehrBezugCtKwh, eeg.ServicegebuehrEinspeisungCtKwh
+		if activeTariff != nil && activeTariff.MemberID != nil {
+			if v := activeTariff.ServicegebuehrBezugCtKwhOverride; v != nil {
+				serviceFeeBezugRate = *v
+			}
+			if v := activeTariff.ServicegebuehrEinspeisungCtKwhOverride; v != nil {
+				serviceFeeEinspeisungRate = *v
+			}
+		}
 		activeZPCount, _ := s.meterPointRepo.CountActiveByMember(ctx, sum.MemberID)
 
 		// ── Effective billing period per member ────────────────────────────────
@@ -758,6 +829,16 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 			consumptionKwh = 0
 		}
 
+		// ── Servicegebühr pro kWh (optional, own invoice line) ──────────────────
+		// Charged on the full billed kWh (not reduced by free_kwh/discount — same
+		// basis generationCredit uses for generationKwh). Both totals are folded
+		// into consumptionNet below (not generationCredit) so the Einspeisung fee
+		// also gets the EEG-level consumption VAT instead of the member-specific
+		// generation VAT, while still reducing the member's net payout by the same
+		// amount as a direct deduction from the feed-in credit would.
+		serviceFeeBezugTotal := consumptionKwh * serviceFeeBezugRate / 100
+		serviceFeeEinspeisungTotal := generationKwh * serviceFeeEinspeisungRate / 100
+
 		// ── Consumption charge (Bezug) ─────────────────────────────────────────
 		// Apply free kWh and discount to consumption (Individualtarif-aware)
 		effectiveConsumption := math.Max(0, consumptionKwh-freeKwh)
@@ -826,7 +907,8 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		}
 
 		// Add fixed fees (meter/participation fee + Zählpunktsgebühr × active meter points, each × feeMonths)
-		consumptionNet := energyOnlyNet + meterFeeTotal + participationFeeTotal + zpGebuehrTotal + extraMeterTotal
+		// and the per-kWh Servicegebühr (Bezug + Einspeisung, see above).
+		consumptionNet := energyOnlyNet + meterFeeTotal + participationFeeTotal + zpGebuehrTotal + extraMeterTotal + serviceFeeBezugTotal + serviceFeeEinspeisungTotal
 
 		// ── Net saldo ──────────────────────────────────────────────────────────
 		// Net = consumption charge − generation credit
@@ -909,7 +991,7 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 					totalGenEur += m.GenerationKwh * m.ProducerPriceCt / 100
 				}
 				energyOnlyNet = totalEnergyEur
-				consumptionNet = totalEnergyEur + meterFeeTotal + participationFeeTotal + zpGebuehrTotal + extraMeterTotal
+				consumptionNet = totalEnergyEur + meterFeeTotal + participationFeeTotal + zpGebuehrTotal + extraMeterTotal + serviceFeeBezugTotal + serviceFeeEinspeisungTotal
 				generationCredit = totalGenEur
 				netAmount = consumptionNet - generationCredit
 			}
@@ -918,6 +1000,41 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		// Determine document type: credit note for pure producers when EEG has credit notes enabled
 		isPureProducer := consumptionKwh == 0 && generationKwh > 0
 		isCreditNote := isPureProducer && eeg.GenerateCreditNotes
+
+		// ── Werbebonus (Migration 114) — manually-granted flat referral credit ──
+		// Admin-granted via /eegs/{eegID}/referrals/{id}/grant-bonus, applied in full
+		// to the referrer's next billing run regardless of size (may push the Saldo
+		// negative on a small Rechnung, or enlarge a Gutschrift — both intentional).
+		// Rechnung: folded into consumptionNet pre-VAT (same principle as free_kwh/
+		// discount_pct), using the EEG's own consumption VAT rate.
+		// Gutschrift (isCreditNote): folded into generationCredit pre-VAT instead,
+		// using the REFERRER's own generation VAT rate (0/13/20/Reverse Charge) —
+		// not the EEG's — so the granted amount is a round gross figure regardless
+		// of the referrer's UID/Landwirt status.
+		var werbebonusNet float64
+		var werbebonusBonusIDs []uuid.UUID
+		if s.referralBonusRepo != nil {
+			if gross, ids, err := s.referralBonusRepo.SumPendingForMember(ctx, eegID, sum.MemberID); err == nil && gross > 0 {
+				werbebonusBonusIDs = ids
+				if isCreditNote {
+					genVatPct := 0.0
+					if memberErr == nil {
+						genVatPct = invoice.GenerationVATPct(member)
+					}
+					werbebonusNet = gross
+					if genVatPct > 0 {
+						werbebonusNet = gross / (1 + genVatPct/100)
+					}
+					generationCredit += werbebonusNet
+				} else {
+					werbebonusNet = gross
+					if eeg.UseVat {
+						werbebonusNet = gross / (1 + eeg.VatPct/100)
+					}
+					consumptionNet -= werbebonusNet
+				}
+			}
+		}
 
 		// ── Meter points (for invoice imprint) ────────────────────────────────
 		consumptionMPs, generationMPs := s.meterPointKwhBreakdown(ctx, sum.MemberID, effectiveStart, effectiveEnd, consumptionKwh, generationKwh)
@@ -931,7 +1048,12 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		consumptionVatPct := 0.0
 		consumptionVatAmount := 0.0
 		consumptionGross := consumptionNet
-		if eeg.UseVat && consumptionNet > 0 {
+		// != 0 (not > 0): a Werbebonus can push consumptionNet negative — VAT must
+		// still apply proportionally so the bonus's gross reduction stays exact
+		// (see Werbebonus comment above). Positive consumptionNet keeps its
+		// pre-existing behavior unchanged; exactly 0 also behaves identically
+		// either way (0 × anything = 0).
+		if eeg.UseVat && consumptionNet != 0 {
 			consumptionVatPct = eeg.VatPct
 			consumptionVatAmount = consumptionNet * eeg.VatPct / 100
 			consumptionGross = consumptionNet + consumptionVatAmount
@@ -968,34 +1090,41 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		}
 
 		vatOpts := invoice.VATOptions{
-			UseVat:                   eeg.UseVat,
-			VatPct:                   eeg.VatPct,
-			ConsumptionKwh:           consumptionKwh,
-			GenerationKwh:            generationKwh,
-			ConsumptionNet:           consumptionNet,
-			GenerationNet:            generationCredit,
-			EnergyPrice:              energyPriceCt,
-			ProducerPrice:            producerPriceCt,
-			ConsumptionVatPct:        consumptionVatPct,
-			ConsumptionVatAmount:     consumptionVatAmount,
-			ConsumptionGross:         consumptionGross,
-			GenerationVatPct:         generationVatPct,
-			GenerationVatAmount:      generationVatAmount,
-			GenerationGross:          generationGross,
-			GenerationVatText:        generationVatText,
-			ConsumptionReverseCharge: consumptionReverseCharge,
-			GenerationReverseCharge:  generationRC,
-			ConsumptionMeterPointKwh: consumptionMPs,
-			GenerationMeterPointKwh:  generationMPs,
-			MonthlyLineItems:         monthlyItems,
-			EnergyNet:                energyOnlyNet,
-			MeterFeeEur:              meterFee,
-			ParticipationFeeEur:      participationFee,
-			FeeMonths:                feeMonths,
-			ZaehlpunktsGebuehrEur:    zpGebuehr,
-			ZaehlpunktsGebuehrCount:  activeZPCount,
-			ZaehlpunktsGebuehrTotal:  zpGebuehrTotal,
-			ExtraMeterLines:          extraMeterLines,
+			UseVat:                     eeg.UseVat,
+			VatPct:                     eeg.VatPct,
+			ConsumptionKwh:             consumptionKwh,
+			GenerationKwh:              generationKwh,
+			ConsumptionNet:             consumptionNet,
+			GenerationNet:              generationCredit,
+			EnergyPrice:                energyPriceCt,
+			ProducerPrice:              producerPriceCt,
+			ConsumptionVatPct:          consumptionVatPct,
+			ConsumptionVatAmount:       consumptionVatAmount,
+			ConsumptionGross:           consumptionGross,
+			GenerationVatPct:           generationVatPct,
+			GenerationVatAmount:        generationVatAmount,
+			GenerationGross:            generationGross,
+			GenerationVatText:          generationVatText,
+			ConsumptionReverseCharge:   consumptionReverseCharge,
+			GenerationReverseCharge:    generationRC,
+			ConsumptionMeterPointKwh:   consumptionMPs,
+			GenerationMeterPointKwh:    generationMPs,
+			MonthlyLineItems:           monthlyItems,
+			EnergyNet:                  energyOnlyNet,
+			MeterFeeEur:                meterFee,
+			ParticipationFeeEur:        participationFee,
+			FeeMonths:                  feeMonths,
+			ZaehlpunktsGebuehrEur:      zpGebuehr,
+			ZaehlpunktsGebuehrCount:    activeZPCount,
+			ZaehlpunktsGebuehrTotal:    zpGebuehrTotal,
+			ExtraMeterLines:            extraMeterLines,
+			ServiceFeeBezugKwh:         consumptionKwh,
+			ServiceFeeBezugCtKwh:       serviceFeeBezugRate,
+			ServiceFeeBezugTotal:       serviceFeeBezugTotal,
+			ServiceFeeEinspeisungKwh:   generationKwh,
+			ServiceFeeEinspeisungCtKwh: serviceFeeEinspeisungRate,
+			ServiceFeeEinspeisungTotal: serviceFeeEinspeisungTotal,
+			WerbebonusTotal:            werbebonusNet,
 		}
 
 		inv := &domain.Invoice{
@@ -1027,6 +1156,16 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 			inv.BillingRunID = &run.ID
 			if err := s.invoiceRepo.Create(ctx, inv); err != nil {
 				return nil, fmt.Errorf("create invoice for member %s: %w", sum.MemberID, err)
+			}
+			// Reserve the Werbebonus rows this invoice reflects — removes them from
+			// SumPendingForMember's pool so a concurrent/later draft can't apply the
+			// same bonus twice; they only flip to status=applied at run finalize
+			// (FinalizeBillingRun). If this draft is later deleted instead, the
+			// applied_invoice_id FK's ON DELETE SET NULL frees them again automatically.
+			if len(werbebonusBonusIDs) > 0 && s.referralBonusRepo != nil {
+				if err := s.referralBonusRepo.ReserveForInvoice(ctx, werbebonusBonusIDs, inv.ID); err != nil {
+					slog.Error("failed to reserve referral bonus for invoice", "error", err, "invoice_id", inv.ID)
+				}
 			}
 		}
 
@@ -1064,9 +1203,9 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		var pdfData []byte
 		if isCreditNote {
 			if individuell {
-				pdfData, err = invoice.GenerateCreditNotePDFThemed(inv, eeg, member, producerPriceCt, generationKwh, generationMPs, monthlyItems, chartHistory, invoice.ThemeFromEEG(eeg))
+				pdfData, err = invoice.GenerateCreditNotePDFThemed(inv, eeg, member, producerPriceCt, generationKwh, generationMPs, monthlyItems, chartHistory, invoice.ThemeFromEEG(eeg), werbebonusNet)
 			} else {
-				pdfData, err = invoice.GenerateCreditNotePDF(inv, eeg, member, producerPriceCt, generationKwh, generationMPs, monthlyItems, chartHistory)
+				pdfData, err = invoice.GenerateCreditNotePDF(inv, eeg, member, producerPriceCt, generationKwh, generationMPs, monthlyItems, chartHistory, werbebonusNet)
 			}
 		} else if individuell {
 			energyRows := s.energyPeriodRows(ctx, sum.MemberID, effectiveStart, effectiveEnd)
@@ -1243,40 +1382,50 @@ func (s *Service) RegeneratePDF(ctx context.Context, invoiceID uuid.UUID) ([]byt
 	if eeg.ExtraMetersEnabled {
 		extraMeterLines, extraMeterTotal, _ = s.extraMeterAmounts(ctx, inv.MemberID, inv.PeriodStart, inv.PeriodEnd, energyPriceCt)
 	}
-	feeTotal := (eeg.MeterFeeEur+eeg.ParticipationFeeEur)*float64(regenFeeMonths) + zpGebuehrTotal + extraMeterTotal
+	// Servicegebühr pro kWh — same best-effort caveat: uses the flat current EEG rate,
+	// not any member Individualtarif override that may have applied at billing time.
+	serviceFeeBezugTotal := consumptionKwh * eeg.ServicegebuehrBezugCtKwh / 100
+	serviceFeeEinspeisungTotal := generationKwh * eeg.ServicegebuehrEinspeisungCtKwh / 100
+	feeTotal := (eeg.MeterFeeEur+eeg.ParticipationFeeEur)*float64(regenFeeMonths) + zpGebuehrTotal + extraMeterTotal + serviceFeeBezugTotal + serviceFeeEinspeisungTotal
 	energyOnlyNet := consumptionNet - feeTotal
 	if energyOnlyNet < 0 {
 		energyOnlyNet = consumptionNet
 	}
 
 	vatOpts := invoice.VATOptions{
-		UseVat:                   eeg.UseVat,
-		VatPct:                   eeg.VatPct,
-		ConsumptionKwh:           consumptionKwh,
-		GenerationKwh:            generationKwh,
-		ConsumptionNet:           consumptionNet,
-		GenerationNet:            generationNet,
-		EnergyPrice:              energyPriceCt,
-		ProducerPrice:            producerPriceCt,
-		ConsumptionVatPct:        consumptionVatPct,
-		ConsumptionVatAmount:     consumptionVatAmount,
-		ConsumptionGross:         consumptionGross,
-		GenerationVatPct:         generationVatPct,
-		GenerationVatAmount:      generationVatAmount,
-		GenerationGross:          generationGross,
-		GenerationVatText:        generationVatText,
-		ConsumptionReverseCharge: consumptionReverseCharge,
-		GenerationReverseCharge:  generationRC,
-		ConsumptionMeterPointKwh: consumptionMPs,
-		GenerationMeterPointKwh:  generationMPs,
-		EnergyNet:                energyOnlyNet,
-		MeterFeeEur:              eeg.MeterFeeEur,
-		ParticipationFeeEur:      eeg.ParticipationFeeEur,
-		FeeMonths:                regenFeeMonths,
-		ZaehlpunktsGebuehrEur:    eeg.ZaehlpunktsGebuehrEur,
-		ZaehlpunktsGebuehrCount:  activeZPCount,
-		ZaehlpunktsGebuehrTotal:  zpGebuehrTotal,
-		ExtraMeterLines:          extraMeterLines,
+		UseVat:                     eeg.UseVat,
+		VatPct:                     eeg.VatPct,
+		ConsumptionKwh:             consumptionKwh,
+		GenerationKwh:              generationKwh,
+		ConsumptionNet:             consumptionNet,
+		GenerationNet:              generationNet,
+		EnergyPrice:                energyPriceCt,
+		ProducerPrice:              producerPriceCt,
+		ConsumptionVatPct:          consumptionVatPct,
+		ConsumptionVatAmount:       consumptionVatAmount,
+		ConsumptionGross:           consumptionGross,
+		GenerationVatPct:           generationVatPct,
+		GenerationVatAmount:        generationVatAmount,
+		GenerationGross:            generationGross,
+		GenerationVatText:          generationVatText,
+		ConsumptionReverseCharge:   consumptionReverseCharge,
+		GenerationReverseCharge:    generationRC,
+		ConsumptionMeterPointKwh:   consumptionMPs,
+		GenerationMeterPointKwh:    generationMPs,
+		EnergyNet:                  energyOnlyNet,
+		MeterFeeEur:                eeg.MeterFeeEur,
+		ParticipationFeeEur:        eeg.ParticipationFeeEur,
+		FeeMonths:                  regenFeeMonths,
+		ZaehlpunktsGebuehrEur:      eeg.ZaehlpunktsGebuehrEur,
+		ZaehlpunktsGebuehrCount:    activeZPCount,
+		ZaehlpunktsGebuehrTotal:    zpGebuehrTotal,
+		ExtraMeterLines:            extraMeterLines,
+		ServiceFeeBezugKwh:         consumptionKwh,
+		ServiceFeeBezugCtKwh:       eeg.ServicegebuehrBezugCtKwh,
+		ServiceFeeBezugTotal:       serviceFeeBezugTotal,
+		ServiceFeeEinspeisungKwh:   generationKwh,
+		ServiceFeeEinspeisungCtKwh: eeg.ServicegebuehrEinspeisungCtKwh,
+		ServiceFeeEinspeisungTotal: serviceFeeEinspeisungTotal,
 	}
 
 	// Energy history for chart
@@ -1288,11 +1437,15 @@ func (s *Service) RegeneratePDF(ctx context.Context, invoiceID uuid.UUID) ([]byt
 	isCreditNote := inv.DocumentType == "credit_note"
 	var pdfData []byte
 	if isCreditNote {
-		// monthlyItems not available during regeneration — falls back to single-month layout
+		// monthlyItems not available during regeneration — falls back to single-month layout.
+		// werbebonusNet is not reconstructed here (best-effort path, like the fee/price
+		// reconstruction above) — a regenerated Gutschrift PDF folds any Werbebonus back
+		// into the raw Einspeisung line instead of showing it separately; the totals
+		// (inv.TotalAmount etc.) stay correct either way since they come from stored fields.
 		if individuell {
-			pdfData, err = invoice.GenerateCreditNotePDFThemed(inv, eeg, member, producerPriceCt, generationKwh, generationMPs, nil, chartHistory, invoice.ThemeFromEEG(eeg))
+			pdfData, err = invoice.GenerateCreditNotePDFThemed(inv, eeg, member, producerPriceCt, generationKwh, generationMPs, nil, chartHistory, invoice.ThemeFromEEG(eeg), 0)
 		} else {
-			pdfData, err = invoice.GenerateCreditNotePDF(inv, eeg, member, producerPriceCt, generationKwh, generationMPs, nil, chartHistory)
+			pdfData, err = invoice.GenerateCreditNotePDF(inv, eeg, member, producerPriceCt, generationKwh, generationMPs, nil, chartHistory, 0)
 		}
 	} else if individuell {
 		energyRows := s.energyPeriodRows(ctx, inv.MemberID, inv.PeriodStart, inv.PeriodEnd)

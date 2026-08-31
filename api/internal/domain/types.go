@@ -75,13 +75,24 @@ type EEG struct {
 	DiscountPct           float64 `json:"discount_pct"`            // discount on consumption in %
 	ParticipationFeeEur   float64 `json:"participation_fee_eur"`   // fixed member participation fee per period
 	ZaehlpunktsGebuehrEur float64 `json:"zaehlpunkts_gebuehr_eur"` // fee per active meter point per member per period
-	BillingPeriod         string  `json:"billing_period"`          // monthly | quarterly | semiannual | annual
-	InvoiceNumberPrefix   string  `json:"invoice_number_prefix"`
-	InvoiceNumberDigits   int     `json:"invoice_number_digits"`
-	InvoiceNumberStart    int     `json:"invoice_number_start"` // first invoice number for this EEG
-	InvoicePreText        string  `json:"invoice_pre_text"`
-	InvoicePostText       string  `json:"invoice_post_text"`
-	InvoiceFooterText     string  `json:"invoice_footer_text"`
+	// Optional per-kWh service fee, separate from EnergyPrice/ProducerPrice, shown
+	// as its own invoice line. ServicegebuehrBezugCtKwh is charged on billed
+	// consumption kWh and folded into the consumption (Bezug) net amount, so it
+	// carries the same EEG-level VAT as the rest of the Bezug side.
+	// ServicegebuehrEinspeisungCtKwh is charged on generation kWh but is ALSO
+	// folded into the consumption net amount (not GenerationCredit) so it uses the
+	// same EEG-level VAT instead of the member-specific generation VAT — the net
+	// cash effect (a higher amount owed / lower payout) is identical to deducting
+	// it from the feed-in credit directly. Both default to 0 (feature unused).
+	ServicegebuehrBezugCtKwh       float64 `json:"servicegebuehr_bezug_ct_kwh"`
+	ServicegebuehrEinspeisungCtKwh float64 `json:"servicegebuehr_einspeisung_ct_kwh"`
+	BillingPeriod                  string  `json:"billing_period"` // monthly | quarterly | semiannual | annual
+	InvoiceNumberPrefix            string  `json:"invoice_number_prefix"`
+	InvoiceNumberDigits            int     `json:"invoice_number_digits"`
+	InvoiceNumberStart             int     `json:"invoice_number_start"` // first invoice number for this EEG
+	InvoicePreText                 string  `json:"invoice_pre_text"`
+	InvoicePostText                string  `json:"invoice_post_text"`
+	InvoiceFooterText              string  `json:"invoice_footer_text"`
 	// Controls the "Zahlungshinweis" paragraph on consumer invoices (and, when not
 	// "none", the Gutschrift's "Auszahlung" paragraph too): sepa_lastschrift
 	// (default) | ueberweisung | custom | none
@@ -157,6 +168,10 @@ type EEG struct {
 	// SepaPreNotificationDays is the minimum days between invoice date and SEPA collection.
 	// SEPA Rulebook mandates ≥14 days. Configurable per EEG. Default: 14.
 	SepaPreNotificationDays int `json:"sepa_pre_notification_days"`
+	// ReferralBonusEur (Migration 114) is the default flat referral-bonus credit an
+	// admin grants a member for successfully referring a new member (Mitglieder
+	// werben Mitglieder). Editable per grant, this is only the pre-filled default.
+	ReferralBonusEur float64 `json:"referral_bonus_eur"`
 	// IsDemo marks this EEG as a demo — emails and EDA messages are suppressed
 	IsDemo bool `json:"is_demo"`
 	// Auto-billing: create draft billing run automatically on a fixed day each month/quarter
@@ -194,9 +209,12 @@ type EEG struct {
 	InvoiceEnergyLabelGesamteinspeisung          string `json:"invoice_energy_label_gesamteinspeisung"`
 	InvoiceEnergyLabelAbnahmeEnergiegemeinschaft string `json:"invoice_energy_label_abnahme_energiegemeinschaft"`
 	InvoiceEnergyLabelResteinspeisung            string `json:"invoice_energy_label_resteinspeisung"`
-	// Whether the Fixgebühr/Teilnahmegebühr and Zählpunktsgebühr line items are
-	// shown even when their total is 0,00 € — applies to both invoice designs.
-	InvoiceShowZeroFees bool `json:"invoice_show_zero_fees"`
+	// Whether each fee-type line item is shown even when its total is 0,00 € —
+	// individually selectable per fee type, applies to both invoice designs.
+	InvoiceShowZeroFeeFixgebuehr                bool `json:"invoice_show_zero_fee_fixgebuehr"`
+	InvoiceShowZeroFeeZaehlpunktsgebuehr        bool `json:"invoice_show_zero_fee_zaehlpunktsgebuehr"`
+	InvoiceShowZeroFeeServicegebuehrBezug       bool `json:"invoice_show_zero_fee_servicegebuehr_bezug"`
+	InvoiceShowZeroFeeServicegebuehrEinspeisung bool `json:"invoice_show_zero_fee_servicegebuehr_einspeisung"`
 	// Whether the "individuell" design's measurement table (top) and pricing
 	// table (bottom) list every calendar month individually on multi-month
 	// invoices, or collapse to the period total per Zählpunkt/direction.
@@ -310,7 +328,35 @@ type Member struct {
 	SepaMandateSignedAt *time.Time `json:"sepa_mandate_signed_at,omitempty"`
 	SepaMandateSignedIP string     `json:"sepa_mandate_signed_ip,omitempty"`
 	SepaMandateText     string     `json:"sepa_mandate_text,omitempty"`
-	CreatedAt           time.Time  `json:"created_at"`
+	// ReferralCode (Migration 114) is a lazily-generated, unguessable token used to
+	// build this member's personal "Mitglieder werben Mitglieder" invite link. Empty
+	// until first requested via the member portal.
+	ReferralCode string `json:"referral_code,omitempty"`
+	// ReferredByMemberID is set when this member joined via another member's referral
+	// link (resolved server-side from the onboarding request's referral code at
+	// submit time, carried over on conversion). Nil for organic joins.
+	ReferredByMemberID *uuid.UUID `json:"referred_by_member_id,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+}
+
+// MemberReferralBonus (Migration 114) records a manually-granted flat referral
+// bonus for the referrer of a successfully converted member. Applied automatically
+// (fully, in one line) to the referrer's next billing run while status=pending;
+// flipped to "applied" only once that billing run is finalized.
+type MemberReferralBonus struct {
+	ID               uuid.UUID  `json:"id"`
+	EegID            uuid.UUID  `json:"eeg_id"`
+	ReferrerMemberID uuid.UUID  `json:"referrer_member_id"`
+	ReferredMemberID uuid.UUID  `json:"referred_member_id"`
+	AmountEur        float64    `json:"amount_eur"`
+	Status           string     `json:"status"` // pending | applied | cancelled
+	GrantedAt        time.Time  `json:"granted_at"`
+	GrantedBy        *uuid.UUID `json:"granted_by,omitempty"`
+	AppliedInvoiceID *uuid.UUID `json:"applied_invoice_id,omitempty"`
+	AppliedAt        *time.Time `json:"applied_at,omitempty"`
+	// Denormalized display fields, populated only by list queries that join members.
+	ReferrerName string `json:"referrer_name,omitempty"`
+	ReferredName string `json:"referred_name,omitempty"`
 }
 
 // SepaMandateHistoryEntry is an archived snapshot of a member's SEPA mandate,
@@ -633,10 +679,14 @@ type OnboardingRequest struct {
 	AdminNotes          string                 `json:"admin_notes"`
 	ReferralSource      string                 `json:"referral_source"`      // optional: how the applicant heard about the EEG
 	ReferralSourceNote  string                 `json:"referral_source_note"` // optional free text, only meaningful when ReferralSource == "Sonstiges"
-	ConvertedMemberID   *uuid.UUID             `json:"converted_member_id,omitempty"`
-	ReminderSentAt      *time.Time             `json:"reminder_sent_at,omitempty"`
-	CreatedAt           time.Time              `json:"created_at"`
-	UpdatedAt           time.Time              `json:"updated_at"`
+	// ReferredByMemberID is resolved server-side from an optional referral code
+	// submitted with the application (never trusted/shown back to the applicant —
+	// see handler.SubmitOnboarding). Nil when no valid code was given.
+	ReferredByMemberID *uuid.UUID `json:"referred_by_member_id,omitempty"`
+	ConvertedMemberID  *uuid.UUID `json:"converted_member_id,omitempty"`
+	ReminderSentAt     *time.Time `json:"reminder_sent_at,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 // StammdatenRow holds parsed data from a single Stammdaten XLSX row.
@@ -725,6 +775,9 @@ type TariffSchedule struct {
 	MeterFeeEurOverride         *float64 `json:"meter_fee_eur_override,omitempty"`
 	ParticipationFeeEurOverride *float64 `json:"participation_fee_eur_override,omitempty"`
 	ZaehlpunktsGebuehrOverride  *float64 `json:"zaehlpunkts_gebuehr_eur_override,omitempty"`
+	// nil = EEG default rate, 0 = member is exempt from this service fee, otherwise a custom rate.
+	ServicegebuehrBezugCtKwhOverride       *float64 `json:"servicegebuehr_bezug_ct_kwh_override,omitempty"`
+	ServicegebuehrEinspeisungCtKwhOverride *float64 `json:"servicegebuehr_einspeisung_ct_kwh_override,omitempty"`
 }
 
 // TariffEntry is a price valid within a time range.

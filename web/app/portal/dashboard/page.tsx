@@ -21,11 +21,12 @@ export default async function PortalDashboardPage() {
     redirect("/portal");
   }
 
-  const [meData, invoicesData, documentsData, meterPointsData] = await Promise.all([
+  const [meData, invoicesData, documentsData, meterPointsData, referralData] = await Promise.all([
     portalFetch("/api/v1/public/portal/me", sessionToken),
     portalFetch("/api/v1/public/portal/invoices", sessionToken),
     portalFetch("/api/v1/public/portal/documents", sessionToken),
     portalFetch("/api/v1/public/portal/meter-points", sessionToken),
+    portalFetch("/api/v1/public/portal/referral", sessionToken),
   ]);
 
   if (!meData) {
@@ -41,6 +42,7 @@ export default async function PortalDashboardPage() {
       meterPoints={meterPointsData || []}
       showFullEnergy={meData.eeg?.portal_show_full_energy !== false}
       hasPassword={meData.has_password === true}
+      referral={referralData}
     />
   );
 }

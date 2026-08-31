@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -20,12 +21,13 @@ import (
 )
 
 type BillingHandler struct {
-	billingSvc     *billing.Service
-	invoiceRepo    *repository.InvoiceRepository
-	billingRunRepo *repository.BillingRunRepository
-	memberRepo     *repository.MemberRepository
-	eegRepo        *repository.EEGRepository
-	emailLogRepo   *repository.EmailLogRepository
+	billingSvc        *billing.Service
+	invoiceRepo       *repository.InvoiceRepository
+	billingRunRepo    *repository.BillingRunRepository
+	memberRepo        *repository.MemberRepository
+	eegRepo           *repository.EEGRepository
+	emailLogRepo      *repository.EmailLogRepository
+	referralBonusRepo *repository.ReferralBonusRepository
 }
 
 func NewBillingHandler(
@@ -35,14 +37,16 @@ func NewBillingHandler(
 	memberRepo *repository.MemberRepository,
 	eegRepo *repository.EEGRepository,
 	emailLogRepo *repository.EmailLogRepository,
+	referralBonusRepo *repository.ReferralBonusRepository,
 ) *BillingHandler {
 	return &BillingHandler{
-		billingSvc:     billingSvc,
-		invoiceRepo:    invoiceRepo,
-		billingRunRepo: billingRunRepo,
-		memberRepo:     memberRepo,
-		eegRepo:        eegRepo,
-		emailLogRepo:   emailLogRepo,
+		billingSvc:        billingSvc,
+		invoiceRepo:       invoiceRepo,
+		billingRunRepo:    billingRunRepo,
+		memberRepo:        memberRepo,
+		eegRepo:           eegRepo,
+		emailLogRepo:      emailLogRepo,
+		referralBonusRepo: referralBonusRepo,
 	}
 }
 
@@ -270,6 +274,11 @@ func (h *BillingHandler) FinalizeBillingRun(w http.ResponseWriter, r *http.Reque
 		}
 		jsonError(w, "failed to finalize billing run: "+err.Error(), http.StatusBadRequest)
 		return
+	}
+	// Flip any Werbebonus rows reserved against this run's invoices from pending to
+	// applied. Best-effort/non-fatal: the run is already finalized either way.
+	if err := h.referralBonusRepo.MarkAppliedForBillingRun(r.Context(), runID); err != nil {
+		slog.Error("failed to mark referral bonuses applied", "error", err, "billing_run_id", runID)
 	}
 
 	run, err = h.billingRunRepo.GetByID(r.Context(), runID)

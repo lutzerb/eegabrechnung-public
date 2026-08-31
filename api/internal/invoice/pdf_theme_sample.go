@@ -60,9 +60,9 @@ func SampleFixtureData() (*domain.EEG, *domain.Member, *domain.Invoice, VATOptio
 	// Fee line items: Fixgebühr (MeterFeeEur) + Teilnahmegebühr (ParticipationFeeEur)
 	// are non-zero so their "Messstellengebühr / Teilnahmegebühr" line always shows
 	// in the preview; Zählpunktsgebühr is deliberately left at 0 (count > 0, rate
-	// 0) so the preview also demonstrates invoice_show_zero_fees's effect — with
-	// it off (default) the Zählpunktsgebühr line is omitted, with it on it shows
-	// at 0,00 €.
+	// 0) so the preview also demonstrates invoice_show_zero_fee_zaehlpunktsgebuehr's
+	// effect — with it off (default) the Zählpunktsgebühr line is omitted, with it
+	// on it shows at 0,00 €.
 	const (
 		energyNet   = 15.14
 		meterFee    = 2.50

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { FehlendeDatenPreviewItem, FehlendeDatenPreviewResponse, FehlendeDatenCategory } from "@/lib/api";
 
@@ -422,6 +422,30 @@ async function postZaehlerstandsgang(
   }
 }
 
+// Splits an inclusive [from, to] date range (YYYY-MM-DD) into consecutive
+// sub-ranges of at most maxDays days each, covering the full range with no
+// gaps or overlaps. Used to break up long CR_REQ_PT requests into smaller
+// "Häppchen" for Netzbetreiber that struggle with long request periods.
+function splitIntoChunks(from: string, to: string, maxDays: number): { from: string; to: string }[] {
+  // Dates are plain calendar days (YYYY-MM-DD), not instants — parse/format
+  // them as UTC midnight so the split is independent of the browser's local
+  // timezone. Round-tripping through local-time Date parsing + toISOString()
+  // (as this used to) shifts every date back a day for any browser ahead of
+  // UTC (e.g. Europe/Vienna), silently dropping the last requested day.
+  const chunks: { from: string; to: string }[] = [];
+  let cur = new Date(from + "T00:00:00Z");
+  const end = new Date(to + "T00:00:00Z");
+  while (cur <= end) {
+    const chunkEnd = new Date(cur);
+    chunkEnd.setUTCDate(chunkEnd.getUTCDate() + maxDays - 1);
+    if (chunkEnd > end) chunkEnd.setTime(end.getTime());
+    chunks.push({ from: cur.toISOString().slice(0, 10), to: chunkEnd.toISOString().slice(0, 10) });
+    cur = new Date(chunkEnd);
+    cur.setUTCDate(cur.getUTCDate() + 1);
+  }
+  return chunks;
+}
+
 interface PendingZaehlerstandsgangRequest {
   zaehlpunkt: string;
   date_from: string;
@@ -784,6 +808,11 @@ function FehlendeDatenSection({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [result, setResult] = useState<{ ok: number; failures: string[] } | null>(null);
+  const [restrictRange, setRestrictRange] = useState(false);
+  const [rangeFrom, setRangeFrom] = useState("");
+  const [rangeTo, setRangeTo] = useState("");
+  const [chunkEnabled, setChunkEnabled] = useState(false);
+  const [chunkDays, setChunkDays] = useState(7);
 
   async function loadPreview() {
     setState("loading");
@@ -817,27 +846,55 @@ function FehlendeDatenSection({
     });
   }
 
+  // Klippt Zeilen auf den vom Nutzer optional eingeschränkten Zeitraum: Zeilen
+  // komplett außerhalb werden entfernt, teilweise überlappende auf den
+  // Schnittbereich angepasst. Der key bleibt (basierend auf den ungeklippten
+  // Originalgrenzen) stabil, daher funktioniert die key-basierte Selektion
+  // unverändert weiter.
+  function clipToRange(input: FehlendeDatenRow[]): FehlendeDatenRow[] {
+    if (!restrictRange || (!rangeFrom && !rangeTo)) return input;
+    return input.flatMap((r) => {
+      const from = rangeFrom && rangeFrom > r.from ? rangeFrom : r.from;
+      const to = rangeTo && rangeTo < r.to ? rangeTo : r.to;
+      return from <= to ? [{ ...r, from, to }] : [];
+    });
+  }
+
   // "Zeiträume komplett ohne Daten" / "mit nur L3-Messwerten" sind abwählbar;
   // echte Teil-Lücken (partial, einzelne L1/L2-Werte vorhanden) sind nicht
   // gesondert filterbar und immer sichtbar.
-  const visibleRows = rows.filter(
-    (r) => r.category === "partial" || (r.category === "no_data" && includeNoData) || (r.category === "l3_only" && includeL3Only)
+  const visibleRows = clipToRange(
+    rows.filter(
+      (r) => r.category === "partial" || (r.category === "no_data" && includeNoData) || (r.category === "l3_only" && includeL3Only)
+    )
   );
   const visibleSelected = visibleRows.filter((r) => selected.has(r.key));
+
+  // Flache Liste der tatsächlich zu sendenden Einzelanfragen — bei aktivem
+  // Chunking wird jede ausgewählte Zeile in ≤chunkDays-Tage-Häppchen zerlegt.
+  const pendingRequests = useMemo(
+    () =>
+      visibleSelected.flatMap((row) =>
+        chunkEnabled && chunkDays > 0
+          ? splitIntoChunks(row.from, row.to, chunkDays).map((c) => ({ zaehlpunkt: row.zaehlpunkt, ...c }))
+          : [{ zaehlpunkt: row.zaehlpunkt, from: row.from, to: row.to }]
+      ),
+    [visibleSelected, chunkEnabled, chunkDays]
+  );
 
   async function confirmSelected() {
     setConfirming(true);
     const failures: string[] = [];
-    for (const row of visibleSelected) {
-      const err = await postZaehlerstandsgang(eegId, row.zaehlpunkt, row.from, row.to);
+    for (const req of pendingRequests) {
+      const err = await postZaehlerstandsgang(eegId, req.zaehlpunkt, req.from, req.to);
       if (err) failures.push(err);
     }
-    setResult({ ok: visibleSelected.length - failures.length, failures });
+    setResult({ ok: pendingRequests.length - failures.length, failures });
     setConfirming(false);
     setState("idle");
     setRows([]);
     setSelected(new Set());
-    if (failures.length < visibleSelected.length) onSuccess();
+    if (failures.length < pendingRequests.length) onSuccess();
   }
 
   const groupedByZP = visibleRows.reduce<Map<string, FehlendeDatenRow[]>>((map, row) => {
@@ -908,6 +965,70 @@ function FehlendeDatenSection({
             </label>
           </div>
 
+          <div className="space-y-2 border border-amber-200 rounded-lg bg-white/60 p-3">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-amber-900 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={restrictRange}
+                onChange={(e) => setRestrictRange(e.target.checked)}
+                className="rounded border-slate-300 text-amber-700 focus:ring-amber-500"
+              />
+              Zeitraum einschränken
+            </label>
+            {restrictRange && (
+              <div className="flex flex-wrap items-center gap-3 pl-5">
+                <label className="flex items-center gap-1.5 text-xs text-amber-900">
+                  Von
+                  <input
+                    type="date"
+                    value={rangeFrom}
+                    onChange={(e) => setRangeFrom(e.target.value)}
+                    className="px-2 py-1 border border-slate-300 rounded text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </label>
+                <label className="flex items-center gap-1.5 text-xs text-amber-900">
+                  Bis
+                  <input
+                    type="date"
+                    value={rangeTo}
+                    onChange={(e) => setRangeTo(e.target.value)}
+                    className="px-2 py-1 border border-slate-300 rounded text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </label>
+                <span className="text-[11px] text-amber-700">
+                  Zeiträume außerhalb werden ausgeblendet, teilweise überlappende auf den Schnittbereich eingeschränkt. Leer = keine Grenze.
+                </span>
+              </div>
+            )}
+
+            <label className="flex items-center gap-1.5 text-xs font-medium text-amber-900 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={chunkEnabled}
+                onChange={(e) => setChunkEnabled(e.target.checked)}
+                className="rounded border-slate-300 text-amber-700 focus:ring-amber-500"
+              />
+              In Häppchen aufteilen
+            </label>
+            {chunkEnabled && (
+              <div className="flex flex-wrap items-center gap-3 pl-5">
+                <label className="flex items-center gap-1.5 text-xs text-amber-900">
+                  max. Tage pro Anfrage
+                  <input
+                    type="number"
+                    min={1}
+                    value={chunkDays}
+                    onChange={(e) => setChunkDays(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    className="w-16 px-2 py-1 border border-slate-300 rounded text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                </label>
+                <span className="text-[11px] text-amber-700">
+                  Jede ausgewählte Lücke wird in mehrere ≤N-Tage-Anfragen aufgeteilt, falls manche Netzbetreiber mit langen Zeiträumen überfordert sind.
+                </span>
+              </div>
+            )}
+          </div>
+
           <div className="flex items-center gap-3">
             <button
               type="button"
@@ -967,7 +1088,11 @@ function FehlendeDatenSection({
               onClick={confirmSelected}
               className="px-4 py-2 bg-amber-700 text-white text-sm font-medium rounded-lg hover:bg-amber-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
             >
-              {confirming ? "Wird gesendet…" : `Anfordern (${visibleSelected.length})`}
+              {confirming
+                ? "Wird gesendet…"
+                : pendingRequests.length !== visibleSelected.length
+                  ? `Anfordern (${pendingRequests.length} Anfragen für ${visibleSelected.length} Lücken)`
+                  : `Anfordern (${visibleSelected.length})`}
             </button>
             <button
               type="button"

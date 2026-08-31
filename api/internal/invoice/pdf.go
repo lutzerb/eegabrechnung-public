@@ -132,6 +132,28 @@ type VATOptions struct {
 	// Zusatzzähler (manually-read submeters, e.g. Wärmepumpe) — one line each, only
 	// shown when non-empty. Already folded into ConsumptionNet/NetAmount.
 	ExtraMeterLines []ExtraMeterLine
+
+	// Servicegebühr pro kWh Bezug/Einspeisung — optional per-kWh fee, separate from
+	// EnergyPrice/ProducerPrice, always shown as its own line (like Zählpunktsgebühr
+	// above). Both totals are already folded into ConsumptionNet: the Einspeisung fee
+	// too, so it carries the EEG-level consumption VAT rather than the member-specific
+	// generation VAT — see domain.EEG.ServicegebuehrEinspeisungCtKwh's doc comment.
+	ServiceFeeBezugKwh         float64
+	ServiceFeeBezugCtKwh       float64
+	ServiceFeeBezugTotal       float64
+	ServiceFeeEinspeisungKwh   float64
+	ServiceFeeEinspeisungCtKwh float64
+	ServiceFeeEinspeisungTotal float64
+
+	// WerbebonusTotal (Migration 114) — flat "Mitglieder werben Mitglieder"
+	// referral bonus, manually granted by an admin. Net amount (pre-VAT), already
+	// folded into ConsumptionNet before this struct is built — shown here purely
+	// as its own negative-signed row so the item table still reconciles to
+	// ConsumptionNet (EnergyNet + fees − WerbebonusTotal). Only ever set on the
+	// Bezug side: a pure-producer Gutschrift with a referral bonus is rendered by
+	// GenerateCreditNotePDF/Themed instead, which take the bonus as a separate
+	// parameter (never routed through VATOptions).
+	WerbebonusTotal float64
 }
 
 // germanMonth returns the German name for a month (no umlauts needed — all ASCII here).
@@ -551,7 +573,13 @@ func drawRechnungsstellerBlock(pdf *fpdf.Fpdf, eeg *domain.EEG) {
 }
 
 // GenerateCreditNotePDF creates an A4 PDF Gutschrift for a producer member and returns raw bytes.
-func GenerateCreditNotePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, producerPriceCt, generationKwh float64, generationMeterPoints []MeterPointKwh, monthlyItems []MonthlyKwh, history []MonthlyKwh) ([]byte, error) {
+// werbebonusNet is an optional Migration-114 referral bonus (net, pre-VAT),
+// already folded into inv.GenerationNetAmount/GenerationVatAmount by the
+// caller — pass 0 when none applies. Shown as its own row; the Nettobetrag/
+// Gutschriftbetrag summary below is read from inv's stored totals (not
+// recomputed from generationKwh×producerPriceCt) so it stays consistent with
+// that extra row.
+func GenerateCreditNotePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, producerPriceCt, generationKwh float64, generationMeterPoints []MeterPointKwh, monthlyItems []MonthlyKwh, history []MonthlyKwh, werbebonusNet float64) ([]byte, error) {
 	pdf := newPDF()
 	pdf.AddPage()
 	pdf.SetMargins(20, 20, 20)
@@ -685,6 +713,16 @@ func GenerateCreditNotePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.
 		drawMpSubRow(pdf, generationMeterPoints)
 	}
 
+	// Werbebonus — shown separately so the "Einspeisung Strom" row above stays a
+	// pure kWh × Tarif figure; the Nettobetrag/Gutschriftbetrag below folds it in
+	// via inv.GenerationNetAmount.
+	if werbebonusNet > 0 {
+		pdf.CellFormat(colDesc, rowH, "Werbebonus (Mitglied geworben)", "1", 0, "L", false, 0, "")
+		pdf.CellFormat(colKwh, rowH, "", "1", 0, "R", false, 0, "")
+		pdf.CellFormat(colPrice, rowH, "", "1", 0, "R", false, 0, "")
+		pdf.CellFormat(colAmount, rowH, formatAmount(werbebonusNet), "1", 1, "R", false, 0, "")
+	}
+
 	// ── VAT section ──────────────────────────────────────────────────────────
 	// For landwirt_pauschaliert: 13 % VAT is added on top (§ 22 UStG).
 	// For all others: VAT is 0 (Reverse Charge or exempt — text-only notice).
@@ -692,18 +730,21 @@ func GenerateCreditNotePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.
 	genVatPct := inv.GenerationVatPct
 	genVatAmount := inv.GenerationVatAmount
 	genRC := GenerationReverseCharge(member)
-	totalDisplay := netAmount + genVatAmount
+	// Nettobetrag reads from inv.GenerationNetAmount (not the locally recomputed
+	// netAmount) so it includes any Werbebonus folded in by the caller.
+	nettoDisplay := inv.GenerationNetAmount
+	totalDisplay := nettoDisplay + genVatAmount
 	// For RC: EEG remits VAT to Finanzamt — actual payout to producer is net only.
 	// For Landwirt §22: producer receives gross (including 13 % Durchschnittssatz).
 	payDisplay := totalDisplay
 	if genRC {
-		payDisplay = netAmount
+		payDisplay = nettoDisplay
 	}
 
 	pdf.Ln(1)
 	pdf.SetFont("DejaVu", "", 10)
 	pdf.CellFormat(colDesc+colKwh+colPrice, vatH, "Nettobetrag", "0", 0, "R", false, 0, "")
-	pdf.CellFormat(colAmount, vatH, formatAmount(netAmount), "0", 1, "R", false, 0, "")
+	pdf.CellFormat(colAmount, vatH, formatAmount(nettoDisplay), "0", 1, "R", false, 0, "")
 
 	if genVatPct > 0 {
 		if genRC {
@@ -966,7 +1007,7 @@ func GeneratePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, va
 		if feeMonths > 1 {
 			feeLabel = fmt.Sprintf("Messstellengebühr / Teilnahmegebühr (%d Monate)", feeMonths)
 		}
-		if feeTotal > 0 || eeg.InvoiceShowZeroFees {
+		if feeTotal > 0 || eeg.InvoiceShowZeroFeeFixgebuehr {
 			pdf.CellFormat(colDesc, rowH, feeLabel, "1", 0, "L", false, 0, "")
 			pdf.CellFormat(colKwh, rowH, "", "1", 0, "R", false, 0, "")
 			pdf.CellFormat(colPrice, rowH, "", "1", 0, "R", false, 0, "")
@@ -996,7 +1037,7 @@ func GeneratePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, va
 
 	// Zählpunktsgebühr — always its own line (single- and multi-month alike), unlike the
 	// Messstellengebühr/Teilnahmegebühr line above which is only broken out for multi-month.
-	if vat.ZaehlpunktsGebuehrTotal > 0 || eeg.InvoiceShowZeroFees {
+	if vat.ZaehlpunktsGebuehrTotal > 0 || eeg.InvoiceShowZeroFeeZaehlpunktsgebuehr {
 		label := fmt.Sprintf("Zählpunktsgebühr (%d × %s)", vat.ZaehlpunktsGebuehrCount, formatAmount(vat.ZaehlpunktsGebuehrEur))
 		if vat.FeeMonths > 1 {
 			label = fmt.Sprintf("Zählpunktsgebühr (%d × %s × %d Monate)", vat.ZaehlpunktsGebuehrCount, formatAmount(vat.ZaehlpunktsGebuehrEur), vat.FeeMonths)
@@ -1005,6 +1046,35 @@ func GeneratePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, va
 		pdf.CellFormat(colKwh, rowH, "", "1", 0, "R", false, 0, "")
 		pdf.CellFormat(colPrice, rowH, "", "1", 0, "R", false, 0, "")
 		pdf.CellFormat(colAmount, rowH, formatAmount(vat.ZaehlpunktsGebuehrTotal), "1", 1, "R", false, 0, "")
+	}
+
+	// Servicegebühr Bezug — own line, own kWh × ct/kWh rate, like Zählpunktsgebühr above.
+	if vat.ServiceFeeBezugTotal > 0 || eeg.InvoiceShowZeroFeeServicegebuehrBezug {
+		pdf.CellFormat(colDesc, rowH, "Servicegebühr Bezug", "1", 0, "L", false, 0, "")
+		pdf.CellFormat(colKwh, rowH, formatKwh(vat.ServiceFeeBezugKwh), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(colPrice, rowH, fmt.Sprintf("%.4f ct", vat.ServiceFeeBezugCtKwh), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(colAmount, rowH, formatAmount(vat.ServiceFeeBezugTotal), "1", 1, "R", false, 0, "")
+	}
+
+	// Servicegebühr Einspeisung — folded into ConsumptionNet (not GenerationNet), so it is
+	// shown as a positive charge here, same as Zählpunktsgebühr: the sum of all rows on this
+	// table must equal the invoice total, and this fee already reduces the member's net
+	// payout via a lower GenerationNet-relative balance, NOT via a negative row amount here
+	// (a "-" sign would double-subtract it). See VATOptions doc comment for the VAT rationale.
+	if vat.ServiceFeeEinspeisungTotal > 0 || eeg.InvoiceShowZeroFeeServicegebuehrEinspeisung {
+		pdf.CellFormat(colDesc, rowH, "Servicegebühr Einspeisung", "1", 0, "L", false, 0, "")
+		pdf.CellFormat(colKwh, rowH, formatKwh(vat.ServiceFeeEinspeisungKwh), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(colPrice, rowH, fmt.Sprintf("%.4f ct", vat.ServiceFeeEinspeisungCtKwh), "1", 0, "R", false, 0, "")
+		pdf.CellFormat(colAmount, rowH, formatAmount(vat.ServiceFeeEinspeisungTotal), "1", 1, "R", false, 0, "")
+	}
+
+	// Werbebonus — Mitglieder-werben-Mitglieder-Prämie, already folded into
+	// ConsumptionNet above; shown as its own negative row for transparency.
+	if vat.WerbebonusTotal > 0 {
+		pdf.CellFormat(colDesc, rowH, "Werbebonus (Mitglied geworben)", "1", 0, "L", false, 0, "")
+		pdf.CellFormat(colKwh, rowH, "", "1", 0, "R", false, 0, "")
+		pdf.CellFormat(colPrice, rowH, "", "1", 0, "R", false, 0, "")
+		pdf.CellFormat(colAmount, rowH, "-"+formatAmount(vat.WerbebonusTotal), "1", 1, "R", false, 0, "")
 	}
 
 	// Zusatzzähler — manually-read submeters (e.g. Wärmepumpe), one line each.

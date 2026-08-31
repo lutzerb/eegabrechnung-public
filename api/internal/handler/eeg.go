@@ -129,40 +129,42 @@ func presentEEGs(eegs []domain.EEG) []domain.EEG {
 
 // eegRequest is shared by CreateEEG and UpdateEEG.
 type eegRequest struct {
-	GemeinschaftID           string  `json:"gemeinschaft_id"`
-	GemeinschaftTyp          string  `json:"gemeinschaft_typ"`
-	Netzbetreiber            string  `json:"netzbetreiber"`
-	Name                     string  `json:"name"`
-	DisplayName              string  `json:"display_name"`
-	EnergyPrice              float64 `json:"energy_price"`
-	ProducerPrice            float64 `json:"producer_price"`
-	UseVat                   bool    `json:"use_vat"`
-	VatPct                   float64 `json:"vat_pct"`
-	MeterFeeEur              float64 `json:"meter_fee_eur"`
-	FreeKwh                  float64 `json:"free_kwh"`
-	DiscountPct              float64 `json:"discount_pct"`
-	ParticipationFeeEur      float64 `json:"participation_fee_eur"`
-	ZaehlpunktsGebuehrEur    float64 `json:"zaehlpunkts_gebuehr_eur"`
-	BillingPeriod            string  `json:"billing_period"`
-	InvoiceNumberPrefix      string  `json:"invoice_number_prefix"`
-	InvoiceNumberDigits      int     `json:"invoice_number_digits"`
-	InvoiceNumberStart       int     `json:"invoice_number_start"`
-	InvoicePreText           string  `json:"invoice_pre_text"`
-	InvoicePostText          string  `json:"invoice_post_text"`
-	InvoiceFooterText        string  `json:"invoice_footer_text"`
-	InvoicePaymentNoticeMode string  `json:"invoice_payment_notice_mode"`
-	InvoicePaymentNoticeText string  `json:"invoice_payment_notice_text"`
-	FeeBillingMode           string  `json:"fee_billing_mode"`
-	GenerateCreditNotes      bool    `json:"generate_credit_notes"`
-	CreditNoteNumberPrefix   string  `json:"credit_note_number_prefix"`
-	CreditNoteNumberDigits   int     `json:"credit_note_number_digits"`
-	IBAN                     string  `json:"iban"`
-	BIC                      string  `json:"bic"`
-	SepaCreditorID           string  `json:"sepa_creditor_id"`
-	EdaTransitionDate        string  `json:"eda_transition_date,omitempty"`
-	EdaMarktpartnerID        string  `json:"eda_marktpartner_id"`
-	EdaNetzbetreiberID       string  `json:"eda_netzbetreiber_id"`
-	EdaDisModel              string  `json:"eda_dis_model"`
+	GemeinschaftID                 string  `json:"gemeinschaft_id"`
+	GemeinschaftTyp                string  `json:"gemeinschaft_typ"`
+	Netzbetreiber                  string  `json:"netzbetreiber"`
+	Name                           string  `json:"name"`
+	DisplayName                    string  `json:"display_name"`
+	EnergyPrice                    float64 `json:"energy_price"`
+	ProducerPrice                  float64 `json:"producer_price"`
+	UseVat                         bool    `json:"use_vat"`
+	VatPct                         float64 `json:"vat_pct"`
+	MeterFeeEur                    float64 `json:"meter_fee_eur"`
+	FreeKwh                        float64 `json:"free_kwh"`
+	DiscountPct                    float64 `json:"discount_pct"`
+	ParticipationFeeEur            float64 `json:"participation_fee_eur"`
+	ZaehlpunktsGebuehrEur          float64 `json:"zaehlpunkts_gebuehr_eur"`
+	ServicegebuehrBezugCtKwh       float64 `json:"servicegebuehr_bezug_ct_kwh"`
+	ServicegebuehrEinspeisungCtKwh float64 `json:"servicegebuehr_einspeisung_ct_kwh"`
+	BillingPeriod                  string  `json:"billing_period"`
+	InvoiceNumberPrefix            string  `json:"invoice_number_prefix"`
+	InvoiceNumberDigits            int     `json:"invoice_number_digits"`
+	InvoiceNumberStart             int     `json:"invoice_number_start"`
+	InvoicePreText                 string  `json:"invoice_pre_text"`
+	InvoicePostText                string  `json:"invoice_post_text"`
+	InvoiceFooterText              string  `json:"invoice_footer_text"`
+	InvoicePaymentNoticeMode       string  `json:"invoice_payment_notice_mode"`
+	InvoicePaymentNoticeText       string  `json:"invoice_payment_notice_text"`
+	FeeBillingMode                 string  `json:"fee_billing_mode"`
+	GenerateCreditNotes            bool    `json:"generate_credit_notes"`
+	CreditNoteNumberPrefix         string  `json:"credit_note_number_prefix"`
+	CreditNoteNumberDigits         int     `json:"credit_note_number_digits"`
+	IBAN                           string  `json:"iban"`
+	BIC                            string  `json:"bic"`
+	SepaCreditorID                 string  `json:"sepa_creditor_id"`
+	EdaTransitionDate              string  `json:"eda_transition_date,omitempty"`
+	EdaMarktpartnerID              string  `json:"eda_marktpartner_id"`
+	EdaNetzbetreiberID             string  `json:"eda_netzbetreiber_id"`
+	EdaDisModel                    string  `json:"eda_dis_model"`
 	// Accounting / DATEV
 	AccountingRevenueAccount int    `json:"accounting_revenue_account"`
 	AccountingExpenseAccount int    `json:"accounting_expense_account"`
@@ -215,7 +217,10 @@ type eegRequest struct {
 	InvoiceEnergyLabelGesamtverbrauch            string  `json:"invoice_energy_label_gesamtverbrauch"`
 	InvoiceEnergyLabelNetzbezug                  string  `json:"invoice_energy_label_netzbezug"`
 	InvoiceEnergyLabelCommunityVerbrauch         string  `json:"invoice_energy_label_community_verbrauch"`
-	InvoiceShowZeroFees                          bool    `json:"invoice_show_zero_fees"`
+	InvoiceShowZeroFeeFixgebuehr                 bool    `json:"invoice_show_zero_fee_fixgebuehr"`
+	InvoiceShowZeroFeeZaehlpunktsgebuehr         bool    `json:"invoice_show_zero_fee_zaehlpunktsgebuehr"`
+	InvoiceShowZeroFeeServicegebuehrBezug        bool    `json:"invoice_show_zero_fee_servicegebuehr_bezug"`
+	InvoiceShowZeroFeeServicegebuehrEinspeisung  bool    `json:"invoice_show_zero_fee_servicegebuehr_einspeisung"`
 	InvoiceRowSpacing                            float64 `json:"invoice_row_spacing"`
 	InvoiceShowMonthlyBreakdown                  bool    `json:"invoice_show_monthly_breakdown"`
 	InvoiceEnergyLabelGesamteinspeisung          string  `json:"invoice_energy_label_gesamteinspeisung"`
@@ -424,43 +429,45 @@ func (h *EEGHandler) CreateEEG(w http.ResponseWriter, r *http.Request) {
 	}
 
 	eeg := &domain.EEG{
-		OrganizationID:           claims.OrganizationID,
-		GemeinschaftID:           req.GemeinschaftID,
-		GemeinschaftTyp:          req.GemeinschaftTyp,
-		Netzbetreiber:            req.Netzbetreiber,
-		Name:                     req.Name,
-		DisplayName:              req.DisplayName,
-		EnergyPrice:              req.EnergyPrice,
-		ProducerPrice:            req.ProducerPrice,
-		UseVat:                   req.UseVat,
-		VatPct:                   req.VatPct,
-		MeterFeeEur:              req.MeterFeeEur,
-		FreeKwh:                  req.FreeKwh,
-		DiscountPct:              req.DiscountPct,
-		ParticipationFeeEur:      req.ParticipationFeeEur,
-		ZaehlpunktsGebuehrEur:    req.ZaehlpunktsGebuehrEur,
-		BillingPeriod:            req.BillingPeriod,
-		InvoiceNumberPrefix:      req.InvoiceNumberPrefix,
-		InvoiceNumberDigits:      req.InvoiceNumberDigits,
-		InvoicePreText:           req.InvoicePreText,
-		InvoicePostText:          req.InvoicePostText,
-		InvoiceFooterText:        req.InvoiceFooterText,
-		InvoicePaymentNoticeMode: req.InvoicePaymentNoticeMode,
-		InvoicePaymentNoticeText: req.InvoicePaymentNoticeText,
-		FeeBillingMode:           req.FeeBillingMode,
-		IBAN:                     req.IBAN,
-		BIC:                      req.BIC,
-		SepaCreditorID:           req.SepaCreditorID,
-		EdaMarktpartnerID:        req.EdaMarktpartnerID,
-		EdaNetzbetreiberID:       req.EdaNetzbetreiberID,
-		EdaDisModel:              req.EdaDisModel,
-		Strasse:                  req.Strasse,
-		Plz:                      req.Plz,
-		Ort:                      req.Ort,
-		UidNummer:                req.UidNummer,
-		OnboardingContractText:   req.OnboardingContractText,
-		DatevConsultantNr:        req.DatevConsultantNr,
-		DatevClientNr:            req.DatevClientNr,
+		OrganizationID:                 claims.OrganizationID,
+		GemeinschaftID:                 req.GemeinschaftID,
+		GemeinschaftTyp:                req.GemeinschaftTyp,
+		Netzbetreiber:                  req.Netzbetreiber,
+		Name:                           req.Name,
+		DisplayName:                    req.DisplayName,
+		EnergyPrice:                    req.EnergyPrice,
+		ProducerPrice:                  req.ProducerPrice,
+		UseVat:                         req.UseVat,
+		VatPct:                         req.VatPct,
+		MeterFeeEur:                    req.MeterFeeEur,
+		FreeKwh:                        req.FreeKwh,
+		DiscountPct:                    req.DiscountPct,
+		ParticipationFeeEur:            req.ParticipationFeeEur,
+		ZaehlpunktsGebuehrEur:          req.ZaehlpunktsGebuehrEur,
+		ServicegebuehrBezugCtKwh:       req.ServicegebuehrBezugCtKwh,
+		ServicegebuehrEinspeisungCtKwh: req.ServicegebuehrEinspeisungCtKwh,
+		BillingPeriod:                  req.BillingPeriod,
+		InvoiceNumberPrefix:            req.InvoiceNumberPrefix,
+		InvoiceNumberDigits:            req.InvoiceNumberDigits,
+		InvoicePreText:                 req.InvoicePreText,
+		InvoicePostText:                req.InvoicePostText,
+		InvoiceFooterText:              req.InvoiceFooterText,
+		InvoicePaymentNoticeMode:       req.InvoicePaymentNoticeMode,
+		InvoicePaymentNoticeText:       req.InvoicePaymentNoticeText,
+		FeeBillingMode:                 req.FeeBillingMode,
+		IBAN:                           req.IBAN,
+		BIC:                            req.BIC,
+		SepaCreditorID:                 req.SepaCreditorID,
+		EdaMarktpartnerID:              req.EdaMarktpartnerID,
+		EdaNetzbetreiberID:             req.EdaNetzbetreiberID,
+		EdaDisModel:                    req.EdaDisModel,
+		Strasse:                        req.Strasse,
+		Plz:                            req.Plz,
+		Ort:                            req.Ort,
+		UidNummer:                      req.UidNummer,
+		OnboardingContractText:         req.OnboardingContractText,
+		DatevConsultantNr:              req.DatevConsultantNr,
+		DatevClientNr:                  req.DatevClientNr,
 	}
 	if req.EdaTransitionDate != "" {
 		t, err := time.Parse("2006-01-02", req.EdaTransitionDate)
@@ -601,6 +608,8 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 	existing.DiscountPct = req.DiscountPct
 	existing.ParticipationFeeEur = req.ParticipationFeeEur
 	existing.ZaehlpunktsGebuehrEur = req.ZaehlpunktsGebuehrEur
+	existing.ServicegebuehrBezugCtKwh = req.ServicegebuehrBezugCtKwh
+	existing.ServicegebuehrEinspeisungCtKwh = req.ServicegebuehrEinspeisungCtKwh
 	if req.BillingPeriod != "" {
 		existing.BillingPeriod = req.BillingPeriod
 	}
@@ -800,7 +809,10 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 	if req.InvoiceEnergyLabelResteinspeisung != "" {
 		existing.InvoiceEnergyLabelResteinspeisung = req.InvoiceEnergyLabelResteinspeisung
 	}
-	existing.InvoiceShowZeroFees = req.InvoiceShowZeroFees
+	existing.InvoiceShowZeroFeeFixgebuehr = req.InvoiceShowZeroFeeFixgebuehr
+	existing.InvoiceShowZeroFeeZaehlpunktsgebuehr = req.InvoiceShowZeroFeeZaehlpunktsgebuehr
+	existing.InvoiceShowZeroFeeServicegebuehrBezug = req.InvoiceShowZeroFeeServicegebuehrBezug
+	existing.InvoiceShowZeroFeeServicegebuehrEinspeisung = req.InvoiceShowZeroFeeServicegebuehrEinspeisung
 	existing.InvoiceShowMonthlyBreakdown = req.InvoiceShowMonthlyBreakdown
 	if req.InvoiceLogoScale > 0 {
 		existing.InvoiceLogoScale = req.InvoiceLogoScale

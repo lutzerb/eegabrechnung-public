@@ -16,6 +16,9 @@ export interface EEG {
   discount_pct: number;
   participation_fee_eur: number;
   zaehlpunkts_gebuehr_eur: number; // fee per active meter point per member per period
+  servicegebuehr_bezug_ct_kwh: number; // ct/kWh, optional service fee on consumption, own invoice line
+  servicegebuehr_einspeisung_ct_kwh: number; // ct/kWh, optional service fee on generation, own invoice line
+  referral_bonus_eur: number; // default "Mitglieder werben Mitglieder" bonus amount, editable per grant
   billing_period: string;      // monthly|quarterly|semiannual|annual
   invoice_number_prefix: string;
   invoice_number_digits: number;
@@ -81,7 +84,10 @@ export interface EEG {
   invoice_energy_label_gesamteinspeisung?: string;
   invoice_energy_label_abnahme_energiegemeinschaft?: string;
   invoice_energy_label_resteinspeisung?: string;
-  invoice_show_zero_fees?: boolean;
+  invoice_show_zero_fee_fixgebuehr?: boolean;
+  invoice_show_zero_fee_zaehlpunktsgebuehr?: boolean;
+  invoice_show_zero_fee_servicegebuehr_bezug?: boolean;
+  invoice_show_zero_fee_servicegebuehr_einspeisung?: boolean;
   // "individuell" design: list every calendar month individually on multi-month
   // invoices vs. collapse to the period total per Zählpunkt/direction (default true)
   invoice_show_monthly_breakdown?: boolean;
@@ -152,6 +158,8 @@ export interface CreateEEGRequest {
   discount_pct?: number;
   participation_fee_eur?: number;
   zaehlpunkts_gebuehr_eur?: number;
+  servicegebuehr_bezug_ct_kwh?: number;
+  servicegebuehr_einspeisung_ct_kwh?: number;
   billing_period?: string;
 }
 
@@ -168,6 +176,9 @@ export interface UpdateEEGRequest {
   discount_pct: number;
   participation_fee_eur: number;
   zaehlpunkts_gebuehr_eur: number;
+  servicegebuehr_bezug_ct_kwh: number;
+  servicegebuehr_einspeisung_ct_kwh: number;
+  referral_bonus_eur: number;
   billing_period: string;
   invoice_number_prefix?: string;
   invoice_number_digits?: number;
@@ -241,7 +252,10 @@ export interface UpdateEEGRequest {
   invoice_energy_label_gesamteinspeisung?: string;
   invoice_energy_label_abnahme_energiegemeinschaft?: string;
   invoice_energy_label_resteinspeisung?: string;
-  invoice_show_zero_fees?: boolean;
+  invoice_show_zero_fee_fixgebuehr?: boolean;
+  invoice_show_zero_fee_zaehlpunktsgebuehr?: boolean;
+  invoice_show_zero_fee_servicegebuehr_bezug?: boolean;
+  invoice_show_zero_fee_servicegebuehr_einspeisung?: boolean;
   invoice_show_monthly_breakdown?: boolean;
   invoice_logo_scale?: number;
   invoice_always_show_zaehlpunkt?: boolean;
@@ -1257,6 +1271,8 @@ export interface TariffSchedule {
   meter_fee_eur_override?: number | null;
   participation_fee_eur_override?: number | null;
   zaehlpunkts_gebuehr_eur_override?: number | null;
+  servicegebuehr_bezug_ct_kwh_override?: number | null;
+  servicegebuehr_einspeisung_ct_kwh_override?: number | null;
 }
 
 export async function listTariffs(token: string, eegId: string): Promise<TariffSchedule[]> {

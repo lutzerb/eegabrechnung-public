@@ -2,10 +2,14 @@ package repository
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
 )
@@ -41,21 +45,27 @@ func (r *MemberRepository) Upsert(ctx context.Context, m *domain.Member) error {
 
 const memberCols = `id, eeg_id, mitglieds_nr, name1, name2, email, iban, strasse, plz, ort,
 	business_role, uid_nummer, use_vat, vat_pct, status, beitritt_datum, austritt_datum,
-	sepa_mandate_signed_at, sepa_mandate_signed_ip, sepa_mandate_text, created_at`
+	sepa_mandate_signed_at, sepa_mandate_signed_ip, sepa_mandate_text, created_at,
+	referral_code, referred_by_member_id`
 
 func scanMember(row interface{ Scan(...any) error }, m *domain.Member) error {
 	var mandateIP *string
 	var mandateText *string
+	var referralCode *string
 	err := row.Scan(
 		&m.ID, &m.EegID, &m.MitgliedsNr, &m.Name1, &m.Name2, &m.Email, &m.IBAN, &m.Strasse, &m.Plz, &m.Ort,
 		&m.BusinessRole, &m.UidNummer, &m.UseVat, &m.VatPct, &m.Status, &m.BeitrittsDatum, &m.AustrittsDatum,
 		&m.SepaMandateSignedAt, &mandateIP, &mandateText, &m.CreatedAt,
+		&referralCode, &m.ReferredByMemberID,
 	)
 	if mandateIP != nil {
 		m.SepaMandateSignedIP = *mandateIP
 	}
 	if mandateText != nil {
 		m.SepaMandateText = *mandateText
+	}
+	if referralCode != nil {
+		m.ReferralCode = *referralCode
 	}
 	return err
 }
@@ -366,6 +376,57 @@ func (r *MemberRepository) SetMandate(ctx context.Context, m *domain.Member, new
 type MeterPointInfo struct {
 	Zaehlpunkt string
 	Richtung   string
+}
+
+// generateReferralCode creates a random referral code (8 bytes hex = 16 chars) —
+// long enough to resist enumeration (there is no public code-lookup endpoint;
+// codes are only ever resolved server-side, scoped to one EEG, at onboarding
+// submit time), short enough to share as a link.
+func generateReferralCode() (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// GetOrCreateReferralCode returns the member's personal "Mitglieder werben
+// Mitglieder" referral code, generating and persisting one on first use.
+func (r *MemberRepository) GetOrCreateReferralCode(ctx context.Context, memberID uuid.UUID) (string, error) {
+	var code *string
+	if err := r.db.QueryRow(ctx, `SELECT referral_code FROM members WHERE id = $1`, memberID).Scan(&code); err != nil {
+		return "", fmt.Errorf("get referral code: %w", err)
+	}
+	if code != nil && *code != "" {
+		return *code, nil
+	}
+	newCode, err := generateReferralCode()
+	if err != nil {
+		return "", fmt.Errorf("generate referral code: %w", err)
+	}
+	if _, err := r.db.Exec(ctx, `UPDATE members SET referral_code = $1 WHERE id = $2`, newCode, memberID); err != nil {
+		return "", fmt.Errorf("set referral code: %w", err)
+	}
+	return newCode, nil
+}
+
+// GetByReferralCodeInEEG resolves a referral code to the referring member, scoped
+// to the given EEG. An unknown code (or one from a different EEG) resolves to
+// nil, nil — never an error — so callers can silently ignore an invalid ref
+// param instead of leaking whether a code exists.
+func (r *MemberRepository) GetByReferralCodeInEEG(ctx context.Context, eegID uuid.UUID, code string) (*domain.Member, error) {
+	if code == "" {
+		return nil, nil
+	}
+	q := `SELECT ` + memberCols + ` FROM members WHERE eeg_id = $1 AND referral_code = $2`
+	var m domain.Member
+	if err := scanMember(r.db.QueryRow(ctx, q, eegID, code), &m); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("scan: %w", err)
+	}
+	return &m, nil
 }
 
 // GetMeterPoints returns all meter points for a member, ordered by direction and ID.

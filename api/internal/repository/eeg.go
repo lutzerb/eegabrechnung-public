@@ -42,6 +42,7 @@ func (r *EEGRepository) encrypt(pt string) (string, error) {
 const eegCols = `e.id, organization_id, gemeinschaft_id, gemeinschaft_typ, netzbetreiber, e.name, e.display_name,
 	energy_price, producer_price, use_vat, vat_pct,
 	meter_fee_eur, free_kwh, discount_pct, participation_fee_eur, zaehlpunkts_gebuehr_eur,
+	servicegebuehr_bezug_ct_kwh, servicegebuehr_einspeisung_ct_kwh,
 	billing_period,
 	invoice_number_prefix, invoice_number_digits, invoice_number_start,
 	invoice_pre_text, invoice_post_text, invoice_footer_text, invoice_payment_notice_mode, invoice_payment_notice_text, fee_billing_mode,
@@ -63,7 +64,7 @@ const eegCols = `e.id, organization_id, gemeinschaft_id, gemeinschaft_typ, netzb
 	portal_show_full_energy,
 	invoice_design, invoice_accent_color, invoice_logo_left, invoice_font_family, invoice_font_size,
 	invoice_energy_label_zeitraum_von, invoice_energy_label_zeitraum_bis, invoice_energy_label_gesamtverbrauch,
-	invoice_energy_label_netzbezug, invoice_energy_label_community_verbrauch, invoice_show_zero_fees,
+	invoice_energy_label_netzbezug, invoice_energy_label_community_verbrauch, invoice_show_zero_fee_fixgebuehr,
 	invoice_energy_label_gesamteinspeisung, invoice_energy_label_abnahme_energiegemeinschaft, invoice_energy_label_resteinspeisung,
 	invoice_row_spacing, invoice_show_monthly_breakdown,
 	invoice_logo_scale, invoice_always_show_zaehlpunkt, invoice_chart_type, invoice_chart_title,
@@ -72,9 +73,11 @@ const eegCols = `e.id, organization_id, gemeinschaft_id, gemeinschaft_typ, netzb
 	invoice_chart_label_community, invoice_chart_label_community_bezug, invoice_chart_label_community_einspeisung,
 	invoice_chart_label_netzbezug, invoice_chart_label_resteinspeisung, invoice_chart_label_bezug, invoice_chart_label_einspeisung,
 	extra_meters_enabled,
+	invoice_show_zero_fee_zaehlpunktsgebuehr, invoice_show_zero_fee_servicegebuehr_bezug, invoice_show_zero_fee_servicegebuehr_einspeisung,
 	eda_imap_host, eda_imap_user, eda_imap_password_enc,
 	eda_smtp_host, eda_smtp_user, eda_smtp_password_enc, eda_smtp_from,
 	smtp_host, smtp_user, smtp_password_enc, smtp_from,
+	referral_bonus_eur,
 	e.created_at,
 	organizations.portal_base_url`
 
@@ -90,6 +93,7 @@ func (r *EEGRepository) scanEEG(row interface{ Scan(...any) error }, e *domain.E
 		&e.ID, &e.OrganizationID, &e.GemeinschaftID, &e.GemeinschaftTyp, &e.Netzbetreiber, &e.Name, &e.DisplayName,
 		&e.EnergyPrice, &e.ProducerPrice, &e.UseVat, &e.VatPct,
 		&e.MeterFeeEur, &e.FreeKwh, &e.DiscountPct, &e.ParticipationFeeEur, &e.ZaehlpunktsGebuehrEur,
+		&e.ServicegebuehrBezugCtKwh, &e.ServicegebuehrEinspeisungCtKwh,
 		&e.BillingPeriod,
 		&e.InvoiceNumberPrefix, &e.InvoiceNumberDigits, &e.InvoiceNumberStart,
 		&e.InvoicePreText, &e.InvoicePostText, &e.InvoiceFooterText, &e.InvoicePaymentNoticeMode, &e.InvoicePaymentNoticeText, &e.FeeBillingMode,
@@ -111,7 +115,7 @@ func (r *EEGRepository) scanEEG(row interface{ Scan(...any) error }, e *domain.E
 		&e.PortalShowFullEnergy,
 		&e.InvoiceDesign, &e.InvoiceAccentColor, &e.InvoiceLogoLeft, &e.InvoiceFontFamily, &e.InvoiceFontSize,
 		&e.InvoiceEnergyLabelZeitraumVon, &e.InvoiceEnergyLabelZeitraumBis, &e.InvoiceEnergyLabelGesamtverbrauch,
-		&e.InvoiceEnergyLabelNetzbezug, &e.InvoiceEnergyLabelCommunityVerbrauch, &e.InvoiceShowZeroFees,
+		&e.InvoiceEnergyLabelNetzbezug, &e.InvoiceEnergyLabelCommunityVerbrauch, &e.InvoiceShowZeroFeeFixgebuehr,
 		&e.InvoiceEnergyLabelGesamteinspeisung, &e.InvoiceEnergyLabelAbnahmeEnergiegemeinschaft, &e.InvoiceEnergyLabelResteinspeisung,
 		&e.InvoiceRowSpacing, &e.InvoiceShowMonthlyBreakdown,
 		&e.InvoiceLogoScale, &e.InvoiceAlwaysShowZaehlpunkt, &e.InvoiceChartType, &e.InvoiceChartTitle,
@@ -120,9 +124,11 @@ func (r *EEGRepository) scanEEG(row interface{ Scan(...any) error }, e *domain.E
 		&e.InvoiceChartLabelCommunity, &e.InvoiceChartLabelCommunityBezug, &e.InvoiceChartLabelCommunityEinspeisung,
 		&e.InvoiceChartLabelNetzbezug, &e.InvoiceChartLabelResteinspeisung, &e.InvoiceChartLabelBezug, &e.InvoiceChartLabelEinspeisung,
 		&e.ExtraMetersEnabled,
+		&e.InvoiceShowZeroFeeZaehlpunktsgebuehr, &e.InvoiceShowZeroFeeServicegebuehrBezug, &e.InvoiceShowZeroFeeServicegebuehrEinspeisung,
 		&edaImapHost, &edaImapUser, &edaImapPwEnc,
 		&edaSmtpHost, &edaSmtpUser, &edaSmtpPwEnc, &edaSmtpFrom,
 		&smtpHost, &smtpUser, &smtpPwEnc, &smtpFrom,
+		&e.ReferralBonusEur,
 		&e.CreatedAt,
 		&e.PortalBaseURL,
 	)
@@ -177,8 +183,9 @@ func (r *EEGRepository) Create(ctx context.Context, eeg *domain.EEG) error {
 	         eda_marktpartner_id, eda_netzbetreiber_id, zaehlpunkts_gebuehr_eur,
 	         invoice_payment_notice_mode, eda_dis_model, fee_billing_mode,
 	         eda_transition_date, gruendungsdatum, strasse, plz, ort, uid_nummer,
-	         onboarding_contract_text, datev_consultant_nr, datev_client_nr)
-	      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43)
+	         onboarding_contract_text, datev_consultant_nr, datev_client_nr,
+	         servicegebuehr_bezug_ct_kwh, servicegebuehr_einspeisung_ct_kwh)
+	      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,$45)
 	      RETURNING id, created_at`
 	if eeg.BillingPeriod == "" {
 		eeg.BillingPeriod = "monthly"
@@ -223,6 +230,7 @@ func (r *EEGRepository) Create(ctx context.Context, eeg *domain.EEG) error {
 		eeg.InvoicePaymentNoticeMode, eeg.EdaDisModel, eeg.FeeBillingMode,
 		eeg.EdaTransitionDate, eeg.Gruendungsdatum, eeg.Strasse, eeg.Plz, eeg.Ort, eeg.UidNummer,
 		eeg.OnboardingContractText, eeg.DatevConsultantNr, eeg.DatevClientNr,
+		eeg.ServicegebuehrBezugCtKwh, eeg.ServicegebuehrEinspeisungCtKwh,
 	).Scan(&eeg.ID, &eeg.CreatedAt)
 }
 
@@ -281,7 +289,7 @@ func (r *EEGRepository) Update(ctx context.Context, eeg *domain.EEG) error {
 	        invoice_energy_label_gesamtverbrauch=$74,
 	        invoice_energy_label_netzbezug=$75,
 	        invoice_energy_label_community_verbrauch=$76,
-	        invoice_show_zero_fees=$77,
+	        invoice_show_zero_fee_fixgebuehr=$77,
 	        invoice_row_spacing=$78,
 	        display_name=$79,
 	        invoice_energy_label_gesamteinspeisung=$80,
@@ -303,7 +311,13 @@ func (r *EEGRepository) Update(ctx context.Context, eeg *domain.EEG) error {
 	        invoice_chart_label_netzbezug=$96,
 	        invoice_chart_label_resteinspeisung=$97,
 	        invoice_chart_label_bezug=$98,
-	        invoice_chart_label_einspeisung=$99
+	        invoice_chart_label_einspeisung=$99,
+	        servicegebuehr_bezug_ct_kwh=$100,
+	        servicegebuehr_einspeisung_ct_kwh=$101,
+	        invoice_show_zero_fee_zaehlpunktsgebuehr=$102,
+	        invoice_show_zero_fee_servicegebuehr_bezug=$103,
+	        invoice_show_zero_fee_servicegebuehr_einspeisung=$104,
+	        referral_bonus_eur=$105
 	      WHERE id=$50 AND organization_id=$51`
 	// Note: logo_path and auto_billing_last_run_at are not updated via this method.
 	days := eeg.SepaPreNotificationDays
@@ -355,7 +369,7 @@ func (r *EEGRepository) Update(ctx context.Context, eeg *domain.EEG) error {
 		eeg.InvoiceEnergyLabelGesamtverbrauch,
 		eeg.InvoiceEnergyLabelNetzbezug,
 		eeg.InvoiceEnergyLabelCommunityVerbrauch,
-		eeg.InvoiceShowZeroFees,
+		eeg.InvoiceShowZeroFeeFixgebuehr,
 		eeg.InvoiceRowSpacing,
 		eeg.DisplayName,
 		eeg.InvoiceEnergyLabelGesamteinspeisung,
@@ -378,6 +392,12 @@ func (r *EEGRepository) Update(ctx context.Context, eeg *domain.EEG) error {
 		eeg.InvoiceChartLabelResteinspeisung,
 		eeg.InvoiceChartLabelBezug,
 		eeg.InvoiceChartLabelEinspeisung,
+		eeg.ServicegebuehrBezugCtKwh,
+		eeg.ServicegebuehrEinspeisungCtKwh,
+		eeg.InvoiceShowZeroFeeZaehlpunktsgebuehr,
+		eeg.InvoiceShowZeroFeeServicegebuehrBezug,
+		eeg.InvoiceShowZeroFeeServicegebuehrEinspeisung,
+		eeg.ReferralBonusEur,
 	)
 	return err
 }

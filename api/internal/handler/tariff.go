@@ -59,11 +59,13 @@ func optionalMemberID(r *http.Request) (*uuid.UUID, error) {
 // CreateSchedule/UpdateSchedule. nil = fall back to the EEG default. Ignored for EEG-wide
 // (non-member) schedules.
 type tariffOverrides struct {
-	FreeKwhOverride             *float64 `json:"free_kwh_override,omitempty"`
-	DiscountPctOverride         *float64 `json:"discount_pct_override,omitempty"`
-	MeterFeeEurOverride         *float64 `json:"meter_fee_eur_override,omitempty"`
-	ParticipationFeeEurOverride *float64 `json:"participation_fee_eur_override,omitempty"`
-	ZaehlpunktsGebuehrOverride  *float64 `json:"zaehlpunkts_gebuehr_eur_override,omitempty"`
+	FreeKwhOverride                        *float64 `json:"free_kwh_override,omitempty"`
+	DiscountPctOverride                    *float64 `json:"discount_pct_override,omitempty"`
+	MeterFeeEurOverride                    *float64 `json:"meter_fee_eur_override,omitempty"`
+	ParticipationFeeEurOverride            *float64 `json:"participation_fee_eur_override,omitempty"`
+	ZaehlpunktsGebuehrOverride             *float64 `json:"zaehlpunkts_gebuehr_eur_override,omitempty"`
+	ServicegebuehrBezugCtKwhOverride       *float64 `json:"servicegebuehr_bezug_ct_kwh_override,omitempty"`
+	ServicegebuehrEinspeisungCtKwhOverride *float64 `json:"servicegebuehr_einspeisung_ct_kwh_override,omitempty"`
 }
 
 // ListSchedules godoc
@@ -159,6 +161,8 @@ func (h *TariffHandler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
 		s.MeterFeeEurOverride = req.MeterFeeEurOverride
 		s.ParticipationFeeEurOverride = req.ParticipationFeeEurOverride
 		s.ZaehlpunktsGebuehrOverride = req.ZaehlpunktsGebuehrOverride
+		s.ServicegebuehrBezugCtKwhOverride = req.ServicegebuehrBezugCtKwhOverride
+		s.ServicegebuehrEinspeisungCtKwhOverride = req.ServicegebuehrEinspeisungCtKwhOverride
 	}
 	if err := h.tariffRepo.Create(r.Context(), s); err != nil {
 		jsonError(w, "failed to create schedule: "+err.Error(), http.StatusInternalServerError)
@@ -250,14 +254,16 @@ func (h *TariffHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s := &domain.TariffSchedule{
-		ID:                          scheduleID,
-		Name:                        req.Name,
-		Granularity:                 req.Granularity,
-		FreeKwhOverride:             req.FreeKwhOverride,
-		DiscountPctOverride:         req.DiscountPctOverride,
-		MeterFeeEurOverride:         req.MeterFeeEurOverride,
-		ParticipationFeeEurOverride: req.ParticipationFeeEurOverride,
-		ZaehlpunktsGebuehrOverride:  req.ZaehlpunktsGebuehrOverride,
+		ID:                                     scheduleID,
+		Name:                                   req.Name,
+		Granularity:                            req.Granularity,
+		FreeKwhOverride:                        req.FreeKwhOverride,
+		DiscountPctOverride:                    req.DiscountPctOverride,
+		MeterFeeEurOverride:                    req.MeterFeeEurOverride,
+		ParticipationFeeEurOverride:            req.ParticipationFeeEurOverride,
+		ZaehlpunktsGebuehrOverride:             req.ZaehlpunktsGebuehrOverride,
+		ServicegebuehrBezugCtKwhOverride:       req.ServicegebuehrBezugCtKwhOverride,
+		ServicegebuehrEinspeisungCtKwhOverride: req.ServicegebuehrEinspeisungCtKwhOverride,
 	}
 	if err := h.tariffRepo.Update(r.Context(), s); err != nil {
 		jsonError(w, "failed to update schedule: "+err.Error(), http.StatusInternalServerError)

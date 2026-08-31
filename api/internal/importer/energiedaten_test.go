@@ -1,13 +1,15 @@
 package importer
 
 import (
+	"fmt"
 	"testing"
 	"time"
 )
 
 const (
-	fixtureFormatA = "../../../tests/fixtures/TEST_EEG_Report_AT00999900000TE100100.xlsx"
-	fixtureFormatB = "../../../tests/fixtures/RC105970_2026-01-01T00_00-2026-01-31T23_45.xlsx"
+	fixtureFormatA       = "../../../tests/fixtures/TEST_EEG_Report_AT00999900000TE100100.xlsx"
+	fixtureFormatB       = "../../../tests/fixtures/RC105970_2026-01-01T00_00-2026-01-31T23_45.xlsx"
+	fixtureBEGMultiSheet = "../../../tests/fixtures/CC101413_2026-04-01_BEG_multisheet.xlsx"
 )
 
 func TestParseEnergieDaten_FormatA_Basic(t *testing.T) {
@@ -171,6 +173,46 @@ func TestParseEnergieDaten_FormatB_Values(t *testing.T) {
 		}
 	}
 	t.Errorf("row not found for meter %q at %v", targetMeter, target)
+}
+
+// TestParseEnergieDaten_BEGMultiSheet covers a BEG export that spans multiple Netzbetreiber:
+// the workbook has a combined "Energiedaten" sheet plus one "Energiedaten_<NB>" sheet per
+// Netzbetreiber. All of them must be merged into one result, deduplicated by meter+timestamp.
+func TestParseEnergieDaten_BEGMultiSheet(t *testing.T) {
+	rows, err := ParseEnergieDaten(fixtureBEGMultiSheet)
+	if err != nil {
+		t.Fatalf("ParseEnergieDaten (BEG multi-sheet) failed: %v", err)
+	}
+	if len(rows) == 0 {
+		t.Fatal("expected rows, got 0")
+	}
+
+	// Known meters spread across two different Netzbetreiber (AT008100 and AT008000).
+	expectedMeters := []string{
+		"AT0081000802000000000000000315768",
+		"AT0080000812000000000000000100022",
+	}
+	meterIDs := map[string]bool{}
+	seen := map[string]int{}
+	for _, r := range rows {
+		meterIDs[r.MeterID] = true
+		seen[fmt.Sprintf("%s|%d", r.MeterID, r.Ts.Unix())]++
+	}
+	for _, m := range expectedMeters {
+		if !meterIDs[m] {
+			t.Errorf("expected meter %q in results", m)
+		}
+	}
+
+	// Every reading must be present exactly once, even though the meter that has its own
+	// "Energiedaten_<NB>" sheet is also present in the combined "Energiedaten" sheet.
+	for key, count := range seen {
+		if count != 1 {
+			t.Errorf("expected exactly one row for %q, got %d (duplicate across sheets not deduplicated)", key, count)
+		}
+	}
+
+	t.Logf("BEG multi-sheet: %d rows parsed across %d meters", len(rows), len(meterIDs))
 }
 
 func abs(x float64) float64 {

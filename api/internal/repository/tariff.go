@@ -23,12 +23,14 @@ func NewTariffRepository(db *pgxpool.Pool) *TariffRepository {
 // computed via a join/aggregate at each call site).
 const scheduleCols = `ts.id, ts.eeg_id, ts.member_id, ts.name, ts.granularity, ts.is_active, ts.created_at,
 	ts.free_kwh_override, ts.discount_pct_override, ts.meter_fee_eur_override,
-	ts.participation_fee_eur_override, ts.zaehlpunkts_gebuehr_eur_override`
+	ts.participation_fee_eur_override, ts.zaehlpunkts_gebuehr_eur_override,
+	ts.servicegebuehr_bezug_ct_kwh_override, ts.servicegebuehr_einspeisung_ct_kwh_override`
 
 func scanSchedule(row pgx.Row, s *domain.TariffSchedule) error {
 	return row.Scan(&s.ID, &s.EegID, &s.MemberID, &s.Name, &s.Granularity, &s.IsActive, &s.CreatedAt,
 		&s.FreeKwhOverride, &s.DiscountPctOverride, &s.MeterFeeEurOverride,
-		&s.ParticipationFeeEurOverride, &s.ZaehlpunktsGebuehrOverride)
+		&s.ParticipationFeeEurOverride, &s.ZaehlpunktsGebuehrOverride,
+		&s.ServicegebuehrBezugCtKwhOverride, &s.ServicegebuehrEinspeisungCtKwhOverride)
 }
 
 // ListByEeg returns the EEG-wide (non-member-specific) tariff schedules.
@@ -76,7 +78,8 @@ func (r *TariffRepository) listSchedules(ctx context.Context, q string, args ...
 		var s domain.TariffSchedule
 		if err := rows.Scan(&s.ID, &s.EegID, &s.MemberID, &s.Name, &s.Granularity, &s.IsActive, &s.CreatedAt,
 			&s.FreeKwhOverride, &s.DiscountPctOverride, &s.MeterFeeEurOverride,
-			&s.ParticipationFeeEurOverride, &s.ZaehlpunktsGebuehrOverride, &s.EntryCount); err != nil {
+			&s.ParticipationFeeEurOverride, &s.ZaehlpunktsGebuehrOverride,
+			&s.ServicegebuehrBezugCtKwhOverride, &s.ServicegebuehrEinspeisungCtKwhOverride, &s.EntryCount); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		result = append(result, s)
@@ -119,12 +122,14 @@ func (r *TariffRepository) Create(ctx context.Context, s *domain.TariffSchedule)
 		`INSERT INTO tariff_schedules
 		   (eeg_id, member_id, name, granularity, is_active,
 		    free_kwh_override, discount_pct_override, meter_fee_eur_override,
-		    participation_fee_eur_override, zaehlpunkts_gebuehr_eur_override)
-		 VALUES ($1, $2, $3, $4, false, $5, $6, $7, $8, $9)
+		    participation_fee_eur_override, zaehlpunkts_gebuehr_eur_override,
+		    servicegebuehr_bezug_ct_kwh_override, servicegebuehr_einspeisung_ct_kwh_override)
+		 VALUES ($1, $2, $3, $4, false, $5, $6, $7, $8, $9, $10, $11)
 		 RETURNING id, created_at`,
 		s.EegID, s.MemberID, s.Name, s.Granularity,
 		s.FreeKwhOverride, s.DiscountPctOverride, s.MeterFeeEurOverride,
-		s.ParticipationFeeEurOverride, s.ZaehlpunktsGebuehrOverride).
+		s.ParticipationFeeEurOverride, s.ZaehlpunktsGebuehrOverride,
+		s.ServicegebuehrBezugCtKwhOverride, s.ServicegebuehrEinspeisungCtKwhOverride).
 		Scan(&s.ID, &s.CreatedAt)
 }
 
@@ -133,11 +138,13 @@ func (r *TariffRepository) Update(ctx context.Context, s *domain.TariffSchedule)
 		`UPDATE tariff_schedules SET
 		   name = $2, granularity = $3,
 		   free_kwh_override = $4, discount_pct_override = $5, meter_fee_eur_override = $6,
-		   participation_fee_eur_override = $7, zaehlpunkts_gebuehr_eur_override = $8
+		   participation_fee_eur_override = $7, zaehlpunkts_gebuehr_eur_override = $8,
+		   servicegebuehr_bezug_ct_kwh_override = $9, servicegebuehr_einspeisung_ct_kwh_override = $10
 		 WHERE id = $1`,
 		s.ID, s.Name, s.Granularity,
 		s.FreeKwhOverride, s.DiscountPctOverride, s.MeterFeeEurOverride,
-		s.ParticipationFeeEurOverride, s.ZaehlpunktsGebuehrOverride)
+		s.ParticipationFeeEurOverride, s.ZaehlpunktsGebuehrOverride,
+		s.ServicegebuehrBezugCtKwhOverride, s.ServicegebuehrEinspeisungCtKwhOverride)
 	return err
 }
 
@@ -219,6 +226,7 @@ func (r *TariffRepository) GetAllActiveForEEG(ctx context.Context, eegID uuid.UU
 		if err := rows.Scan(&s.ID, &s.EegID, &s.MemberID, &s.Name, &s.Granularity, &s.IsActive, &s.CreatedAt,
 			&s.FreeKwhOverride, &s.DiscountPctOverride, &s.MeterFeeEurOverride,
 			&s.ParticipationFeeEurOverride, &s.ZaehlpunktsGebuehrOverride,
+			&s.ServicegebuehrBezugCtKwhOverride, &s.ServicegebuehrEinspeisungCtKwhOverride,
 			&entryID, &entryScheduleID, &validFrom, &validUntil, &energyPrice, &producerPrice, &entryCreatedAt); err != nil {
 			return nil, nil, fmt.Errorf("scan: %w", err)
 		}

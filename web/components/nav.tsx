@@ -125,6 +125,16 @@ const EEG_NAV: NavItem[] = [
     ),
   },
   {
+    segment: "referrals",
+    label: "Werbeprämien",
+    icon: (
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+          d="M12 8c-1.657 0-3 .672-3 1.5S10.343 11 12 11s3 .672 3 1.5-1.343 1.5-3 1.5m0-6V6m0 1c1.11 0 2.08.402 2.599 1M12 15v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+      </svg>
+    ),
+  },
+  {
     segment: "documents",
     label: "Dokumente",
     icon: (

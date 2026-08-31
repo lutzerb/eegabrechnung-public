@@ -16,8 +16,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
-	"github.com/lutzerb/eegabrechnung/internal/invoice"
 	edaxml "github.com/lutzerb/eegabrechnung/internal/eda/xml"
+	"github.com/lutzerb/eegabrechnung/internal/invoice"
 	"github.com/lutzerb/eegabrechnung/internal/mailutil"
 	"github.com/lutzerb/eegabrechnung/internal/netzbetreiber"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
@@ -128,24 +128,29 @@ func (h *OnboardingHandler) GetPublicEEGInfo(w http.ResponseWriter, r *http.Requ
 
 // onboardingSubmitRequest is the body for POST /api/v1/public/eegs/{eegID}/onboarding.
 type onboardingSubmitRequest struct {
-	Name1            string                        `json:"name1"`
-	Name2            string                        `json:"name2"`
-	Email            string                        `json:"email"`
-	Phone            string                        `json:"phone"`
-	Strasse          string                        `json:"strasse"`
-	PLZ              string                        `json:"plz"`
-	Ort              string                        `json:"ort"`
-	IBAN             string                        `json:"iban"`
-	BIC              string                        `json:"bic"`
-	MemberType       string                        `json:"member_type"`
-	BusinessRole     string                        `json:"business_role"`  // privat | kleinunternehmer | ...
-	UidNummer        string                        `json:"uid_nummer"`
-	UseVat           bool                          `json:"use_vat"`
+	Name1              string                        `json:"name1"`
+	Name2              string                        `json:"name2"`
+	Email              string                        `json:"email"`
+	Phone              string                        `json:"phone"`
+	Strasse            string                        `json:"strasse"`
+	PLZ                string                        `json:"plz"`
+	Ort                string                        `json:"ort"`
+	IBAN               string                        `json:"iban"`
+	BIC                string                        `json:"bic"`
+	MemberType         string                        `json:"member_type"`
+	BusinessRole       string                        `json:"business_role"` // privat | kleinunternehmer | ...
+	UidNummer          string                        `json:"uid_nummer"`
+	UseVat             bool                          `json:"use_vat"`
 	MeterPoints        []domain.OnboardingMeterPoint `json:"meter_points"`
 	BeitrittsDatum     string                        `json:"beitritts_datum"` // optional YYYY-MM-DD
 	ContractAccepted   bool                          `json:"contract_accepted"`
 	ReferralSource     string                        `json:"referral_source"`      // optional: how the applicant heard about the EEG
 	ReferralSourceNote string                        `json:"referral_source_note"` // optional free text, only meaningful when ReferralSource == "Sonstiges"
+	// ReferralCode is an opaque per-member "Mitglieder werben Mitglieder" code,
+	// carried through from an ?ref= link on the onboarding page. Resolved
+	// server-side, scoped to this EEG; an unknown/invalid code is silently
+	// ignored (never surfaced as an error — see SubmitOnboarding).
+	ReferralCode string `json:"referral_code"`
 }
 
 // SubmitOnboarding handles POST /api/v1/public/eegs/{eegID}/onboarding
@@ -251,6 +256,17 @@ func (h *OnboardingHandler) SubmitOnboarding(w http.ResponseWriter, r *http.Requ
 		businessRole = "privat"
 	}
 
+	// Resolve an optional referral code against this EEG. Invalid/unknown codes are
+	// silently ignored — never returned as an error, which would let a caller probe
+	// code validity.
+	var referredByMemberID *uuid.UUID
+	if code := strings.TrimSpace(body.ReferralCode); code != "" {
+		if referrer, err := h.memberRepo.GetByReferralCodeInEEG(r.Context(), eegID, code); err == nil && referrer != nil {
+			id := referrer.ID
+			referredByMemberID = &id
+		}
+	}
+
 	now := time.Now()
 	req := &domain.OnboardingRequest{
 		EegID:              eegID,
@@ -274,6 +290,7 @@ func (h *OnboardingHandler) SubmitOnboarding(w http.ResponseWriter, r *http.Requ
 		ContractIP:         ip,
 		ReferralSource:     strings.TrimSpace(body.ReferralSource),
 		ReferralSourceNote: cleanText(body.ReferralSourceNote),
+		ReferredByMemberID: referredByMemberID,
 	}
 
 	if req.MeterPoints == nil {
@@ -465,19 +482,19 @@ type updateStatusRequest struct {
 	NetzbetreiberID string `json:"netzbetreiber_id"` // optional override for conversion email
 	CustomMessage   string `json:"custom_message"`   // optional custom email body paragraph
 	// Field-update fields (used when Status is "")
-	Name1          string                        `json:"name1"`
-	Name2          string                        `json:"name2"`
-	Email          string                        `json:"email"`
-	Phone          string                        `json:"phone"`
-	Strasse        string                        `json:"strasse"`
-	PLZ            string                        `json:"plz"`
-	Ort            string                        `json:"ort"`
-	IBAN           string                        `json:"iban"`
-	BIC            string                        `json:"bic"`
-	MemberType     string                        `json:"member_type"`
-	BusinessRole   string                        `json:"business_role"`
-	UidNummer      string                        `json:"uid_nummer"`
-	UseVat         bool                          `json:"use_vat"`
+	Name1              string                        `json:"name1"`
+	Name2              string                        `json:"name2"`
+	Email              string                        `json:"email"`
+	Phone              string                        `json:"phone"`
+	Strasse            string                        `json:"strasse"`
+	PLZ                string                        `json:"plz"`
+	Ort                string                        `json:"ort"`
+	IBAN               string                        `json:"iban"`
+	BIC                string                        `json:"bic"`
+	MemberType         string                        `json:"member_type"`
+	BusinessRole       string                        `json:"business_role"`
+	UidNummer          string                        `json:"uid_nummer"`
+	UseVat             bool                          `json:"use_vat"`
 	MeterPoints        []domain.OnboardingMeterPoint `json:"meter_points"`
 	BeitrittsDatum     string                        `json:"beitritts_datum"` // YYYY-MM-DD or ""
 	ReferralSource     string                        `json:"referral_source"`
@@ -667,14 +684,16 @@ func (h *OnboardingHandler) UpdateOnboardingStatus(w http.ResponseWriter, r *htt
 
 		memberQ := `INSERT INTO members (eeg_id, mitglieds_nr, name1, name2, email, iban, strasse, plz, ort,
 		                                business_role, uid_nummer, use_vat, vat_pct, status, beitritt_datum,
-		                                sepa_mandate_signed_at, sepa_mandate_signed_ip, sepa_mandate_text)
-		            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+		                                sepa_mandate_signed_at, sepa_mandate_signed_ip, sepa_mandate_text,
+		                                referred_by_member_id)
+		            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
 		            RETURNING id, created_at`
 		err = tx.QueryRow(ctx, memberQ,
 			eegID, mitgliedsNr, req.Name1, req.Name2, req.Email, req.IBAN,
 			req.Strasse, req.PLZ, req.Ort, businessRole,
 			req.UidNummer, useVatPtr, nil, "REGISTERED", beitrittsDatum,
 			req.ContractAcceptedAt, req.ContractIP, mandateText,
+			req.ReferredByMemberID,
 		).Scan(&memberID, &memberCreatedAt)
 		if err != nil {
 			slog.Error("failed to insert member", "error", err)
@@ -780,14 +799,19 @@ func (h *OnboardingHandler) UpdateOnboardingStatus(w http.ResponseWriter, r *htt
 				}
 
 				xmlBody, xmlErr := edaxml.BuildCMRequest(edaxml.CMRequestParams{
-					From:            eeg.EdaMarktpartnerID,
-					To:              netzbetreiberTo,
-					MessageID:       msgID,
-					ConversationID:  conversationID,
-					CMRequestID:     uuid.NewString(),
-					MeteringPoint:   cmp.zaehlpunkt,
-					ECID:            eeg.GemeinschaftID,
-					DateFrom:        func() time.Time { if beitrittsDatum != nil { return *beitrittsDatum }; return time.Now() }(),
+					From:           eeg.EdaMarktpartnerID,
+					To:             netzbetreiberTo,
+					MessageID:      msgID,
+					ConversationID: conversationID,
+					CMRequestID:    uuid.NewString(),
+					MeteringPoint:  cmp.zaehlpunkt,
+					ECID:           eeg.GemeinschaftID,
+					DateFrom: func() time.Time {
+						if beitrittsDatum != nil {
+							return *beitrittsDatum
+						}
+						return time.Now()
+					}(),
 					ECPartFact:      cmp.participationFactor,
 					EnergyDirection: direction,
 				})
@@ -884,7 +908,6 @@ func (h *OnboardingHandler) UpdateOnboardingStatus(w http.ResponseWriter, r *htt
 	}
 	jsonOK(w, req)
 }
-
 
 // GetOnboardingByID handles GET /api/v1/eegs/{eegID}/onboarding/{id} (auth required).
 //

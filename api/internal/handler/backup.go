@@ -434,7 +434,8 @@ func (h *BackupHandler) restoreInTx(ctx context.Context, targetEEGID, backupEEGI
 		eda_transition_date = $24, eda_marktpartner_id = $25, eda_netzbetreiber_id = $26,
 		accounting_revenue_account = $27, accounting_expense_account = $28,
 		accounting_debitor_prefix = $29, datev_consultant_nr = $30, datev_client_nr = $31,
-		strasse = $32, plz = $33, ort = $34, uid_nummer = $35
+		strasse = $32, plz = $33, ort = $34, uid_nummer = $35,
+		servicegebuehr_bezug_ct_kwh = $37, servicegebuehr_einspeisung_ct_kwh = $38
 		WHERE id = $36`,
 		eeg.Name, eeg.Netzbetreiber, eeg.EnergyPrice, eeg.ProducerPrice,
 		eeg.UseVat, eeg.VatPct, eeg.MeterFeeEur, eeg.FreeKwh,
@@ -448,6 +449,7 @@ func (h *BackupHandler) restoreInTx(ctx context.Context, targetEEGID, backupEEGI
 		eeg.AccountingDebitorPrefix, eeg.DatevConsultantNr, eeg.DatevClientNr,
 		eeg.Strasse, eeg.Plz, eeg.Ort, eeg.UidNummer,
 		targetEEGID,
+		eeg.ServicegebuehrBezugCtKwh, eeg.ServicegebuehrEinspeisungCtKwh,
 	)
 	if err != nil {
 		return summary, fmt.Errorf("update EEG settings: %w", err)
@@ -553,11 +555,13 @@ func (h *BackupHandler) restoreInTx(ctx context.Context, targetEEGID, backupEEGI
 			_, err = tx.Exec(ctx, `INSERT INTO tariff_schedules
 				(id, eeg_id, member_id, name, granularity, is_active, created_at,
 				 free_kwh_override, discount_pct_override, meter_fee_eur_override,
-				 participation_fee_eur_override, zaehlpunkts_gebuehr_eur_override)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
+				 participation_fee_eur_override, zaehlpunkts_gebuehr_eur_override,
+				 servicegebuehr_bezug_ct_kwh_override, servicegebuehr_einspeisung_ct_kwh_override)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
 				s.ID, remap(s.EegID), s.MemberID, s.Name, s.Granularity, s.IsActive, s.CreatedAt,
 				s.FreeKwhOverride, s.DiscountPctOverride, s.MeterFeeEurOverride,
 				s.ParticipationFeeEurOverride, s.ZaehlpunktsGebuehrOverride,
+				s.ServicegebuehrBezugCtKwhOverride, s.ServicegebuehrEinspeisungCtKwhOverride,
 			)
 			if err != nil {
 				return summary, fmt.Errorf("insert tariff_schedule %s: %w", s.ID, err)

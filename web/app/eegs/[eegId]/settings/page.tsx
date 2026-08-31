@@ -32,6 +32,20 @@ const TABS = [
 
 type TabKey = (typeof TABS)[number]["key"];
 
+function ShowZeroFeeCheckbox({ name, checked, label }: { name: string; checked: boolean; label: string }) {
+  return (
+    <label className="flex items-center gap-2 mt-1.5 text-xs text-slate-600">
+      <input
+        type="checkbox"
+        name={name}
+        defaultChecked={checked}
+        className="h-3.5 w-3.5 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+      />
+      {label}
+    </label>
+  );
+}
+
 export default async function EEGSettingsPage({ params, searchParams }: Props) {
   const session = await auth();
   if (!session) redirect("/auth/signin");
@@ -81,6 +95,9 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
       discount_pct: parseFloat(formData.get("discount_pct") as string) || 0,
       participation_fee_eur: parseFloat(formData.get("participation_fee_eur") as string) || 0,
       zaehlpunkts_gebuehr_eur: parseFloat(formData.get("zaehlpunkts_gebuehr_eur") as string) || 0,
+      servicegebuehr_bezug_ct_kwh: parseFloat(formData.get("servicegebuehr_bezug_ct_kwh") as string) || 0,
+      servicegebuehr_einspeisung_ct_kwh: parseFloat(formData.get("servicegebuehr_einspeisung_ct_kwh") as string) || 0,
+      referral_bonus_eur: parseFloat(formData.get("referral_bonus_eur") as string) || 0,
       billing_period: formData.get("billing_period") as string || "monthly",
       invoice_number_prefix: (formData.get("invoice_number_prefix") as string) || "INV",
       invoice_number_digits: parseInt(formData.get("invoice_number_digits") as string) || 5,
@@ -154,7 +171,10 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
       invoice_energy_label_gesamteinspeisung: (formData.get("invoice_energy_label_gesamteinspeisung") as string) || "Gesamteinspeisung kWh",
       invoice_energy_label_abnahme_energiegemeinschaft: (formData.get("invoice_energy_label_abnahme_energiegemeinschaft") as string) || "Abnahme durch Energiegemeinschaft kWh",
       invoice_energy_label_resteinspeisung: (formData.get("invoice_energy_label_resteinspeisung") as string) || "Resteinspeisung kWh",
-      invoice_show_zero_fees: formData.get("invoice_show_zero_fees") === "on",
+      invoice_show_zero_fee_fixgebuehr: formData.get("invoice_show_zero_fee_fixgebuehr") === "on",
+      invoice_show_zero_fee_zaehlpunktsgebuehr: formData.get("invoice_show_zero_fee_zaehlpunktsgebuehr") === "on",
+      invoice_show_zero_fee_servicegebuehr_bezug: formData.get("invoice_show_zero_fee_servicegebuehr_bezug") === "on",
+      invoice_show_zero_fee_servicegebuehr_einspeisung: formData.get("invoice_show_zero_fee_servicegebuehr_einspeisung") === "on",
       invoice_show_monthly_breakdown: formData.get("invoice_show_monthly_breakdown") === "on",
       invoice_logo_scale: parseFloat(formData.get("invoice_logo_scale") as string) || 1.0,
       invoice_always_show_zaehlpunkt: formData.get("invoice_always_show_zaehlpunkt") === "on",
@@ -285,6 +305,9 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
             <input type="hidden" name="discount_pct" value={String(eeg.discount_pct)} />
             <input type="hidden" name="participation_fee_eur" value={String(eeg.participation_fee_eur)} />
             <input type="hidden" name="zaehlpunkts_gebuehr_eur" value={String(eeg.zaehlpunkts_gebuehr_eur ?? 0)} />
+            <input type="hidden" name="servicegebuehr_bezug_ct_kwh" value={String(eeg.servicegebuehr_bezug_ct_kwh ?? 0)} />
+            <input type="hidden" name="servicegebuehr_einspeisung_ct_kwh" value={String(eeg.servicegebuehr_einspeisung_ct_kwh ?? 0)} />
+            <input type="hidden" name="referral_bonus_eur" value={String((eeg as any).referral_bonus_eur ?? 5)} />
             <input type="hidden" name="invoice_number_prefix" value={eeg.invoice_number_prefix || "INV"} />
             <input type="hidden" name="invoice_number_digits" value={String(eeg.invoice_number_digits || 5)} />
             <input type="hidden" name="invoice_number_start" value={String(eeg.invoice_number_start || 1)} />
@@ -313,7 +336,10 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
         )}
         {activeTab !== "rechnungen" && (
           <>
-            <input type="hidden" name="invoice_show_zero_fees" value={(eeg as any).invoice_show_zero_fees ? "on" : ""} />
+            <input type="hidden" name="invoice_show_zero_fee_fixgebuehr" value={(eeg as any).invoice_show_zero_fee_fixgebuehr ? "on" : ""} />
+            <input type="hidden" name="invoice_show_zero_fee_zaehlpunktsgebuehr" value={(eeg as any).invoice_show_zero_fee_zaehlpunktsgebuehr ? "on" : ""} />
+            <input type="hidden" name="invoice_show_zero_fee_servicegebuehr_bezug" value={(eeg as any).invoice_show_zero_fee_servicegebuehr_bezug ? "on" : ""} />
+            <input type="hidden" name="invoice_show_zero_fee_servicegebuehr_einspeisung" value={(eeg as any).invoice_show_zero_fee_servicegebuehr_einspeisung ? "on" : ""} />
             <input type="hidden" name="extra_meters_enabled" value={(eeg as any).extra_meters_enabled ? "on" : ""} />
           </>
         )}
@@ -574,6 +600,11 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
                     <input type="number" name="participation_fee_eur" step="0.01" min="0" defaultValue={eeg.participation_fee_eur} className={`${inputClass} pr-12`} />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">EUR</span>
                   </div>
+                  <ShowZeroFeeCheckbox
+                    name="invoice_show_zero_fee_fixgebuehr"
+                    checked={(eeg as any).invoice_show_zero_fee_fixgebuehr === true}
+                    label="Fixgebühr/Mitgliedsbeitrag auch anzeigen, wenn 0,00 €"
+                  />
                 </div>
                 <div>
                   <label className={labelClass}>Zählpunktsgebühr (EUR je aktivem Zählpunkt/Periode)</label>
@@ -581,22 +612,59 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
                     <input type="number" name="zaehlpunkts_gebuehr_eur" step="0.01" min="0" defaultValue={eeg.zaehlpunkts_gebuehr_eur ?? 0} className={`${inputClass} pr-12`} />
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">EUR</span>
                   </div>
-                </div>
-                <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
-                  <input
-                    type="checkbox"
-                    id="invoice_show_zero_fees"
-                    name="invoice_show_zero_fees"
-                    defaultChecked={(eeg as any).invoice_show_zero_fees === true}
-                    className="h-4 w-4 rounded border-slate-300 text-blue-700 focus:ring-blue-500"
+                  <ShowZeroFeeCheckbox
+                    name="invoice_show_zero_fee_zaehlpunktsgebuehr"
+                    checked={(eeg as any).invoice_show_zero_fee_zaehlpunktsgebuehr === true}
+                    label="Zählpunktsgebühr auch anzeigen, wenn 0,00 €"
                   />
-                  <label htmlFor="invoice_show_zero_fees" className="text-sm text-slate-700">
-                    Fixgebühr/Mitgliedsbeitrag und Zählpunktsgebühr auch anzeigen, wenn sie 0,00&nbsp;€ betragen
-                    <span className="block text-xs text-slate-500 mt-0.5">
-                      Standard: eine Zeile mit 0&nbsp;€ wird auf der Rechnung weggelassen statt angezeigt.
-                    </span>
-                  </label>
                 </div>
+                <div className="pt-2 border-t border-slate-100">
+                  <p className="text-sm font-medium text-slate-700 mb-2">Servicegebühren (pro kWh, eigene Rechnungsposition)</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className={labelClass}>Servicegebühr Bezug (ct/kWh)</label>
+                      <div className="relative">
+                        <input type="number" name="servicegebuehr_bezug_ct_kwh" step="0.01" min="0" defaultValue={eeg.servicegebuehr_bezug_ct_kwh ?? 0} className={`${inputClass} pr-16`} />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">ct/kWh</span>
+                      </div>
+                      <ShowZeroFeeCheckbox
+                        name="invoice_show_zero_fee_servicegebuehr_bezug"
+                        checked={(eeg as any).invoice_show_zero_fee_servicegebuehr_bezug === true}
+                        label="Auch anzeigen, wenn 0,00 €"
+                      />
+                    </div>
+                    <div>
+                      <label className={labelClass}>Servicegebühr Einspeisung (ct/kWh)</label>
+                      <div className="relative">
+                        <input type="number" name="servicegebuehr_einspeisung_ct_kwh" step="0.01" min="0" defaultValue={eeg.servicegebuehr_einspeisung_ct_kwh ?? 0} className={`${inputClass} pr-16`} />
+                        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">ct/kWh</span>
+                      </div>
+                      <ShowZeroFeeCheckbox
+                        name="invoice_show_zero_fee_servicegebuehr_einspeisung"
+                        checked={(eeg as any).invoice_show_zero_fee_servicegebuehr_einspeisung === true}
+                        label="Auch anzeigen, wenn 0,00 €"
+                      />
+                    </div>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Nicht jedes Mitglied muss zahlen: Ausnahmen (oder abweichende Sätze) lassen sich pro Mitglied im Individualtarif setzen.
+                  </p>
+                </div>
+                <div className="pt-2 border-t border-slate-100">
+                  <label className={labelClass}>Werbeprämie (Mitglieder werben Mitglieder)</label>
+                  <div className="relative max-w-xs">
+                    <input type="number" name="referral_bonus_eur" step="0.01" min="0" defaultValue={(eeg as any).referral_bonus_eur ?? 5} className={`${inputClass} pr-12`} />
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-sm">EUR</span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Standardbetrag, der beim manuellen Vergeben einer Werbeprämie (Seite &bdquo;Werbeprämien&ldquo;)
+                    vorausgefüllt wird — kann pro Vergabe angepasst werden. Wird auf die nächste Rechnung des
+                    werbenden Mitglieds angewendet.
+                  </p>
+                </div>
+                <p className="text-xs text-slate-500 pt-2 border-t border-slate-100">
+                  Standard: eine Rechnungszeile mit 0,00&nbsp;€ wird weggelassen statt angezeigt — je Gebührenart oben einzeln umschaltbar.
+                </p>
                 <div className="flex items-center gap-3 pt-2 border-t border-slate-100">
                   <input
                     type="checkbox"

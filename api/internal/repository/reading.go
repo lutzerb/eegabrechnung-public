@@ -581,7 +581,7 @@ type MeterPointGapDetail struct {
 
 // MissingIntervalDetails returns per-ZP gap details: for every active meter point
 // that has at least one incomplete day, it returns the list of dates (Vienna time,
-// YYYY-MM-DD) where fewer than 96 L1/L2 slots were found.
+// YYYY-MM-DD) where fewer than 96 billable (quality <> L3) slots were found.
 // Days with exactly 92 slots (DST spring-forward) or 100 slots (fall-back) will
 // still appear as incomplete — the caller may display a note about DST.
 //
@@ -628,7 +628,7 @@ func (r *ReadingRepository) MissingIntervalDetails(ctx context.Context, eegID uu
 		  JOIN energy_readings er ON er.meter_point_id = amp.id
 		    AND er.ts >= amp.effective_start
 		    AND er.ts < amp.effective_end
-		    AND er.quality IN ('L1', 'L2')
+		    AND er.quality <> 'L3'
 		  GROUP BY amp.id, amp.zaehlpunkt, (er.ts AT TIME ZONE 'Europe/Vienna')::date
 		)
 		SELECT ed.zaehlpunkt, ed.day::text
@@ -719,6 +719,11 @@ type PeriodGap struct {
 // a period whose stored abgemeldet_am lies in the future), so today's
 // still-accumulating data, and any not-yet-reached future deregistration
 // date, is never flagged as missing.
+//
+// A day counts as complete once it has 96 distinct 15-min slots of billable
+// quality (quality <> L3) — matching the billing sum queries, which only ever
+// exclude L3. L0 ("total", unflagged) readings are real, billable data and
+// must not be treated as missing just because they weren't tagged L1/L2.
 func (r *ReadingRepository) MissingDataByRegistrationPeriod(ctx context.Context, eegID uuid.UUID, today time.Time) ([]PeriodGap, error) {
 	q := `
 		WITH periods AS (
@@ -749,7 +754,7 @@ func (r *ReadingRepository) MissingDataByRegistrationPeriod(ctx context.Context,
 		actual_per_day AS (
 		  SELECT pr.period_id,
 		         (er.ts AT TIME ZONE 'Europe/Vienna')::date AS day,
-		         COUNT(DISTINCT er.ts) FILTER (WHERE er.quality IN ('L1', 'L2')) AS l1l2_count,
+		         COUNT(DISTINCT er.ts) FILTER (WHERE er.quality <> 'L3') AS billable_count,
 		         COUNT(DISTINCT er.ts) FILTER (WHERE er.quality = 'L3') AS l3_count,
 		         COUNT(DISTINCT er.ts) AS any_count
 		  FROM periods pr
@@ -759,10 +764,10 @@ func (r *ReadingRepository) MissingDataByRegistrationPeriod(ctx context.Context,
 		  GROUP BY pr.period_id, (er.ts AT TIME ZONE 'Europe/Vienna')::date
 		)
 		SELECT ed.period_id, ed.zaehlpunkt, ed.registriert_seit, ed.abgemeldet_am, ed.name1, ed.name2, ed.day::text,
-		       COALESCE(ap.l1l2_count, 0), COALESCE(ap.l3_count, 0), COALESCE(ap.any_count, 0)
+		       COALESCE(ap.billable_count, 0), COALESCE(ap.l3_count, 0), COALESCE(ap.any_count, 0)
 		FROM expected_days ed
 		LEFT JOIN actual_per_day ap ON ap.period_id = ed.period_id AND ap.day = ed.day
-		WHERE COALESCE(ap.l1l2_count, 0) < 96
+		WHERE COALESCE(ap.billable_count, 0) < 96
 		ORDER BY ed.zaehlpunkt, ed.registriert_seit, ed.day
 	`
 	rows, err := r.db.Query(ctx, q, eegID, today)
@@ -784,8 +789,8 @@ func (r *ReadingRepository) MissingDataByRegistrationPeriod(ctx context.Context,
 		var zp, day, name1, name2 string
 		var regSeit time.Time
 		var abgemeldet *time.Time
-		var l1l2Count, l3Count, anyCount int
-		if err := rows.Scan(&periodID, &zp, &regSeit, &abgemeldet, &name1, &name2, &day, &l1l2Count, &l3Count, &anyCount); err != nil {
+		var billableCount, l3Count, anyCount int
+		if err := rows.Scan(&periodID, &zp, &regSeit, &abgemeldet, &name1, &name2, &day, &billableCount, &l3Count, &anyCount); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		a, ok := byPeriod[periodID]
@@ -806,7 +811,7 @@ func (r *ReadingRepository) MissingDataByRegistrationPeriod(ctx context.Context,
 		switch {
 		case anyCount == 0:
 			category = GapNoData
-		case l1l2Count == 0 && l3Count == anyCount:
+		case billableCount == 0 && l3Count == anyCount:
 			category = GapL3Only
 		}
 		a.days = append(a.days, day)
@@ -867,8 +872,8 @@ func collapseDaysToCategorizedRanges(days []string, categories []GapCategory) ([
 }
 
 // MissingIntervals returns the Zählpunkt identifiers of active meter points that
-// are missing at least one expected 15-minute slot with quality L1 or L2 in
-// [periodStart, periodEnd].
+// are missing at least one expected 15-minute slot with billable quality
+// (i.e. quality <> L3) in [periodStart, periodEnd].
 //
 // The expected slot count per ZP is derived from its effective active window:
 //   - effective_start = max(registriert_seit, periodStart)
@@ -912,7 +917,7 @@ func (r *ReadingRepository) MissingIntervals(ctx context.Context, eegID uuid.UUI
 		  JOIN energy_readings er ON er.meter_point_id = amp.id
 		    AND er.ts >= amp.effective_start
 		    AND er.ts < amp.effective_end
-		    AND er.quality IN ('L1', 'L2')
+		    AND er.quality <> 'L3'
 		  GROUP BY amp.id, amp.zaehlpunkt
 		)
 		SELECT DISTINCT e.zaehlpunkt

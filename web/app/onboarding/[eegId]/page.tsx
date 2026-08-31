@@ -11,12 +11,12 @@ interface PublicDocument {
 
 interface Props {
   params: Promise<{ eegId: string }>;
-  searchParams: Promise<{ ev?: string }>;
+  searchParams: Promise<{ ev?: string; ref?: string }>;
 }
 
 export default async function OnboardingPage({ params, searchParams }: Props) {
   const { eegId } = await params;
-  const { ev } = await searchParams;
+  const { ev, ref } = await searchParams;
   let eegName = "Energiegemeinschaft";
   let legalName = eegName;
   let eegFound = true;
@@ -140,6 +140,7 @@ export default async function OnboardingPage({ params, searchParams }: Props) {
           contractText={contractText}
           documents={documents}
           referralOptions={referralOptions}
+          referralCode={ref}
           verifiedEmail={verifiedEmail}
           verifiedName1={verifiedName1}
           verifiedName2={verifiedName2}

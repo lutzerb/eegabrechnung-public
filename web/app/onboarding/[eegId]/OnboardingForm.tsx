@@ -49,6 +49,10 @@ interface Props {
   contractText?: string;
   documents?: PublicDocument[];
   referralOptions?: string[];
+  // Opaque "Mitglieder werben Mitglieder" code from the ?ref= link (Migration 114).
+  // Never resolved/validated client-side — only carried through to the submit
+  // body; the server silently ignores an invalid code.
+  referralCode?: string;
   verifiedEmail?: string;
   verifiedName1?: string;
   verifiedName2?: string;
@@ -132,6 +136,7 @@ export default function OnboardingForm({
   contractText: contractTextProp,
   documents = [],
   referralOptions = [],
+  referralCode,
   verifiedEmail,
   verifiedName1,
   verifiedName2,
@@ -179,7 +184,7 @@ export default function OnboardingForm({
     uidNummer: "",
     beitrittsDatum: tomorrowISO,
     meterPoints: [{ zaehlpunkt: "", direction: "CONSUMPTION", generationType: "", participationFactor: 100 }],
-    referralSource: "",
+    referralSource: referralCode ? "Empfehlung von einem Mitglied" : "",
     referralSourceNote: "",
   });
 
@@ -452,6 +457,7 @@ export default function OnboardingForm({
           referral_source: formData.referralSource,
           referral_source_note:
             formData.referralSource === "Sonstiges" ? formData.referralSourceNote.trim() : "",
+          referral_code: referralCode || "",
         }),
       });
 
@@ -535,6 +541,7 @@ Datum der elektronischen Unterzeichnung: ${today}`;
         </p>
         <p className="text-sm text-slate-500 mb-8">
           Bitte öffnen Sie den Link in der E-Mail, um fortzufahren. Der Link ist 30 Minuten gültig.
+          Prüfen Sie auch Ihren Spam-/Junk-Ordner, falls die E-Mail nicht ankommt.
         </p>
 
         <div className="flex flex-col items-center gap-3">
@@ -626,9 +633,16 @@ Datum der elektronischen Unterzeichnung: ${today}`;
       {/* Step 1: Persönliche Daten / Firmendaten */}
       {step === 1 && (
         <div>
-          <h2 className="text-lg font-semibold text-slate-900 mb-6">
+          <h2 className="text-lg font-semibold text-slate-900 mb-4">
             {formData.businessRole === "privat" ? "Persönliche Daten" : formData.businessRole === "verein" ? "Vereinsdaten" : "Firmendaten"}
           </h2>
+          <div className="mb-6 p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-900">
+            <ul className="list-disc list-inside space-y-1">
+              <li>Halten Sie Ihre Zählpunktnummer(n) bereit — Sie benötigen diese in einem der nächsten Schritte. Sie finden diese z.B. auf Ihrer Stromrechnung, auf Rechnungen des Netzbetreibers, im Smart-Meter-Webportal des Netzbetreibers oder auf Ihrem Netzzugangsvertrag.</li>
+              <li>Halten Sie auch Ihre IBAN bereit — Sie benötigen diese für das SEPA-Lastschriftmandat in einem der nächsten Schritte.</li>
+              <li><strong>Im nächsten Schritt müssen Sie Ihre E-Mail-Adresse bestätigen.</strong> Prüfen Sie dazu auch Ihren Spam-/Junk-Ordner, falls die Bestätigungs-E-Mail nicht ankommt.</li>
+            </ul>
+          </div>
           <div className="space-y-4">
             {/* Unternehmensart — drives the name fields below */}
             <div>
@@ -747,25 +761,34 @@ Datum der elektronischen Unterzeichnung: ${today}`;
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">
-                Wie sind Sie auf uns aufmerksam geworden? (optional)
-              </label>
-              <select
-                value={formData.referralSource}
-                onChange={(e) => updateField("referralSource", e.target.value)}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
-              >
-                <option value="">Bitte wählen…</option>
-                {referralOptions.map((opt) => (
-                  <option key={opt} value={opt}>
-                    {opt}
-                  </option>
-                ))}
-                <option value="Sonstiges">Sonstiges</option>
-              </select>
-            </div>
-            {formData.referralSource === "Sonstiges" && (
+            {referralCode ? (
+              <div className="flex items-start gap-2 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800">
+                <svg className="w-4 h-4 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 4a2 2 0 114 0v1a1 1 0 001 1h3a1 1 0 011 1v3a1 1 0 01-1 1h-1a2 2 0 100 4h1a1 1 0 011 1v3a1 1 0 01-1 1h-3a1 1 0 01-1-1v-1a2 2 0 10-4 0v1a1 1 0 01-1 1H7a1 1 0 01-1-1v-3a1 1 0 00-1-1H4a1 1 0 01-1-1V9a1 1 0 011-1h1a1 1 0 001-1V6a1 1 0 011-1h3a1 1 0 001-1V4z" />
+                </svg>
+                <span>Sie wurden von einem Mitglied eingeladen.</span>
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">
+                  Wie sind Sie auf uns aufmerksam geworden? (optional)
+                </label>
+                <select
+                  value={formData.referralSource}
+                  onChange={(e) => updateField("referralSource", e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                >
+                  <option value="">Bitte wählen…</option>
+                  {referralOptions.map((opt) => (
+                    <option key={opt} value={opt}>
+                      {opt}
+                    </option>
+                  ))}
+                  <option value="Sonstiges">Sonstiges</option>
+                </select>
+              </div>
+            )}
+            {!referralCode && formData.referralSource === "Sonstiges" && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   Wie genau? (optional)

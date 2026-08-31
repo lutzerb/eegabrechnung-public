@@ -95,14 +95,15 @@ func main() {
 	emailLogRepo := repository.NewEmailLogRepository(pool)
 	orgRepo := repository.NewOrganizationRepository(pool)
 	extraMeterRepo := repository.NewExtraMeterRepository(pool)
+	referralBonusRepo := repository.NewReferralBonusRepository(pool)
 
 	// Services
-	billingSvc := billing.NewService(pool, eegRepo, memberRepo, readingRepo, invoiceRepo, billingRunRepo, tariffRepo, emailLogRepo, meterPointRepo, extraMeterRepo, billingCfg)
+	billingSvc := billing.NewService(pool, eegRepo, memberRepo, readingRepo, invoiceRepo, billingRunRepo, tariffRepo, emailLogRepo, meterPointRepo, extraMeterRepo, referralBonusRepo, billingCfg)
 
 	// Handlers
 	eegHandler := handler.NewEEGHandler(eegRepo, memberRepo, meterPointRepo, participationRepo)
 	importHandler := handler.NewImportHandler(eegRepo, memberRepo, meterPointRepo, readingRepo)
-	billingHandler := handler.NewBillingHandler(billingSvc, invoiceRepo, billingRunRepo, memberRepo, eegRepo, emailLogRepo)
+	billingHandler := handler.NewBillingHandler(billingSvc, invoiceRepo, billingRunRepo, memberRepo, eegRepo, emailLogRepo, referralBonusRepo)
 	memberHandler := handler.NewMemberHandler(memberRepo, meterPointRepo, eegRepo, edaProcessRepo, jobRepo, participationRepo)
 	meterPointHandler := handler.NewMeterPointHandler(meterPointRepo, memberRepo, eegRepo, edaProcessRepo)
 	statsHandler := handler.NewStatsHandler(eegRepo, edaMessageRepo)
@@ -143,6 +144,7 @@ func main() {
 
 	memberEmailHandler := handler.NewMemberEmailHandler(memberEmailRepo, memberRepo, eegRepo, emailLogRepo)
 	eegDocumentHandler := handler.NewEEGDocumentHandler(eegDocumentRepo, portalRepo, eegRepo)
+	referralHandler := handler.NewReferralHandler(referralBonusRepo, memberRepo, eegRepo)
 
 	eaRepo := repository.NewEARepository(pool)
 	eaHandler := handler.NewEAHandler(eaRepo, eegRepo, invoiceDir)
@@ -200,6 +202,7 @@ func main() {
 	r.Post("/api/v1/public/portal/sepa-mandate", portalHandler.ChangeSepaMandate)
 	r.With(portalLimiter.Middleware).Post("/api/v1/public/portal/email-change", portalHandler.RequestEmailChange)
 	r.Post("/api/v1/public/portal/email-change/confirm/{token}", portalHandler.ConfirmEmailChange)
+	r.Get("/api/v1/public/portal/referral", portalHandler.GetReferral)
 
 	authMiddleware := auth.Middleware(jwtSecret)
 
@@ -343,6 +346,12 @@ func main() {
 		r.Get("/eegs/{eegID}/communications", memberEmailHandler.ListCampaigns)
 		r.Get("/eegs/{eegID}/communications/{id}", memberEmailHandler.GetCampaign)
 		r.Post("/eegs/{eegID}/communications", memberEmailHandler.SendCampaign)
+
+		// Mitglieder werben Mitglieder (referral bonuses)
+		r.Get("/eegs/{eegID}/referrals/eligible", referralHandler.ListEligible)
+		r.Get("/eegs/{eegID}/referrals", referralHandler.List)
+		r.Post("/eegs/{eegID}/referrals/{referredMemberID}/grant-bonus", referralHandler.Grant)
+		r.Delete("/eegs/{eegID}/referrals/{referredMemberID}/grant-bonus", referralHandler.CancelPending)
 
 		// EEG documents
 		r.Get("/eegs/{eegID}/documents", eegDocumentHandler.ListDocuments)

@@ -23,21 +23,25 @@ interface Member {
 }
 
 const PLACEHOLDERS = [
-  { key: "{{vorname}}",      label: "Vorname" },
-  { key: "{{nachname}}",     label: "Nachname" },
-  { key: "{{name}}",         label: "Vollst. Name" },
-  { key: "{{mitglieds_nr}}", label: "Mitgl.-Nr." },
-  { key: "{{eeg_name}}",     label: "EEG-Name" },
-  { key: "{{email}}",        label: "E-Mail" },
+  { key: "{{vorname}}",           label: "Vorname" },
+  { key: "{{nachname}}",          label: "Nachname" },
+  { key: "{{name}}",              label: "Vollst. Name" },
+  { key: "{{mitglieds_nr}}",      label: "Mitgl.-Nr." },
+  { key: "{{eeg_name}}",          label: "EEG-Name" },
+  { key: "{{email}}",             label: "E-Mail" },
+  { key: "{{werbelink}}",         label: "Werbelink" },
+  { key: "{{werbebonus_betrag}}", label: "Werbeprämie" },
 ];
 
 const PLACEHOLDER_EXAMPLES: Record<string, string> = {
-  "{{vorname}}":      "Maria",
-  "{{nachname}}":     "Mustermann",
-  "{{name}}":         "Maria Mustermann",
-  "{{mitglieds_nr}}": "0042",
-  "{{eeg_name}}":     "Sonnenstrom Mustertal",
-  "{{email}}":        "maria@beispiel.at",
+  "{{vorname}}":           "Maria",
+  "{{nachname}}":          "Mustermann",
+  "{{name}}":              "Maria Mustermann",
+  "{{mitglieds_nr}}":      "0042",
+  "{{eeg_name}}":          "Sonnenstrom Mustertal",
+  "{{email}}":             "maria@beispiel.at",
+  "{{werbelink}}":         "https://eegwn.at/onboarding/…?ref=abc123",
+  "{{werbebonus_betrag}}": "5,00 €",
 };
 
 function applyExamples(s: string): string {

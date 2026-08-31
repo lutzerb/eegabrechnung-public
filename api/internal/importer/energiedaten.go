@@ -2,12 +2,13 @@ package importer
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/xuri/excelize/v2"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
+	"github.com/xuri/excelize/v2"
 )
 
 // colType identifies which value a column contains.
@@ -49,6 +50,14 @@ func classifyColumn(header string) colType {
 
 // ParseEnergieDaten parses an energy data XLSX file.
 // Works for both Format A (TEST_EEG_Report) and Format B (RC105970).
+//
+// A BEG (Bürgerenergiegemeinschaft) can span multiple Netzbetreiber, and the EDA portal
+// export then contains one combined "Energiedaten" sheet plus a per-Netzbetreiber
+// "Energiedaten_<NB-Kennung>" sheet for each one — e.g. "Energiedaten_AT008100",
+// "Energiedaten_AT008000". Observed exports have the combined sheet as a superset of the
+// per-NB ones, but that isn't guaranteed by the portal, so all matching sheets are parsed
+// and merged, deduplicating by (Zählpunkt, timestamp) — a plain single-NB export still has
+// just the one "Energiedaten" sheet and behaves exactly as before.
 func ParseEnergieDaten(path string) ([]domain.EnergyRow, error) {
 	f, err := excelize.OpenFile(path)
 	if err != nil {
@@ -56,11 +65,63 @@ func ParseEnergieDaten(path string) ([]domain.EnergyRow, error) {
 	}
 	defer f.Close()
 
-	rows, err := f.GetRows("Energiedaten")
-	if err != nil {
-		return nil, fmt.Errorf("get rows: %w", err)
+	var sheetNames []string
+	for _, name := range f.GetSheetList() {
+		if name == "Energiedaten" || strings.HasPrefix(name, "Energiedaten_") {
+			sheetNames = append(sheetNames, name)
+		}
+	}
+	if len(sheetNames) == 0 {
+		return nil, fmt.Errorf("no Energiedaten sheet found")
+	}
+	// Parse the combined sheet first (if present) so it wins ties when merging.
+	sort.Slice(sheetNames, func(i, j int) bool {
+		if sheetNames[i] == "Energiedaten" {
+			return true
+		}
+		if sheetNames[j] == "Energiedaten" {
+			return false
+		}
+		return sheetNames[i] < sheetNames[j]
+	})
+
+	type rowKey struct {
+		meter string
+		ts    int64
+	}
+	seen := map[rowKey]bool{}
+	var result []domain.EnergyRow
+	var lastErr error
+	for _, sheetName := range sheetNames {
+		rows, err := f.GetRows(sheetName)
+		if err != nil {
+			lastErr = fmt.Errorf("get rows for sheet %q: %w", sheetName, err)
+			continue
+		}
+		sheetRows, err := parseEnergieDatenSheet(rows)
+		if err != nil {
+			lastErr = fmt.Errorf("sheet %q: %w", sheetName, err)
+			continue
+		}
+		for _, r := range sheetRows {
+			key := rowKey{r.MeterID, r.Ts.Unix()}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			result = append(result, r)
+		}
+	}
+	if result == nil && lastErr != nil {
+		return nil, lastErr
 	}
 
+	return result, nil
+}
+
+// parseEnergieDatenSheet parses the rows of a single Energiedaten worksheet (either the
+// combined sheet or a per-Netzbetreiber one — they share the same layout).
+func parseEnergieDatenSheet(rows [][]string) ([]domain.EnergyRow, error) {
 	// Step 1: find meter row and metercode row
 	meterRowIdx := -1
 	metercodeRowIdx := -1
@@ -165,14 +226,14 @@ func ParseEnergieDaten(path string) ([]domain.EnergyRow, error) {
 	// says "MM", metercode row is blank there). Capture that companion column so the
 	// quality can be read per data row below, instead of being silently discarded.
 	type meterCols struct {
-		total        int
-		community    int
-		self         int
-		residual     int // grid export for generation meters; -1 if absent
-		totalQual    int
+		total         int
+		community     int
+		self          int
+		residual      int // grid export for generation meters; -1 if absent
+		totalQual     int
 		communityQual int
-		selfQual     int
-		residualQual int
+		selfQual      int
+		residualQual  int
 	}
 	isQualityCol := func(col int) bool {
 		if col < 0 || col >= len(meterRow) {

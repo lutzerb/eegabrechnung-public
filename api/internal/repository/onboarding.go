@@ -52,8 +52,9 @@ func (r *OnboardingRepository) Create(ctx context.Context, req *domain.Onboardin
 	        (eeg_id, status, name1, name2, email, phone, strasse, plz, ort,
 	         iban, bic, member_type, business_role, uid_nummer, use_vat,
 	         meter_points, beitritts_datum, contract_accepted_at, contract_ip,
-	         magic_token, magic_token_expires_at, admin_notes, referral_source, referral_source_note)
-	      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)
+	         magic_token, magic_token_expires_at, admin_notes, referral_source, referral_source_note,
+	         referred_by_member_id)
+	      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25)
 	      RETURNING id, created_at, updated_at`
 
 	status := req.Status
@@ -71,6 +72,7 @@ func (r *OnboardingRepository) Create(ctx context.Context, req *domain.Onboardin
 		businessRole, req.UidNummer, req.UseVat,
 		meterPointsJSON, req.BeitrittsDatum, req.ContractAcceptedAt, req.ContractIP,
 		req.MagicToken, req.MagicTokenExpiresAt, req.AdminNotes, req.ReferralSource, req.ReferralSourceNote,
+		req.ReferredByMemberID,
 	).Scan(&req.ID, &req.CreatedAt, &req.UpdatedAt)
 }
 
@@ -81,7 +83,7 @@ func (r *OnboardingRepository) GetByToken(ctx context.Context, token string) (*d
 	             iban, bic, member_type, business_role, uid_nummer, use_vat,
 	             meter_points, beitritts_datum, contract_accepted_at, contract_ip,
 	             magic_token, magic_token_expires_at, admin_notes, referral_source, referral_source_note,
-	             converted_member_id,
+	             converted_member_id, referred_by_member_id,
 	             reminder_sent_at, created_at, updated_at
 	      FROM onboarding_requests
 	      WHERE magic_token = $1`
@@ -107,7 +109,7 @@ func (r *OnboardingRepository) GetByID(ctx context.Context, id uuid.UUID) (*doma
 	             iban, bic, member_type, business_role, uid_nummer, use_vat,
 	             meter_points, beitritts_datum, contract_accepted_at, contract_ip,
 	             magic_token, magic_token_expires_at, admin_notes, referral_source, referral_source_note,
-	             converted_member_id,
+	             converted_member_id, referred_by_member_id,
 	             reminder_sent_at, created_at, updated_at
 	      FROM onboarding_requests
 	      WHERE id = $1`
@@ -128,7 +130,7 @@ func (r *OnboardingRepository) ListByEEG(ctx context.Context, eegID uuid.UUID) (
 	             iban, bic, member_type, business_role, uid_nummer, use_vat,
 	             meter_points, beitritts_datum, contract_accepted_at, contract_ip,
 	             magic_token, magic_token_expires_at, admin_notes, referral_source, referral_source_note,
-	             converted_member_id,
+	             converted_member_id, referred_by_member_id,
 	             reminder_sent_at, created_at, updated_at
 	      FROM onboarding_requests
 	      WHERE eeg_id = $1
@@ -158,7 +160,7 @@ func (r *OnboardingRepository) FindPendingByEmailAndEEG(ctx context.Context, ema
 	             iban, bic, member_type, business_role, uid_nummer, use_vat,
 	             meter_points, beitritts_datum, contract_accepted_at, contract_ip,
 	             magic_token, magic_token_expires_at, admin_notes, referral_source, referral_source_note,
-	             converted_member_id,
+	             converted_member_id, referred_by_member_id,
 	             reminder_sent_at, created_at, updated_at
 	      FROM onboarding_requests
 	      WHERE email = $1 AND eeg_id = $2 AND status IN ('pending', 'approved', 'admin_created')
@@ -306,7 +308,7 @@ func scanOnboarding(row interface {
 		&req.ContractAcceptedAt, &req.ContractIP,
 		&req.MagicToken, &req.MagicTokenExpiresAt,
 		&req.AdminNotes, &req.ReferralSource, &req.ReferralSourceNote,
-		&req.ConvertedMemberID,
+		&req.ConvertedMemberID, &req.ReferredByMemberID,
 		&req.ReminderSentAt,
 		&req.CreatedAt, &req.UpdatedAt,
 	)

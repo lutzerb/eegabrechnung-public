@@ -280,6 +280,8 @@ export default async function MemberDetailPage({ params }: Props) {
                 ["meter_fee_eur_override", "Fixgebühr", "EUR"],
                 ["participation_fee_eur_override", "Mitgliedsbeitrag", "EUR"],
                 ["zaehlpunkts_gebuehr_eur_override", "Zählpunktsgebühr", "EUR/ZP"],
+                ["servicegebuehr_bezug_ct_kwh_override", "Servicegebühr Bezug", "ct/kWh"],
+                ["servicegebuehr_einspeisung_ct_kwh_override", "Servicegebühr Einspeisung", "ct/kWh"],
               ] as const).map(([key, label, unit]) => {
                 const val = activeIndividualtarif![key];
                 return (

@@ -176,6 +176,26 @@ services:
     depends_on:
       - eegabrechnung-web
 
+  # Additional Cloudflare Tunnel(s) — for customer domains whose DNS zone lives in
+  # a *different* Cloudflare account than the one above (a tunnel's Public
+  # Hostnames can only route zones within its own account, so each outside
+  # account needs its own tunnel + token, created in that account's Zero Trust
+  # dashboard). Each one still points at the same internal eegabrechnung-web:3000.
+  #
+  # This is a template for the first such tunnel (CLOUDFLARE_TUNNEL_TOKEN_SECONDARY_1
+  # in .env). To onboard another customer with their own Cloudflare account, copy
+  # this block, rename the service and env var to _SECONDARY_2, etc.
+  cloudflared-secondary-1:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate run
+    profiles:
+      - cloudflare
+    environment:
+      TUNNEL_TOKEN: "${CLOUDFLARE_TUNNEL_TOKEN_SECONDARY_1}"
+    restart: unless-stopped
+    depends_on:
+      - eegabrechnung-web
+
   # Caddy reverse proxy — optional, useful for production or TLS termination
   # Activate with: docker compose --profile caddy up
   eegabrechnung-caddy:
