@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useState, useMemo } from "react";
-import type { EDAProcess } from "@/lib/api";
+import type { EDAProcess, EDAMessage } from "@/lib/api";
 import { parseEdaErrorCodes } from "@/lib/eda-error-codes";
-import { EDA_PROCESS_TYPE_LABELS, EDA_PROCESS_STATUS_LABELS, EDA_PROCESS_STATUS_STYLES } from "@/lib/eda-status-labels";
+import { EDA_PROCESS_TYPE_LABELS, EDA_PROCESS_STATUS_LABELS, EDA_PROCESS_STATUS_STYLES, edaMessageTypeLabel } from "@/lib/eda-status-labels";
+import { DirectionBadge, MessageStatusBadge, XmlPreviewToggle } from "@/components/eda-badges";
 
 interface Props {
   processes: EDAProcess[];
+  eegId: string;
 }
 
 function formatDate(dateStr: string | undefined): string {
@@ -85,14 +87,87 @@ function isUrgent(proc: EDAProcess): boolean {
   return diffDays < URGENT_DAYS_THRESHOLD;
 }
 
-export function EDAProcessesTable({ processes }: Props) {
+type MessagesState = EDAMessage[] | "loading" | "error";
+
+// One message row inside a process's expanded accordion — timestamp, direction/type/status,
+// and the "XML anzeigen" (inline preview, lazy-fetched) / "XML herunterladen" (download,
+// unchanged from the Nachrichten tab) actions.
+function ProcessMessageRow({ msg, eegId }: { msg: EDAMessage; eegId: string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-slate-500 whitespace-nowrap">{formatDate(msg.created_at)}</span>
+        <DirectionBadge direction={msg.direction} />
+        <span className="text-slate-800">{edaMessageTypeLabel(msg.process, msg.message_type)}</span>
+        <MessageStatusBadge status={msg.status} />
+        {msg.subject && (
+          <span className="text-slate-500 truncate max-w-xs" title={msg.subject}>
+            {msg.subject}
+          </span>
+        )}
+      </div>
+      {msg.error_msg && (
+        <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+          <span className="font-medium">Fehler:</span> {msg.error_msg}
+        </div>
+      )}
+      <div className="mt-2">
+        <XmlPreviewToggle eegId={eegId} messageId={msg.id} filenameHint={msg.process || msg.message_type} align="end" />
+      </div>
+    </div>
+  );
+}
+
+// The messages sub-list shown when a process row is expanded — fetched lazily on first
+// expand from GET /eegs/{eegId}/eda/processes/{processId}/messages and cached by the
+// parent so re-toggling the row doesn't refetch.
+function ProcessMessagesSection({ state, eegId }: { state: MessagesState | undefined; eegId: string }) {
+  if (state === undefined || state === "loading") {
+    return <p className="text-xs text-slate-400">Nachrichten werden geladen…</p>;
+  }
+  if (state === "error") {
+    return <p className="text-xs text-red-600">Nachrichten konnten nicht geladen werden.</p>;
+  }
+  if (state.length === 0) {
+    return <p className="text-xs text-slate-400">Keine Nachrichten zu diesem Prozess gefunden.</p>;
+  }
+  return (
+    <div className="space-y-2">
+      {state.map((msg) => (
+        <ProcessMessageRow key={msg.id} msg={msg} eegId={eegId} />
+      ))}
+    </div>
+  );
+}
+
+export function EDAProcessesTable({ processes, eegId }: Props) {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [urgentOnly, setUrgentOnly] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [messagesByProcess, setMessagesByProcess] = useState<Record<string, MessagesState>>({});
 
   const urgentCount = useMemo(() => processes.filter(isUrgent).length, [processes]);
+
+  const toggleExpanded = (procId: string) => {
+    const next = expandedId === procId ? null : procId;
+    setExpandedId(next);
+    if (next && messagesByProcess[next] === undefined) {
+      setMessagesByProcess((prev) => ({ ...prev, [next]: "loading" }));
+      fetch(`/api/eegs/${eegId}/eda/processes/${next}/messages`)
+        .then((res) => {
+          if (!res.ok) throw new Error(`status ${res.status}`);
+          return res.json();
+        })
+        .then((data: { messages: EDAMessage[] }) => {
+          setMessagesByProcess((prev) => ({ ...prev, [next]: data.messages ?? [] }));
+        })
+        .catch(() => {
+          setMessagesByProcess((prev) => ({ ...prev, [next]: "error" }));
+        });
+    }
+  };
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -207,8 +282,8 @@ export function EDAProcessesTable({ processes }: Props) {
               filtered.map((proc) => (
                 <React.Fragment key={proc.id}>
                 <tr
-                  className={`transition-colors ${proc.error_msg ? "cursor-pointer" : ""} ${expandedId === proc.id ? "bg-red-50/40" : "hover:bg-slate-50"}`}
-                  onClick={() => proc.error_msg ? setExpandedId(expandedId === proc.id ? null : proc.id) : undefined}
+                  className={`cursor-pointer transition-colors ${expandedId === proc.id ? (proc.error_msg ? "bg-red-50/40" : "bg-slate-50") : "hover:bg-slate-50"}`}
+                  onClick={() => toggleExpanded(proc.id)}
                 >
                   <td className="px-6 py-3.5">
                     <span className="font-mono text-xs text-slate-600">
@@ -272,50 +347,57 @@ export function EDAProcessesTable({ processes }: Props) {
                   </td>
                   <td className="px-6 py-3.5 text-slate-400 text-xs whitespace-nowrap">
                     {formatDate(proc.initiated_at)}
-                    {proc.error_msg && (
-                      <span className="ml-1 text-slate-300 text-xs">{expandedId === proc.id ? "▲" : "▼"}</span>
-                    )}
+                    <svg
+                      className={`inline-block ml-1.5 w-3.5 h-3.5 align-middle transition-transform ${expandedId === proc.id ? "rotate-180" : ""}`}
+                      fill="none" viewBox="0 0 24 24" stroke="currentColor"
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 9l-7 7-7-7" />
+                    </svg>
                   </td>
                 </tr>
-                {expandedId === proc.id && proc.error_msg && (() => {
-                  const codes = parseEdaErrorCodes(proc.error_msg);
-                  return (
-                    <tr key={`${proc.id}-detail`} className="bg-red-50/60 border-t border-red-100">
-                      <td colSpan={8} className="px-6 py-4">
-                        <div className="flex items-start gap-6 text-xs">
-                          <div className="min-w-0 flex-1">
-                            <p className="text-slate-500 font-medium mb-1">
-                              {codes.length > 1 ? "Bedeutung (mehrere Codes)" : "Bedeutung"}
-                            </p>
-                            {codes.length > 0 ? (
-                              <ul className="space-y-1.5">
-                                {codes.map((parsed) => (
-                                  <li key={parsed.code}>
-                                    <span className="text-2xl font-mono font-bold text-red-700 mr-2 align-middle">
-                                      {parsed.code}
-                                    </span>
-                                    <span className="text-red-800 font-medium text-sm align-middle">{parsed.label}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            ) : (
-                              <p className="text-red-800 font-medium text-sm">Unbekannter Fehler</p>
-                            )}
-                            {codes.length > 0 && (
-                              <p className="text-slate-500 mt-2">
-                                Laut ebutilities.at Responsecodes (Kategorie Customer Processes)
+                {expandedId === proc.id && (
+                  <tr key={`${proc.id}-detail`} className={`border-t ${proc.error_msg ? "bg-red-50/60 border-red-100" : "bg-slate-50/80 border-slate-100"}`}>
+                    <td colSpan={8} className="px-6 py-4">
+                      {proc.error_msg && (() => {
+                        const codes = parseEdaErrorCodes(proc.error_msg);
+                        return (
+                          <div className="flex items-start gap-6 text-xs mb-4">
+                            <div className="min-w-0 flex-1">
+                              <p className="text-slate-500 font-medium mb-1">
+                                {codes.length > 1 ? "Bedeutung (mehrere Codes)" : "Bedeutung"}
                               </p>
-                            )}
+                              {codes.length > 0 ? (
+                                <ul className="space-y-1.5">
+                                  {codes.map((parsed) => (
+                                    <li key={parsed.code}>
+                                      <span className="text-2xl font-mono font-bold text-red-700 mr-2 align-middle">
+                                        {parsed.code}
+                                      </span>
+                                      <span className="text-red-800 font-medium text-sm align-middle">{parsed.label}</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <p className="text-red-800 font-medium text-sm">Unbekannter Fehler</p>
+                              )}
+                              {codes.length > 0 && (
+                                <p className="text-slate-500 mt-2">
+                                  Laut ebutilities.at Responsecodes (Kategorie Customer Processes)
+                                </p>
+                              )}
+                            </div>
+                            <div className="min-w-0 max-w-sm">
+                              <p className="text-slate-500 font-medium mb-1">Rohe Fehlermeldung</p>
+                              <p className="text-slate-600 break-words leading-relaxed">{proc.error_msg}</p>
+                            </div>
                           </div>
-                          <div className="min-w-0 max-w-sm">
-                            <p className="text-slate-500 font-medium mb-1">Rohe Fehlermeldung</p>
-                            <p className="text-slate-600 break-words leading-relaxed">{proc.error_msg}</p>
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })()}
+                        );
+                      })()}
+                      <p className="text-slate-500 font-medium text-xs mb-2">Nachrichten (zeitliche Reihenfolge)</p>
+                      <ProcessMessagesSection state={messagesByProcess[proc.id]} eegId={eegId} />
+                    </td>
+                  </tr>
+                )}
                 </React.Fragment>
               ))
             )}

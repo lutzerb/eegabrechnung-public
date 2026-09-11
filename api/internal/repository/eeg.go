@@ -45,7 +45,7 @@ const eegCols = `e.id, organization_id, gemeinschaft_id, gemeinschaft_typ, netzb
 	servicegebuehr_bezug_ct_kwh, servicegebuehr_einspeisung_ct_kwh,
 	billing_period,
 	invoice_number_prefix, invoice_number_digits, invoice_number_start,
-	invoice_pre_text, invoice_post_text, invoice_footer_text, invoice_payment_notice_mode, invoice_payment_notice_text, fee_billing_mode,
+	invoice_pre_text, invoice_post_text, invoice_footer_text, invoice_footer_mode, invoice_payment_notice_mode, invoice_payment_notice_text, fee_billing_mode,
 	logo_path,
 	generate_credit_notes, credit_note_number_prefix, credit_note_number_digits,
 	iban, bic, sepa_creditor_id,
@@ -61,7 +61,7 @@ const eegCols = `e.id, organization_id, gemeinschaft_id, gemeinschaft_typ, netzb
 	auto_billing_enabled, auto_billing_day_of_month, auto_billing_period, auto_billing_last_run_at,
 	gap_alert_enabled, gap_alert_threshold_days,
 	energy_imbalance_threshold_promille,
-	portal_show_full_energy,
+	portal_show_full_energy, portal_show_community_stats,
 	invoice_design, invoice_accent_color, invoice_logo_left, invoice_font_family, invoice_font_size,
 	invoice_energy_label_zeitraum_von, invoice_energy_label_zeitraum_bis, invoice_energy_label_gesamtverbrauch,
 	invoice_energy_label_netzbezug, invoice_energy_label_community_verbrauch, invoice_show_zero_fee_fixgebuehr,
@@ -96,7 +96,7 @@ func (r *EEGRepository) scanEEG(row interface{ Scan(...any) error }, e *domain.E
 		&e.ServicegebuehrBezugCtKwh, &e.ServicegebuehrEinspeisungCtKwh,
 		&e.BillingPeriod,
 		&e.InvoiceNumberPrefix, &e.InvoiceNumberDigits, &e.InvoiceNumberStart,
-		&e.InvoicePreText, &e.InvoicePostText, &e.InvoiceFooterText, &e.InvoicePaymentNoticeMode, &e.InvoicePaymentNoticeText, &e.FeeBillingMode,
+		&e.InvoicePreText, &e.InvoicePostText, &e.InvoiceFooterText, &e.InvoiceFooterMode, &e.InvoicePaymentNoticeMode, &e.InvoicePaymentNoticeText, &e.FeeBillingMode,
 		&e.LogoPath,
 		&e.GenerateCreditNotes, &e.CreditNoteNumberPrefix, &e.CreditNoteNumberDigits,
 		&e.IBAN, &e.BIC, &e.SepaCreditorID,
@@ -112,7 +112,7 @@ func (r *EEGRepository) scanEEG(row interface{ Scan(...any) error }, e *domain.E
 		&e.AutoBillingEnabled, &autoBillingDayOfMonth, &autoBillingPeriod, &e.AutoBillingLastRunAt,
 		&e.GapAlertEnabled, &e.GapAlertThresholdDays,
 		&e.EnergyImbalanceThresholdPromille,
-		&e.PortalShowFullEnergy,
+		&e.PortalShowFullEnergy, &e.PortalShowCommunityStats,
 		&e.InvoiceDesign, &e.InvoiceAccentColor, &e.InvoiceLogoLeft, &e.InvoiceFontFamily, &e.InvoiceFontSize,
 		&e.InvoiceEnergyLabelZeitraumVon, &e.InvoiceEnergyLabelZeitraumBis, &e.InvoiceEnergyLabelGesamtverbrauch,
 		&e.InvoiceEnergyLabelNetzbezug, &e.InvoiceEnergyLabelCommunityVerbrauch, &e.InvoiceShowZeroFeeFixgebuehr,
@@ -317,7 +317,9 @@ func (r *EEGRepository) Update(ctx context.Context, eeg *domain.EEG) error {
 	        invoice_show_zero_fee_zaehlpunktsgebuehr=$102,
 	        invoice_show_zero_fee_servicegebuehr_bezug=$103,
 	        invoice_show_zero_fee_servicegebuehr_einspeisung=$104,
-	        referral_bonus_eur=$105
+	        referral_bonus_eur=$105,
+	        invoice_footer_mode=$106,
+	        portal_show_community_stats=$107
 	      WHERE id=$50 AND organization_id=$51`
 	// Note: logo_path and auto_billing_last_run_at are not updated via this method.
 	days := eeg.SepaPreNotificationDays
@@ -398,6 +400,8 @@ func (r *EEGRepository) Update(ctx context.Context, eeg *domain.EEG) error {
 		eeg.InvoiceShowZeroFeeServicegebuehrBezug,
 		eeg.InvoiceShowZeroFeeServicegebuehrEinspeisung,
 		eeg.ReferralBonusEur,
+		eeg.InvoiceFooterMode,
+		eeg.PortalShowCommunityStats,
 	)
 	return err
 }

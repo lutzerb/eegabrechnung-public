@@ -76,6 +76,15 @@ func validInvoiceChartType(t string) bool {
 	}
 }
 
+func validInvoiceFooterMode(m string) bool {
+	switch m {
+	case "", "inline", "page":
+		return true
+	default:
+		return false
+	}
+}
+
 func validInvoiceFontFamily(family string) bool {
 	switch family {
 	case "", "dejavu", "roboto", "opensans", "ptserif":
@@ -152,6 +161,7 @@ type eegRequest struct {
 	InvoicePreText                 string  `json:"invoice_pre_text"`
 	InvoicePostText                string  `json:"invoice_post_text"`
 	InvoiceFooterText              string  `json:"invoice_footer_text"`
+	InvoiceFooterMode              string  `json:"invoice_footer_mode"`
 	InvoicePaymentNoticeMode       string  `json:"invoice_payment_notice_mode"`
 	InvoicePaymentNoticeText       string  `json:"invoice_payment_notice_text"`
 	FeeBillingMode                 string  `json:"fee_billing_mode"`
@@ -204,7 +214,8 @@ type eegRequest struct {
 	// Energy imbalance warning tolerance (‰)
 	EnergyImbalanceThresholdPromille float64 `json:"energy_imbalance_threshold_promille"`
 	// Member portal
-	PortalShowFullEnergy bool `json:"portal_show_full_energy"`
+	PortalShowFullEnergy     bool `json:"portal_show_full_energy"`
+	PortalShowCommunityStats bool `json:"portal_show_community_stats"`
 	// Invoice visual design ("standard" | "individuell") — see domain.EEG for field meaning
 	InvoiceDesign      string `json:"invoice_design"`
 	InvoiceAccentColor string `json:"invoice_accent_color"`
@@ -572,6 +583,10 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid invoice_chart_type", http.StatusBadRequest)
 		return
 	}
+	if !validInvoiceFooterMode(req.InvoiceFooterMode) {
+		jsonError(w, "invalid invoice_footer_mode", http.StatusBadRequest)
+		return
+	}
 	if !validInvoiceAccentColor(req.InvoiceChartColorCommunityBezug) {
 		jsonError(w, "invalid invoice_chart_color_community_bezug", http.StatusBadRequest)
 		return
@@ -625,6 +640,9 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 	existing.InvoicePreText = req.InvoicePreText
 	existing.InvoicePostText = req.InvoicePostText
 	existing.InvoiceFooterText = req.InvoiceFooterText
+	if req.InvoiceFooterMode != "" {
+		existing.InvoiceFooterMode = req.InvoiceFooterMode
+	}
 	if req.InvoicePaymentNoticeMode != "" {
 		existing.InvoicePaymentNoticeMode = req.InvoicePaymentNoticeMode
 	}
@@ -764,6 +782,7 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 
 	// Member portal
 	existing.PortalShowFullEnergy = req.PortalShowFullEnergy
+	existing.PortalShowCommunityStats = req.PortalShowCommunityStats
 
 	// Zusatzzähler feature toggle
 	existing.ExtraMetersEnabled = req.ExtraMetersEnabled
@@ -1042,6 +1061,7 @@ type previewDesignRequest struct {
 	InvoiceFontSize                              int     `json:"invoice_font_size"`
 	InvoiceRowSpacing                            float64 `json:"invoice_row_spacing"`
 	InvoiceFooterText                            string  `json:"invoice_footer_text"`
+	InvoiceFooterMode                            string  `json:"invoice_footer_mode"`
 	InvoicePreText                               string  `json:"invoice_pre_text"`
 	InvoicePostText                              string  `json:"invoice_post_text"`
 	InvoiceEnergyLabelZeitraumVon                string  `json:"invoice_energy_label_zeitraum_von"`
@@ -1123,6 +1143,10 @@ func (h *EEGHandler) PreviewInvoiceDesign(w http.ResponseWriter, r *http.Request
 		jsonError(w, "invalid invoice_chart_type", http.StatusBadRequest)
 		return
 	}
+	if !validInvoiceFooterMode(req.InvoiceFooterMode) {
+		jsonError(w, "invalid invoice_footer_mode", http.StatusBadRequest)
+		return
+	}
 	if !validInvoiceAccentColor(req.InvoiceChartColorCommunityBezug) {
 		jsonError(w, "invalid invoice_chart_color_community_bezug", http.StatusBadRequest)
 		return
@@ -1152,6 +1176,7 @@ func (h *EEGHandler) PreviewInvoiceDesign(w http.ResponseWriter, r *http.Request
 	previewEEG.InvoiceFontSize = req.InvoiceFontSize
 	previewEEG.InvoiceRowSpacing = req.InvoiceRowSpacing
 	previewEEG.InvoiceFooterText = req.InvoiceFooterText
+	previewEEG.InvoiceFooterMode = req.InvoiceFooterMode
 	previewEEG.InvoicePreText = req.InvoicePreText
 	previewEEG.InvoicePostText = req.InvoicePostText
 	previewEEG.InvoiceEnergyLabelZeitraumVon = req.InvoiceEnergyLabelZeitraumVon

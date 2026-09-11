@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -16,10 +17,21 @@ type MeterPointHandler struct {
 	memberRepo     *repository.MemberRepository
 	eegRepo        *repository.EEGRepository
 	edaProcRepo    *repository.EDAProcessRepository
+	readingRepo    *repository.ReadingRepository
+	edaMsgRepo     *repository.EDAMessageRepository
+	obisCache      *obisIndexCache
 }
 
-func NewMeterPointHandler(meterPointRepo *repository.MeterPointRepository, memberRepo *repository.MemberRepository, eegRepo *repository.EEGRepository, edaProcRepo *repository.EDAProcessRepository) *MeterPointHandler {
-	return &MeterPointHandler{meterPointRepo: meterPointRepo, memberRepo: memberRepo, eegRepo: eegRepo, edaProcRepo: edaProcRepo}
+func NewMeterPointHandler(meterPointRepo *repository.MeterPointRepository, memberRepo *repository.MemberRepository, eegRepo *repository.EEGRepository, edaProcRepo *repository.EDAProcessRepository, readingRepo *repository.ReadingRepository, edaMsgRepo *repository.EDAMessageRepository) *MeterPointHandler {
+	return &MeterPointHandler{
+		meterPointRepo: meterPointRepo,
+		memberRepo:     memberRepo,
+		eegRepo:        eegRepo,
+		edaProcRepo:    edaProcRepo,
+		readingRepo:    readingRepo,
+		edaMsgRepo:     edaMsgRepo,
+		obisCache:      newOBISIndexCache(),
+	}
 }
 
 type meterPointRequest struct {
@@ -292,6 +304,136 @@ func (h *MeterPointHandler) GetMeterPointHistory(w http.ResponseWriter, r *http.
 		return
 	}
 	jsonOK(w, meterPointHistoryResponse{Periods: periods, Processes: processes})
+}
+
+// meterPointReadingRow is one energy_readings row enriched with the raw OBIS-code
+// breakdown for its timestamp (parsed live from the matching EDA messages — see
+// obis_index.go). OBIS is empty for xlsx-sourced rows or timestamps not covered by
+// any cached EDA message.
+type meterPointReadingRow struct {
+	domain.EnergyReading
+	OBIS []OBISEntry `json:"obis"`
+}
+
+type meterPointReadingsResponse struct {
+	Readings   []meterPointReadingRow `json:"readings"`
+	TotalCount int                     `json:"total_count"`
+	Limit      int                     `json:"limit"`
+	Offset     int                     `json:"offset"`
+}
+
+const (
+	meterPointReadingsDefaultLimit = 100
+	meterPointReadingsMaxLimit     = 500
+)
+
+// parseReadingsDebugParam parses a "from"/"to" query value for GetMeterPointReadings.
+// Accepts either a full datetime ("2006-01-02T15:04", as produced by an HTML
+// datetime-local input) or a bare date ("2006-01-02"); both are interpreted in Vienna
+// local time, matching the EDA/reading conventions used throughout the codebase.
+// A bare date given as the (inclusive) upper bound is extended to end-of-day so a
+// single-day filter behaves intuitively; an explicit datetime is used exactly as given.
+// Returns the zero time.Time (no bound) when v is empty or unparseable.
+func parseReadingsDebugParam(v string, isUpperBound bool, loc *time.Location) time.Time {
+	if v == "" {
+		return time.Time{}
+	}
+	if parsed, err := time.ParseInLocation("2006-01-02T15:04", v, loc); err == nil {
+		return parsed
+	}
+	if parsed, err := time.ParseInLocation("2006-01-02", v, loc); err == nil {
+		if isUpperBound {
+			return parsed.Add(24*time.Hour - time.Nanosecond)
+		}
+		return parsed
+	}
+	return time.Time{}
+}
+
+// GetMeterPointReadings godoc
+// @Summary     List raw energy readings for one meter point (admin debug view)
+// @Description Returns paginated energy_readings rows for one meter point, each enriched with
+// @Description the individual OBIS-code values/quality parsed live from the matching raw EDA
+// @Description messages (energy_readings only stores one merged "worst quality" per slot).
+// @Tags        Zählpunkte
+// @Produce     json
+// @Param       eegID         path      string  true   "EEG UUID"
+// @Param       meterPointID  path      string  true   "Meter point UUID"
+// @Param       from          query     string  false  "Start datetime (YYYY-MM-DDTHH:MM) or date (YYYY-MM-DD), Vienna time, inclusive"
+// @Param       to            query     string  false  "End datetime (YYYY-MM-DDTHH:MM) or date (YYYY-MM-DD), Vienna time, inclusive (a bare date is extended to end-of-day)"
+// @Param       limit         query     int     false  "Page size, default 100, max 500"
+// @Param       offset        query     int     false  "Page offset, default 0"
+// @Success     200  {object}  meterPointReadingsResponse
+// @Failure     401  {object}  map[string]string  "Unauthorized"
+// @Failure     404  {object}  map[string]string  "Meter point not found"
+// @Security    BearerAuth
+// @Router      /eegs/{eegID}/meter-points/{meterPointID}/readings [get]
+// GetMeterPointReadings handles GET /eegs/{eegID}/meter-points/{meterPointID}/readings
+func (h *MeterPointHandler) GetMeterPointReadings(w http.ResponseWriter, r *http.Request) {
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
+		return
+	}
+	meterPointID, err := uuid.Parse(chi.URLParam(r, "meterPointID"))
+	if err != nil {
+		jsonError(w, "invalid meter point ID", http.StatusBadRequest)
+		return
+	}
+
+	mp, err := h.meterPointRepo.GetByID(r.Context(), meterPointID)
+	if err != nil || mp.EegID != eeg.ID {
+		jsonError(w, "meter point not found", http.StatusNotFound)
+		return
+	}
+
+	q := r.URL.Query()
+	viennaLoc, _ := time.LoadLocation("Europe/Vienna")
+	from := parseReadingsDebugParam(q.Get("from"), false, viennaLoc)
+	to := parseReadingsDebugParam(q.Get("to"), true, viennaLoc)
+	limit := meterPointReadingsDefaultLimit
+	if v := q.Get("limit"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed > 0 {
+			limit = parsed
+		}
+	}
+	if limit > meterPointReadingsMaxLimit {
+		limit = meterPointReadingsMaxLimit
+	}
+	offset := 0
+	if v := q.Get("offset"); v != "" {
+		if parsed, err := strconv.Atoi(v); err == nil && parsed >= 0 {
+			offset = parsed
+		}
+	}
+
+	total, err := h.readingRepo.CountByMeterPoint(r.Context(), meterPointID, from, to)
+	if err != nil {
+		jsonError(w, "failed to count readings", http.StatusInternalServerError)
+		return
+	}
+	readings, err := h.readingRepo.ListByMeterPoint(r.Context(), meterPointID, from, to, limit, offset)
+	if err != nil {
+		jsonError(w, "failed to load readings", http.StatusInternalServerError)
+		return
+	}
+
+	obisIndex, err := h.obisCache.get(r.Context(), h.edaMsgRepo, eeg.ID, mp.Zaehlpunkt)
+	if err != nil {
+		// OBIS enrichment is best-effort — a broken/unavailable index must not hide
+		// the underlying energy_readings data, which is the primary source of truth.
+		obisIndex = nil
+	}
+
+	rows := make([]meterPointReadingRow, len(readings))
+	for i, rd := range readings {
+		obis := obisIndex[rd.Ts.Unix()]
+		if obis == nil {
+			obis = []OBISEntry{}
+		}
+		rows[i] = meterPointReadingRow{EnergyReading: rd, OBIS: obis}
+	}
+
+	jsonOK(w, meterPointReadingsResponse{Readings: rows, TotalCount: total, Limit: limit, Offset: offset})
 }
 
 // DeleteMeterPoint godoc

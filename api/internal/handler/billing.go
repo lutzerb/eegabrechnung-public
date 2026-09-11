@@ -806,12 +806,28 @@ func (h *BillingHandler) ZipBillingRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	members, err := h.memberRepo.ListByEeg(r.Context(), eeg.ID)
+	if err != nil {
+		jsonError(w, "failed to list members", http.StatusInternalServerError)
+		return
+	}
+	memberByID := make(map[uuid.UUID]domain.Member, len(members))
+	for _, m := range members {
+		memberByID[m.ID] = m
+	}
+
+	digits := eeg.InvoiceNumberDigits
+	if digits <= 0 {
+		digits = 4
+	}
+
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"Rechnungen_%s.zip\"", runID.String()[:8]))
 
 	zw := zip.NewWriter(w)
 	defer zw.Close()
 
+	usedNames := make(map[string]int)
 	for _, inv := range invoices {
 		if inv.PdfPath == "" {
 			continue
@@ -822,14 +838,44 @@ func (h *BillingHandler) ZipBillingRun(w http.ResponseWriter, r *http.Request) {
 		}
 		nr := inv.ID.String()[:8]
 		if inv.InvoiceNumber != nil {
-			nr = fmt.Sprintf("%d", *inv.InvoiceNumber)
+			nr = fmt.Sprintf("%s%0*d", eeg.InvoiceNumberPrefix, digits, *inv.InvoiceNumber)
 		}
-		f, err := zw.Create(fmt.Sprintf("Rechnung_%s.pdf", nr))
+		nachname := ""
+		if m, ok := memberByID[inv.MemberID]; ok {
+			nachname = strings.TrimSpace(m.Name2)
+			if nachname == "" {
+				nachname = strings.TrimSpace(m.Name1)
+			}
+		}
+
+		name := sanitizeZipFilename(nr)
+		if nachname != "" {
+			name = fmt.Sprintf("%s-%s", name, sanitizeZipFilename(nachname))
+		}
+		if n := usedNames[name]; n > 0 {
+			usedNames[name] = n + 1
+			name = fmt.Sprintf("%s_%d", name, n+1)
+		} else {
+			usedNames[name] = 1
+		}
+
+		f, err := zw.Create(fmt.Sprintf("%s.pdf", name))
 		if err != nil {
 			continue
 		}
 		_, _ = f.Write(data)
 	}
+}
+
+// sanitizeZipFilename strips characters that are unsafe or awkward in a
+// downloaded filename (path separators, colons, quotes) while keeping the
+// name human-readable.
+func sanitizeZipFilename(s string) string {
+	replacer := strings.NewReplacer(
+		"/", "-", "\\", "-", ":", "-", "\"", "", "'", "",
+		"<", "", ">", "", "|", "-", "?", "", "*", "",
+	)
+	return strings.TrimSpace(replacer.Replace(s))
 }
 
 // ExportBillingRun godoc

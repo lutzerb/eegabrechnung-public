@@ -14,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
 	"github.com/lutzerb/eegabrechnung/internal/invoice"
+	"github.com/lutzerb/eegabrechnung/internal/mailutil"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
 )
 
@@ -385,7 +386,7 @@ func (s *Service) SendAll(ctx context.Context, eegID uuid.UUID, billingRunID *uu
 
 		invID := inv.ID
 		memID := member.ID
-		msgBytes, buildErr := invoice.BuildInvoiceMessage(smtpCfg.From, member.Email, inv, eeg, member, pdfData, eeg.PortalBaseURL)
+		msgBytes, buildErr := invoice.BuildInvoiceMessage(mailutil.FormatAddress(eeg.DisplayNameOrName(), smtpCfg.From), member.Email, inv, eeg, member, pdfData, eeg.PortalBaseURL)
 		if buildErr != nil {
 			result.Failed++
 			result.Errors = append(result.Errors, fmt.Sprintf("invoice %s (%s): build message: %v", inv.ID, member.Email, buildErr))

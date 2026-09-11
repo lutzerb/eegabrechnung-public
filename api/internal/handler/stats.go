@@ -179,3 +179,46 @@ func (h *StatsHandler) GetEDAMessageXML(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="eda-message-%s.xml"`, msgID))
 	w.Write([]byte(payload))
 }
+
+// GetEDAProcessMessages handles GET /api/v1/eegs/{eegID}/eda/processes/{processID}/messages
+// Returns the eda_messages tagged with this process (see EDAMessageRepository.ListByProcessID),
+// oldest first, for the "expand a process to see its messages" accordion on the EDA-Prozesse tab.
+//
+//	@Summary		List EDA messages for a single process
+//	@Description	Returns the messages the worker matched to this EDA process (via ConversationID or, for DATEN_CRMSG, Zählpunkt+period overlap), oldest first.
+//	@Tags			System
+//	@Produce		json
+//	@Param			eegID		path		string	true	"EEG UUID"
+//	@Param			processID	path		string	true	"EDA process UUID"
+//	@Success		200			{object}	map[string][]domain.EDAMessage
+//	@Failure		400			{object}	map[string]string
+//	@Failure		404			{object}	map[string]string
+//	@Failure		500			{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/eegs/{eegID}/eda/processes/{processID}/messages [get]
+func (h *StatsHandler) GetEDAProcessMessages(w http.ResponseWriter, r *http.Request) {
+	claims := auth.ClaimsFromContext(r.Context())
+	eegID, err := uuid.Parse(chi.URLParam(r, "eegID"))
+	if err != nil {
+		jsonError(w, "invalid EEG ID", http.StatusBadRequest)
+		return
+	}
+	if _, err := h.eegRepo.GetByID(r.Context(), eegID, claims.OrganizationID); err != nil {
+		jsonError(w, "EEG not found", http.StatusNotFound)
+		return
+	}
+	processID, err := uuid.Parse(chi.URLParam(r, "processID"))
+	if err != nil {
+		jsonError(w, "invalid process ID", http.StatusBadRequest)
+		return
+	}
+	msgs, err := h.edaMessageRepo.ListByProcessID(r.Context(), eegID, processID)
+	if err != nil {
+		jsonError(w, "failed to list EDA process messages", http.StatusInternalServerError)
+		return
+	}
+	if msgs == nil {
+		msgs = []domain.EDAMessage{}
+	}
+	jsonOK(w, map[string][]domain.EDAMessage{"messages": msgs})
+}

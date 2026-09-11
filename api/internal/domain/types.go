@@ -27,19 +27,20 @@ type User struct {
 
 // EDAMessage represents an EDA protocol message.
 type EDAMessage struct {
-	ID          uuid.UUID  `json:"id"`
-	MessageID   string     `json:"message_id"` // external message-id from MaKo header
-	Direction   string     `json:"direction"`
-	Process     string     `json:"process"` // EDA process code, e.g. EC_EINZEL_ANM, DATEN_CRMSG
-	MessageType string     `json:"message_type"`
-	Subject     string     `json:"subject"`
-	Body        string     `json:"body,omitempty"`         // plain-text email body (MAIL transport)
-	FromAddress string     `json:"from_address,omitempty"` // sender EDA address
-	ToAddress   string     `json:"to_address,omitempty"`   // recipient EDA address
-	Status      string     `json:"status"`                 // pending | sent | ack | error | processed
-	ErrorMsg    string     `json:"error_msg,omitempty"`
-	ProcessedAt *time.Time `json:"processed_at,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
+	ID           uuid.UUID  `json:"id"`
+	MessageID    string     `json:"message_id"` // external message-id from MaKo header
+	Direction    string     `json:"direction"`
+	Process      string     `json:"process"` // EDA process code, e.g. EC_EINZEL_ANM, DATEN_CRMSG
+	MessageType  string     `json:"message_type"`
+	Subject      string     `json:"subject"`
+	Body         string     `json:"body,omitempty"`         // plain-text email body (MAIL transport)
+	FromAddress  string     `json:"from_address,omitempty"` // sender EDA address
+	ToAddress    string     `json:"to_address,omitempty"`   // recipient EDA address
+	Status       string     `json:"status"`                 // pending | sent | ack | error | processed
+	ErrorMsg     string     `json:"error_msg,omitempty"`
+	ProcessedAt  *time.Time `json:"processed_at,omitempty"`
+	CreatedAt    time.Time  `json:"created_at"`
+	EDAProcessID *uuid.UUID `json:"eda_process_id,omitempty"` // links to the originating eda_processes row, when matched
 }
 
 // EEGStats holds aggregate statistics for an EEG.
@@ -93,6 +94,12 @@ type EEG struct {
 	InvoicePreText                 string  `json:"invoice_pre_text"`
 	InvoicePostText                string  `json:"invoice_post_text"`
 	InvoiceFooterText              string  `json:"invoice_footer_text"`
+	// How InvoiceFooterText is rendered by the "individuell" design (pdf_theme.go):
+	// "inline" (default) draws it once after the content, on whichever page that
+	// lands on — "page" registers it as a real fpdf page footer, repeated at a fixed
+	// position at the bottom of every page. Ignored by the standard design, which
+	// always renders the footer inline.
+	InvoiceFooterMode string `json:"invoice_footer_mode"`
 	// Controls the "Zahlungshinweis" paragraph on consumer invoices (and, when not
 	// "none", the Gutschrift's "Auszahlung" paragraph too): sepa_lastschrift
 	// (default) | ueberweisung | custom | none
@@ -187,6 +194,11 @@ type EEG struct {
 	EnergyImbalanceThresholdPromille float64 `json:"energy_imbalance_threshold_promille"`
 	// Portal: whether to show full energy data (total consumption/generation) in the member portal
 	PortalShowFullEnergy bool `json:"portal_show_full_energy"`
+	// Portal: whether to show EEG-wide community statistics ("Übersicht Gemeinschaft": total
+	// generation, Autarkiegrad, Eigenverbrauchsanteil, community consumption breakdown) in the
+	// member portal. Distinct from PortalShowFullEnergy, which only affects a member's OWN
+	// totals. Default false (opt-in) — see migration 117.
+	PortalShowCommunityStats bool `json:"portal_show_community_stats"`
 	// Invoice visual design: "standard" (default fpdf layout) or "individuell" (alternate
 	// Oikos-style layout, see internal/invoice/pdf_theme.go). The four fields below are only
 	// applied when InvoiceDesign == "individuell".

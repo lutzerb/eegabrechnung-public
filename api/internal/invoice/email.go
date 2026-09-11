@@ -49,7 +49,7 @@ func BuildInvoiceMessage(from, toEmail string, inv *domain.Invoice, eeg *domain.
 
 // SendInvoice sends the invoice PDF to the member's email address and logs the attempt.
 func SendInvoice(ctx context.Context, logger EmailLogger, cfg SMTPConfig, member *domain.Member, eeg *domain.EEG, inv *domain.Invoice, pdfData []byte, webBaseURL string) error {
-	msgBytes, err := BuildInvoiceMessage(cfg.From, member.Email, inv, eeg, member, pdfData, webBaseURL)
+	msgBytes, err := BuildInvoiceMessage(mailutil.FormatAddress(eeg.DisplayNameOrName(), cfg.From), member.Email, inv, eeg, member, pdfData, webBaseURL)
 	if err != nil {
 		return fmt.Errorf("build mime message: %w", err)
 	}

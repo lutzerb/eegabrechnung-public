@@ -11,7 +11,7 @@ import (
 	"github.com/lutzerb/eegabrechnung/internal/repository"
 )
 
-var validGranularities = map[string]bool{"day": true, "month": true, "year": true, "15min": true}
+var validGranularities = map[string]bool{"day": true, "month": true, "quarter": true, "year": true, "15min": true}
 
 var viennaLoc = func() *time.Location {
 	loc, err := time.LoadLocation("Europe/Vienna")

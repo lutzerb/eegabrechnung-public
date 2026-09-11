@@ -26,6 +26,7 @@ export interface EEG {
   invoice_pre_text: string;
   invoice_post_text: string;
   invoice_footer_text: string;
+  invoice_footer_mode?: string; // "individuell" design only: inline (default, once after content) | page (fixed on every page)
   invoice_payment_notice_mode: string; // sepa_lastschrift | ueberweisung | custom | none
   invoice_payment_notice_text: string; // used when invoice_payment_notice_mode === "custom"; placeholders: {betrag} {iban} {eeg_iban} {eeg_bic} {datum}
   fee_billing_mode: string; // per_month | per_invoice
@@ -69,6 +70,7 @@ export interface EEG {
   energy_imbalance_threshold_promille?: number; // ‰, default 1
   // Member portal
   portal_show_full_energy?: boolean;
+  portal_show_community_stats?: boolean;
   // Invoice visual design ("standard" | "individuell")
   invoice_design?: string;
   invoice_accent_color?: string; // hex, e.g. "#c9b89a"
@@ -186,6 +188,7 @@ export interface UpdateEEGRequest {
   invoice_pre_text?: string;
   invoice_post_text?: string;
   invoice_footer_text?: string;
+  invoice_footer_mode?: string;
   invoice_payment_notice_mode?: string;
   invoice_payment_notice_text?: string;
   fee_billing_mode?: string;
@@ -237,6 +240,7 @@ export interface UpdateEEGRequest {
   energy_imbalance_threshold_promille?: number;
   // Member portal
   portal_show_full_energy?: boolean;
+  portal_show_community_stats?: boolean;
   // Invoice visual design
   invoice_design?: string;
   invoice_accent_color?: string;
@@ -1057,6 +1061,7 @@ export interface EDAMessage {
   error_msg?: string;
   processed_at?: string;
   created_at: string;
+  eda_process_id?: string;
 }
 
 export interface EDAMessageListResponse {

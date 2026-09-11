@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { eegDisplayName } from "@/lib/eeg-display-name";
 
 const PortalEnergyChart = dynamic(() => import("./PortalEnergyChart"), { ssr: false });
+const PortalCommunityStats = dynamic(() => import("./PortalCommunityStats"), { ssr: false });
 
 const MONTHS = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
 
@@ -120,12 +121,13 @@ interface Props {
   documents: PortalDocument[];
   meterPoints: MeterPoint[];
   showFullEnergy: boolean;
+  showCommunityStats: boolean;
   hasPassword: boolean;
   referral: ReferralInfo | null;
 }
 
-export default function PortalDashboardClient({ member, eeg, invoices, documents, meterPoints, showFullEnergy, hasPassword, referral }: Props) {
-  const [activeTab, setActiveTab] = useState<"energy" | "invoices" | "downloads" | "zaehlpunkte" | "werben" | "profil">("energy");
+export default function PortalDashboardClient({ member, eeg, invoices, documents, meterPoints, showFullEnergy, showCommunityStats, hasPassword, referral }: Props) {
+  const [activeTab, setActiveTab] = useState<"energy" | "community" | "invoices" | "downloads" | "zaehlpunkte" | "werben" | "profil">("energy");
   const [linkCopied, setLinkCopied] = useState(false);
   const [currentIban, setCurrentIban] = useState(member.iban || "");
   const [editingIban, setEditingIban] = useState(false);
@@ -421,7 +423,7 @@ export default function PortalDashboardClient({ member, eeg, invoices, documents
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
       <header className="bg-white border-b border-slate-200 px-4 sm:px-8 py-4">
-        <div className="max-w-4xl mx-auto flex items-center justify-between">
+        <div className="max-w-6xl mx-auto flex items-center justify-between">
           <div>
             <p className="text-xs text-slate-500">{eegDisplayName(eeg)}</p>
             <h1 className="text-lg font-bold text-slate-900">{memberName}</h1>
@@ -438,7 +440,7 @@ export default function PortalDashboardClient({ member, eeg, invoices, documents
         </div>
       </header>
 
-      <div className="max-w-4xl mx-auto px-4 sm:px-8 py-6">
+      <div className="max-w-6xl mx-auto px-4 sm:px-8 py-6">
         {/* Tabs */}
         <div className="flex gap-1 mb-6 bg-slate-100 rounded-lg p-1 w-fit">
           <button
@@ -449,6 +451,16 @@ export default function PortalDashboardClient({ member, eeg, invoices, documents
           >
             Energiedaten
           </button>
+          {showCommunityStats && (
+            <button
+              onClick={() => setActiveTab("community")}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                activeTab === "community" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              Gemeinschaft
+            </button>
+          )}
           <button
             onClick={() => setActiveTab("invoices")}
             className={`px-4 py-1.5 text-sm font-medium rounded-md transition-colors ${
@@ -645,6 +657,13 @@ export default function PortalDashboardClient({ member, eeg, invoices, documents
                 </div>
               </>
             )}
+          </div>
+        )}
+
+        {/* Community Tab */}
+        {activeTab === "community" && showCommunityStats && (
+          <div className="space-y-4">
+            <PortalCommunityStats />
           </div>
         )}
 

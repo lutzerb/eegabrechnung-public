@@ -134,7 +134,7 @@ func (w *Worker) reprocessPendingCRMsgs(ctx context.Context) {
 			Process:    types.ProcessCRMsg,
 			XMLPayload: pm.Body,
 		}
-		eegID, err := w.processCRMsg(ctx, msg)
+		eegID, err := w.processCRMsg(ctx, pm.ID, msg)
 		if err != nil {
 			w.log.Error("reprocess: CR_MSG failed", "id", pm.ID, "error", err)
 			if markErr := w.edaMsgRepo.MarkError(ctx, pm.ID, err.Error()); markErr != nil {
@@ -337,7 +337,7 @@ func (w *Worker) processInboundMessages(ctx context.Context, msgs []*types.Messa
 
 		switch {
 		case msg.Process == ProcessCRMsg:
-			eegID, err := w.processCRMsg(ctx, msg)
+			eegID, err := w.processCRMsg(ctx, msgID, msg)
 			if err != nil {
 				w.log.Error("CR_MSG energy import failed",
 					"message_id", msg.ID,
@@ -370,7 +370,7 @@ func (w *Worker) processInboundMessages(ctx context.Context, msgs []*types.Messa
 				)
 			}
 		case edaxml.IsCPDocument(msg.XMLPayload):
-			eegID, err := w.processCPDocument(ctx, msg)
+			eegID, err := w.processCPDocument(ctx, msgID, msg)
 			if err != nil {
 				w.log.Error("CPDocument processing failed",
 					"message_id", msg.ID,
@@ -495,7 +495,7 @@ func (w *Worker) processInboundMessages(ctx context.Context, msgs []*types.Messa
 				w.log.Warn("failed to mark EDASendError as processed", "id", msgID, "error", err)
 			}
 		case edaxml.IsCMRevoke(msg.XMLPayload):
-			eegID, err := w.processCMRevoke(ctx, msg)
+			eegID, err := w.processCMRevoke(ctx, msgID, msg)
 			if err != nil {
 				w.log.Error("CMRevoke processing failed",
 					"message_id", msg.ID,
@@ -682,7 +682,7 @@ func (w *Worker) storeInboundMessage(ctx context.Context, msg *types.Message) (u
 
 // processCRMsg parses a ConsumptionRecord XML message and stores the energy
 // readings in the energy_readings table. Returns the EEG ID if determinable.
-func (w *Worker) processCRMsg(ctx context.Context, msg *types.Message) (uuid.UUID, error) {
+func (w *Worker) processCRMsg(ctx context.Context, msgID uuid.UUID, msg *types.Message) (uuid.UUID, error) {
 	record, err := edaxml.ParseCRMsg(msg.XMLPayload)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("parse CR_MSG XML: %w", err)
@@ -698,32 +698,26 @@ func (w *Worker) processCRMsg(ctx context.Context, msg *types.Message) (uuid.UUI
 		return uuid.Nil, fmt.Errorf("CR_MSG has no MeteringPoint (Zählpunkt)")
 	}
 
-	// Enforce transition date: skip blocks that predate it.
+	// Enforce transition date: skip individual readings that predate it.
 	// The DB stores eda_transition_date as a bare date (e.g. 2026-04-07), which pgx
 	// loads as midnight UTC. EDA period starts are in Vienna local time (UTC+1/+2).
 	// Re-interpret the date as Vienna midnight so that e.g. April 7 00:00 Vienna
 	// (= April 6 22:00 UTC) is not incorrectly filtered when transition = April 7.
+	//
+	// Filtering happens per reading timestamp, not per block: a block's PeriodStart
+	// only marks where the block begins, but a block commonly spans several days
+	// (e.g. a week), so a block that starts before the transition date can still
+	// contain individual intervals on/after it. Dropping the whole block would
+	// silently discard those legitimately-post-transition readings too.
 	var knownEegID uuid.UUID
+	var transitionVienna time.Time
 	if record.GemeinschaftID != "" {
 		eeg, lookupErr := w.eegRepo.GetByGemeinschaftID(ctx, record.GemeinschaftID)
 		if lookupErr == nil {
 			knownEegID = eeg.ID
 			if eeg.EdaTransitionDate != nil {
 				td := *eeg.EdaTransitionDate
-				transitionVienna := time.Date(td.Year(), td.Month(), td.Day(), 0, 0, 0, 0, viennaLoc)
-				filtered := record.Energies[:0]
-				for _, energy := range record.Energies {
-					if energy.PeriodStart.Before(transitionVienna) {
-						w.log.Warn("CR_MSG block predates EDA transition date — skipping",
-							"zaehlpunkt", record.Zaehlpunkt,
-							"period_start", energy.PeriodStart,
-							"transition_date_vienna", transitionVienna,
-						)
-						continue
-					}
-					filtered = append(filtered, energy)
-				}
-				record.Energies = filtered
+				transitionVienna = time.Date(td.Year(), td.Month(), td.Day(), 0, 0, 0, 0, viennaLoc)
 			}
 		}
 	}
@@ -792,7 +786,7 @@ func (w *Worker) processCRMsg(ctx context.Context, msg *types.Message) (uuid.UUI
 		return resolved.ID, true
 	}
 
-	readings := buildReadingsFromCRMsg(resolve, record)
+	readings := buildReadingsFromCRMsg(resolve, record, transitionVienna)
 	if len(readings) == 0 {
 		w.log.Info("CR_MSG produced no energy readings", "zaehlpunkt", record.Zaehlpunkt)
 	} else {
@@ -806,22 +800,39 @@ func (w *Worker) processCRMsg(ctx context.Context, msg *types.Message) (uuid.UUI
 		)
 	}
 
-	// Always mark the corresponding CR_REQ_PT process as completed when a DATEN_CRMSG
-	// arrives — even if all readings were filtered by the transition date.
-	// Edanet does not echo our ConversationID in the response, so we match by
-	// Zählpunkt — scoped to the resolved EEG, because with Mehrfachteilnahme the
-	// same Zählpunkt can have open CR_REQ_PT processes in two EEGs.
+	// Mark the corresponding CR_REQ_PT process as completed when a DATEN_CRMSG
+	// arrives for its Zählpunkt — but only if this message's own period actually
+	// overlaps the requested range. Edanet does not echo our ConversationID in the
+	// response, so we match by Zählpunkt scoped to the resolved EEG (Mehrfachteilnahme
+	// can have open CR_REQ_PT processes for the same Zählpunkt in two EEGs); without
+	// the overlap check, a routine daily push for unrelated recent dates that happens
+	// to arrive before the real historical answer would wrongly close out the request,
+	// leaving the actually-requested data silently undelivered.
 	if proc, err := w.edaProcRepo.FindSentReqPTByZaehlpunkt(ctx, knownEegID, record.Zaehlpunkt); err == nil {
-		now := time.Now().UTC()
-		if upErr := w.edaProcRepo.UpdateStatus(ctx, proc.ID, "completed", &now, ""); upErr != nil {
-			w.log.Warn("CR_MSG: failed to mark CR_REQ_PT process completed",
-				"zaehlpunkt", record.Zaehlpunkt,
-				"error", upErr,
-			)
+		if proc.ValidFrom == nil || proc.DateTo == nil || crMsgOverlapsRange(record, *proc.ValidFrom, *proc.DateTo) {
+			now := time.Now().UTC()
+			if upErr := w.edaProcRepo.UpdateStatus(ctx, proc.ID, "completed", &now, ""); upErr != nil {
+				w.log.Warn("CR_MSG: failed to mark CR_REQ_PT process completed",
+					"zaehlpunkt", record.Zaehlpunkt,
+					"error", upErr,
+				)
+			} else {
+				w.log.Info("CR_MSG: CR_REQ_PT process marked completed",
+					"zaehlpunkt", record.Zaehlpunkt,
+					"process_id", proc.ID,
+				)
+			}
+			// Tag the message so it shows up under this process in the EDA-Prozesse UI —
+			// only for the overlapping message, same reasoning as the completion check above.
+			if upErr := w.edaMsgRepo.UpdateProcessID(ctx, msgID, proc.ID); upErr != nil {
+				w.log.Warn("CR_MSG: failed to set eda_process_id", "id", msgID, "process_id", proc.ID, "error", upErr)
+			}
 		} else {
-			w.log.Info("CR_MSG: CR_REQ_PT process marked completed",
+			w.log.Info("CR_MSG: message period does not overlap open CR_REQ_PT request — leaving it in 'sent' status",
 				"zaehlpunkt", record.Zaehlpunkt,
 				"process_id", proc.ID,
+				"requested_from", *proc.ValidFrom,
+				"requested_to", *proc.DateTo,
 			)
 		}
 	}
@@ -844,14 +855,21 @@ func (w *Worker) processCRMsg(ctx context.Context, msg *types.Message) (uuid.UUI
 // OBIS mapping per schema 01.41 (ebutilities.at, December 2023):
 //
 //	Consumption meter (Bezugs-ZP, 1.9.0):
-//	  G.01 / G.01T → wh_total     Gesamtbezug; G.01T (× Teilnahmefaktor) wins over G.01
+//	  G.01         → wh_total     Gesamtbezug — G.01T is ignored entirely: some
+//	                               Netzbetreiber report it as a persistent 0 while
+//	                               the real total is only in plain G.01 (observed
+//	                               2026-09-04, AT0082300807...19832).
 //	  G.02         → wh_community  Zuteilung (kann > Bezug sein — informational only)
 //	  G.03 / G.03R → wh_self      Eigendeckung = tatsächlich bezogener EEG-Anteil
 //
 //	Generation meter (Einspeise-ZP, 2.9.0):
-//	  G.01 / G.01T → wh_total     Gesamterzeugung; G.01T (× Teilnahmefaktor) wins over G.01
+//	  G.01         → wh_total     Gesamterzeugung — always the plain (unscaled) total,
+//	                               same as consumption. G.01T is NOT used for wh_total.
+//	  G.01T        → (scratch)    Teilnahmefaktor-scaled total, used only as the basis
+//	                               for wh_community below; falls back to G.01 if no
+//	                               G.01T is present in the message.
 //	  P.01T        → residual     Restnetzüberschuss (Resteinspeisung ins öffentliche Netz)
-//	                 → wh_community = wh_total − P.01T  (Einspeisung in EEG)
+//	                 → wh_community = (G.01T, or G.01 if absent) − P.01T  (Einspeisung in EEG)
 //	                 → wh_self     = P.01T              (Resteinspeisung)
 //
 //	Old schema (≤01.30):
@@ -887,6 +905,17 @@ func worseQuality(a, b string) bool {
 	return rank(a) < rank(b)
 }
 
+// crMsgOverlapsRange reports whether any Energy block in the record covers at least
+// part of [from, to) (to is exclusive, matching the CR_REQ_PT request convention).
+func crMsgOverlapsRange(record *edaxml.CRMsgRecord, from, to time.Time) bool {
+	for _, block := range record.Energies {
+		if block.PeriodStart.Before(to) && block.PeriodEnd.After(from) {
+			return true
+		}
+	}
+	return false
+}
+
 // detectSchemaDirection inspects the OBIS MeterCodes in a parsed CR_MSG record and returns
 // which Energierichtung they imply — independent of what any particular Zählpunkt is stored
 // as in our own database. G.02/G.03/G.03R are inherently consumption-meter codes (per the
@@ -919,17 +948,31 @@ func detectSchemaDirection(record *edaxml.CRMsgRecord) string {
 	}
 }
 
-func buildReadingsFromCRMsg(resolve func(ts time.Time) (uuid.UUID, bool), record *edaxml.CRMsgRecord) []domain.EnergyReading {
+// transitionAt: zero value means no transition-date filtering; otherwise positions
+// with ts before transitionAt are skipped (see the transition-date comment in processCRMsg).
+func buildReadingsFromCRMsg(resolve func(ts time.Time) (uuid.UUID, bool), record *edaxml.CRMsgRecord, transitionAt time.Time) []domain.EnergyReading {
 	type accReading struct {
 		domain.EnergyReading
 		residual       float64 // P.01T scratch: Restnetzüberschuss (generation 01.41 only)
 		hasResidual    bool
-		hasOldGenComm  bool // true when old-schema 2.9.0 P.01 set wh_community (generation meter)
-		hasScaledTotal bool // true when G.01T set wh_total — plain G.01 must not overwrite it
+		hasOldGenComm  bool    // true when old-schema 2.9.0 P.01 set wh_community (generation meter)
+		scaledTotal    float64 // generation G.01T scratch: basis for wh_community, NOT wh_total
+		hasScaledTotal bool
 	}
 
 	byTS := map[time.Time]*accReading{}
 	skippedTS := map[time.Time]bool{}
+	if !transitionAt.IsZero() {
+		for _, block := range record.Energies {
+			for _, ed := range block.Data {
+				for _, pos := range ed.Positions {
+					if pos.From.Before(transitionAt) {
+						skippedTS[pos.From] = true
+					}
+				}
+			}
+		}
+	}
 
 	for _, block := range record.Energies {
 		for _, ed := range block.Data {
@@ -952,11 +995,17 @@ func buildReadingsFromCRMsg(resolve func(ts time.Time) (uuid.UUID, bool), record
 			// G.02: allocated EEG energy (consumption only, can exceed actual consumption).
 			// Same note: 2.9.0 prefix on consumption meter — do NOT gate on isConsumptionDir.
 			isAllocation := strings.Contains(mc, "G.02")
-			// G.01T: total × Teilnahmefaktor. On Mehrfachteilnahme meters the NB sends
-			// BOTH G.01 (100% of the plant) and G.01T (scaled to this community's share)
-			// in arbitrary document order — G.01T must win regardless of position.
+			// G.01T: total × Teilnahmefaktor (Mehrfachteilnahme-scaled). Never sets
+			// wh_total — that is always plain G.01 (some Netzbetreiber report G.01T
+			// as a persistent 0 on the consumption side while G.01 has the real
+			// total, observed 2026-09-04, AT0082300807...19832).
+			// On generation meters G.01T is still captured as a scratch value: it's
+			// the basis for wh_community = G.01T − P.01T further down, since both
+			// must be on the same (community-scaled) basis — using the unscaled
+			// G.01 there would overstate wh_community for meters with
+			// Mehrfachteilnahme/participation <100%. Falls back to G.01 if no
+			// G.01T is present at all.
 			isScaledTotal := strings.Contains(mc, "G.01T")
-			isPlainTotal := strings.Contains(mc, "G.01") && !isScaledTotal
 
 			for _, pos := range ed.Positions {
 				ts := pos.From
@@ -1012,17 +1061,17 @@ func buildReadingsFromCRMsg(resolve func(ts time.Time) (uuid.UUID, bool), record
 					// Old schema 1.9.0 P.01: EEG share consumed → wh_self.
 					r.WhSelf = pos.Value
 
-				case isScaledTotal:
-					// G.01T: Gesamtbezug/-erzeugung × Teilnahmefaktor → wh_total.
-					r.WhTotal = pos.Value
+				case isScaledTotal && isGenerationDir:
+					// Generation G.01T: scratch only — see comment above. Does NOT
+					// set wh_total.
+					r.scaledTotal = pos.Value
 					r.hasScaledTotal = true
 
-				case isPlainTotal && r.hasScaledTotal:
-					// G.01 (100% plant total) alongside G.01T: ignore — the scaled
-					// value is the community's share and must not be overwritten.
+				case isScaledTotal:
+					// Consumption G.01T: ignored — see comment above.
 
 				default:
-					// G.01 without G.01T, or codes without suffix: total → wh_total.
+					// G.01 (either direction), or codes without suffix: total → wh_total.
 					r.WhTotal = pos.Value
 				}
 			}
@@ -1034,8 +1083,14 @@ func buildReadingsFromCRMsg(resolve func(ts time.Time) (uuid.UUID, bool), record
 		r := &acc.EnergyReading
 		if acc.hasResidual {
 			// Generation 01.41: derive Einspeisung in EEG and Resteinspeisung.
-			if r.WhTotal > acc.residual {
-				r.WhCommunity = r.WhTotal - acc.residual
+			// Basis is the Teilnahmefaktor-scaled G.01T when present (same scaled
+			// basis as P.01T), falling back to the plain G.01 total otherwise.
+			basis := r.WhTotal
+			if acc.hasScaledTotal {
+				basis = acc.scaledTotal
+			}
+			if basis > acc.residual {
+				r.WhCommunity = basis - acc.residual
 			}
 			r.WhSelf = acc.residual
 		} else if acc.hasOldGenComm && r.WhTotal > 0 && r.WhCommunity > 0 && r.WhTotal > r.WhCommunity {
@@ -1051,7 +1106,7 @@ func buildReadingsFromCRMsg(resolve func(ts time.Time) (uuid.UUID, bool), record
 // processCPDocument handles an incoming CPDocument confirmation from the Netzbetreiber,
 // matching it to the open EDA process via ConversationID and updating its status.
 // Returns the EEG ID of the matched process so the caller can tag the stored message.
-func (w *Worker) processCPDocument(ctx context.Context, msg *types.Message) (uuid.UUID, error) {
+func (w *Worker) processCPDocument(ctx context.Context, msgID uuid.UUID, msg *types.Message) (uuid.UUID, error) {
 	result, err := edaxml.ParseCPDocument(msg.XMLPayload)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("parse CPDocument: %w", err)
@@ -1072,6 +1127,10 @@ func (w *Worker) processCPDocument(ctx context.Context, msg *types.Message) (uui
 			"message_code", result.MessageCode,
 		)
 		return uuid.Nil, nil
+	}
+
+	if err := w.edaMsgRepo.UpdateProcessID(ctx, msgID, proc.ID); err != nil {
+		w.log.Warn("CPDocument: failed to set eda_process_id", "id", msgID, "process_id", proc.ID, "error", err)
 	}
 
 	// Map EDA MessageCode to internal process status.
@@ -1175,6 +1234,10 @@ func (w *Worker) processCMNotification(ctx context.Context, msgID uuid.UUID, msg
 		return uuid.Nil, nil
 	}
 
+	if err := w.edaMsgRepo.UpdateProcessID(ctx, msgID, proc.ID); err != nil {
+		w.log.Warn("CMNotification: failed to set eda_process_id", "id", msgID, "process_id", proc.ID, "error", err)
+	}
+
 	// Persist response codes, meter owner name and portal URL for all CMNotification types.
 	meterOwnerName := result.CustomerName1
 	if result.CustomerName2 != "" {
@@ -1227,6 +1290,14 @@ func (w *Worker) processCMNotification(ctx context.Context, msgID uuid.UUID, msg
 	case "ABLEHNUNG_ECON":
 		newStatus = "rejected"
 		errMsg = fmt.Sprintf("ABLEHNUNG_ECON response_codes=%v", result.ResponseCodes)
+		// Advance onboarding status so the 72h "Datenfreigabe ausstehend" reminder no longer
+		// fires — the NB rejected the registration, the member was never waiting to confirm.
+		if proc.ProcessType == "EC_REQ_ONL" && proc.MeterPointID != nil && *proc.MeterPointID != uuid.Nil {
+			if err := w.onboardingRepo.SetEDARejectedByMeterPoint(ctx, *proc.MeterPointID); err != nil {
+				w.log.Warn("failed to advance onboarding status after ABLEHNUNG_ECON",
+					"meter_point_id", *proc.MeterPointID, "error", err)
+			}
+		}
 	case "AUFHEBUNG_CCMS_OK":
 		// CM_REV_SP confirmed — consent revocation acknowledged by NB.
 		newStatus = "completed"
@@ -1343,6 +1414,9 @@ func (w *Worker) processECMPList(ctx context.Context, msgID uuid.UUID, msg *type
 		if convID != "" {
 			proc, lookupErr := w.edaProcRepo.GetByConversationID(ctx, convID)
 			if lookupErr == nil && proc.ProcessType == "EC_PODLIST" {
+				if err := w.edaMsgRepo.UpdateProcessID(ctx, msgID, proc.ID); err != nil {
+					w.log.Warn("SENDEN_ECP: failed to set eda_process_id", "id", msgID, "process_id", proc.ID, "error", err)
+				}
 				newStatus := "completed"
 				if err := w.edaProcRepo.UpdateStatus(ctx, proc.ID, newStatus, nil, ""); err != nil {
 					w.log.Warn("failed to complete EC_PODLIST process",
@@ -1390,6 +1464,10 @@ func (w *Worker) processECMPList(ctx context.Context, msgID uuid.UUID, msg *type
 			"message_code", result.MessageCode,
 		)
 		return uuid.Nil, nil
+	}
+
+	if err := w.edaMsgRepo.UpdateProcessID(ctx, msgID, proc.ID); err != nil {
+		w.log.Warn("ECMPList: failed to set eda_process_id", "id", msgID, "process_id", proc.ID, "error", err)
 	}
 
 	now := time.Now().UTC()
@@ -1859,7 +1937,7 @@ func (w *Worker) reserveSMTPSlot(ctx context.Context, key string) error {
 // back to matching the meter point directly by Zählpunkt + ConsentId — see
 // processCMRevokeUnsolicited.
 // Returns the EEG ID so the caller can tag the stored message.
-func (w *Worker) processCMRevoke(ctx context.Context, msg *types.Message) (uuid.UUID, error) {
+func (w *Worker) processCMRevoke(ctx context.Context, msgID uuid.UUID, msg *types.Message) (uuid.UUID, error) {
 	result, err := edaxml.ParseCMRevoke(msg.XMLPayload)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("parse CMRevoke: %w", err)
@@ -1893,6 +1971,10 @@ func (w *Worker) processCMRevoke(ctx context.Context, msg *types.Message) (uuid.
 		// Netzbetreiber (e.g. Zählpunkt-Lieferantenwechsel), not a confirmation of our
 		// own CM_REV_SP. Fall back to matching the meter point directly.
 		return w.processCMRevokeUnsolicited(ctx, result, isIMP)
+	}
+
+	if err := w.edaMsgRepo.UpdateProcessID(ctx, msgID, proc.ID); err != nil {
+		w.log.Warn("CMRevoke: failed to set eda_process_id", "id", msgID, "process_id", proc.ID, "error", err)
 	}
 
 	now := time.Now().UTC()
@@ -2046,7 +2128,7 @@ func (w *Worker) sendEDAErrorNotification(ctx context.Context, proc *domain.EDAP
 </html>`, eeg.DisplayNameOrName(), proc.ProcessType, proc.Zaehlpunkt, proc.Status, errDetails, proc.ID)
 
 	var msgBuilder strings.Builder
-	msgBuilder.WriteString(mailutil.Headers(eeg.SMTPFrom, eeg.SMTPFrom, subject))
+	msgBuilder.WriteString(mailutil.Headers(mailutil.FormatAddress(eeg.DisplayNameOrName(), eeg.SMTPFrom), eeg.SMTPFrom, subject))
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
 	msgBuilder.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msgBuilder.WriteString("\r\n")
@@ -2128,7 +2210,7 @@ func (w *Worker) notifyDirectionMismatch(ctx context.Context, mp *domain.MeterPo
 	}(), mp.Energierichtung, detectedDirection)
 
 	var msgBuilder strings.Builder
-	msgBuilder.WriteString(mailutil.Headers(eeg.SMTPFrom, eeg.SMTPFrom, subject))
+	msgBuilder.WriteString(mailutil.Headers(mailutil.FormatAddress(eeg.DisplayNameOrName(), eeg.SMTPFrom), eeg.SMTPFrom, subject))
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
 	msgBuilder.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msgBuilder.WriteString("\r\n")
@@ -2212,7 +2294,7 @@ func (w *Worker) sendSmartmeterInfoEmail(ctx context.Context, proc *domain.EDAPr
 </html>`, memberName, proc.Zaehlpunkt, eeg.DisplayNameOrName(), portalSection, eeg.DisplayNameOrName())
 
 	var msgBuilder strings.Builder
-	msgBuilder.WriteString(mailutil.Headers(eeg.SMTPFrom, member.Email, subject))
+	msgBuilder.WriteString(mailutil.Headers(mailutil.FormatAddress(eeg.DisplayNameOrName(), eeg.SMTPFrom), member.Email, subject))
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
 	msgBuilder.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msgBuilder.WriteString("\r\n")
@@ -2309,7 +2391,7 @@ func (w *Worker) sendAnmeldungConfirmationEmail(ctx context.Context, meterPointI
 </html>`, member.Name1, zaehlpunkt, eeg.DisplayNameOrName(), dateLine, portalSection)
 
 	var msgBuilder strings.Builder
-	msgBuilder.WriteString(mailutil.Headers(eeg.SMTPFrom, member.Email, subject))
+	msgBuilder.WriteString(mailutil.Headers(mailutil.FormatAddress(eeg.DisplayNameOrName(), eeg.SMTPFrom), member.Email, subject))
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
 	msgBuilder.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msgBuilder.WriteString("\r\n")

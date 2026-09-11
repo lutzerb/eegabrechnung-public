@@ -59,6 +59,7 @@ function StatusBadge({ status }: { status: string }) {
     rejected: { label: "Abgelehnt", cls: "bg-red-100 text-red-800" },
     converted: { label: "Aufgenommen", cls: "bg-green-100 text-green-800" },
     eda_sent: { label: "EDA gesendet", cls: "bg-blue-100 text-blue-800" },
+    eda_rejected: { label: "EDA abgelehnt", cls: "bg-red-100 text-red-800" },
     active: { label: "Aktiv", cls: "bg-green-100 text-green-800" },
   };
   const cfg = map[status] || {
@@ -104,6 +105,7 @@ const STATUS_FILTERS = [
   { value: "approved", label: "Genehmigt" },
   { value: "converted", label: "Aufgenommen" },
   { value: "eda_sent", label: "EDA gesendet" },
+  { value: "eda_rejected", label: "EDA abgelehnt" },
   { value: "active", label: "Aktiv" },
   { value: "rejected", label: "Abgelehnt" },
   { value: "alle", label: "Alle" },
@@ -144,13 +146,6 @@ export default async function OnboardingAdminPage({ params, searchParams }: Prop
     {} as Record<string, number>
   );
 
-  const onboardingURL =
-    typeof window !== "undefined"
-      ? `${window.location.origin}/onboarding/${eegId}`
-      : `/onboarding/${eegId}`;
-  // We use a placeholder that will be resolved client-side via CopyLinkButton
-  const publicURL = `[Basis-URL]/onboarding/${eegId}`;
-
   return (
     <div className="p-8">
       {/* Breadcrumb */}
@@ -176,7 +171,7 @@ export default async function OnboardingAdminPage({ params, searchParams }: Prop
         </div>
         <div className="flex items-center gap-3">
           <div className="flex gap-2 text-xs text-slate-500">
-            {Object.entries({ admin_created: "Ausstehend", pending: "In Prüfung", approved: "Genehmigt", converted: "Aufgenommen", eda_sent: "EDA gesendet", active: "Aktiv" }).map(([s, l]) =>
+            {Object.entries({ admin_created: "Ausstehend", pending: "In Prüfung", approved: "Genehmigt", converted: "Aufgenommen", eda_sent: "EDA gesendet", eda_rejected: "EDA abgelehnt", active: "Aktiv" }).map(([s, l]) =>
               counts[s] ? (
                 <span key={s} className="bg-slate-100 px-2 py-1 rounded">
                   {l}: <strong>{counts[s]}</strong>

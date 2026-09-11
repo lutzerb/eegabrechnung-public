@@ -41,6 +41,7 @@ export default async function PortalDashboardPage() {
       documents={documentsData || []}
       meterPoints={meterPointsData || []}
       showFullEnergy={meData.eeg?.portal_show_full_energy !== false}
+      showCommunityStats={meData.eeg?.portal_show_community_stats === true}
       hasPassword={meData.has_password === true}
       referral={referralData}
     />

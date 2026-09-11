@@ -290,6 +290,24 @@ func (r *OnboardingRepository) SetActiveByMeterPoint(ctx context.Context, meterP
 	return err
 }
 
+// SetEDARejectedByMeterPoint sets onboarding_request status to 'eda_rejected' for the
+// request whose converted_member_id matches the member_id of the given meter point.
+// Called when the Netzbetreiber rejects the EC_REQ_ONL registration (ABLEHNUNG_ECON) —
+// moves the request out of 'eda_sent' so the 72h "Datenfreigabe ausstehend" reminder
+// stops firing (the request was never pending confirmation, it was rejected).
+// Only updates if current status is 'eda_sent'. Returns nil if no matching request exists.
+func (r *OnboardingRepository) SetEDARejectedByMeterPoint(ctx context.Context, meterPointID uuid.UUID) error {
+	_, err := r.db.Exec(ctx, `
+		UPDATE onboarding_requests
+		SET status = 'eda_rejected', updated_at = now()
+		WHERE converted_member_id = (
+			SELECT member_id FROM meter_points WHERE id = $1
+		)
+		AND status = 'eda_sent'
+	`, meterPointID)
+	return err
+}
+
 // scanOnboarding scans a single row into domain.OnboardingRequest.
 func scanOnboarding(row interface {
 	Scan(dest ...any) error
@@ -337,6 +355,7 @@ func (r *OnboardingRepository) FindNeedingReminder(ctx context.Context, delay ti
 	             o.meter_points, o.beitritts_datum, o.contract_accepted_at, o.contract_ip,
 	             o.magic_token, o.magic_token_expires_at, o.admin_notes,
 	             o.referral_source, o.referral_source_note, o.converted_member_id,
+	             o.referred_by_member_id,
 	             o.reminder_sent_at, o.created_at, o.updated_at
 	      FROM onboarding_requests o
 	      JOIN eegs e ON e.id = o.eeg_id
@@ -415,11 +434,15 @@ func (r *OnboardingRepository) FindAbandonedEmailVerifications(ctx context.Conte
 	return result, rows.Err()
 }
 
-// SetEmailVerifyReminderSent marks reminder_sent_at = now() on a verification row.
-func (r *OnboardingRepository) SetEmailVerifyReminderSent(ctx context.Context, id uuid.UUID) error {
+// SetEmailVerifyReminderSent marks reminder_sent_at = now() on every not-yet-reminded
+// verification row for the given eeg+email, not just the one that was actually emailed —
+// a user can accumulate several rows by retrying the "enter your email" step, and without
+// this they'd get one reminder email per leftover row on subsequent hourly runs.
+func (r *OnboardingRepository) SetEmailVerifyReminderSent(ctx context.Context, eegID uuid.UUID, email string) error {
 	_, err := r.db.Exec(ctx,
-		`UPDATE onboarding_email_verifications SET reminder_sent_at = now() WHERE id = $1`,
-		id,
+		`UPDATE onboarding_email_verifications SET reminder_sent_at = now()
+		 WHERE eeg_id = $1 AND lower(email) = lower($2) AND reminder_sent_at IS NULL`,
+		eegID, email,
 	)
 	return err
 }

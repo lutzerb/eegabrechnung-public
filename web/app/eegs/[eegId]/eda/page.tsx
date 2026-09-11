@@ -366,7 +366,7 @@ export default async function EDAPage({ params, searchParams }: Props) {
               </span>
             )}
           </div>
-          <EDAProcessesTable processes={processes} />
+          <EDAProcessesTable processes={processes} eegId={eegId} />
         </div>
       )}
 

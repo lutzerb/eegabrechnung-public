@@ -77,6 +77,27 @@ func newThemedPDF(theme InvoiceTheme) *fpdf.Fpdf {
 	return pdf
 }
 
+// setThemedPageFooter registers a real per-page footer via fpdf's SetFooterFunc
+// when eeg.InvoiceFooterMode == "page" — it is then repeated at a fixed position
+// at the bottom of every page instead of being drawn once inline after the
+// content. Must be called before the first AddPage() so it also applies to page 1
+// (fpdf calls the footer func automatically on every AddPage()/Close()). When the
+// mode is "inline" (default) or the footer text is empty, this is a no-op and the
+// caller falls back to the one-off inline render at the end of the content (see
+// the "── Footer ──" blocks in GeneratePDFThemed / GenerateCreditNotePDFThemed /
+// GenerateStornorechnungThemed).
+func setThemedPageFooter(pdf *fpdf.Fpdf, eeg *domain.EEG, theme InvoiceTheme) {
+	if eeg.InvoiceFooterText == "" || eeg.InvoiceFooterMode != "page" {
+		return
+	}
+	pdf.SetFooterFunc(func() {
+		pdf.SetY(-15)
+		pdf.SetFont("Theme", "", theme.size(-2))
+		pdf.SetTextColor(128, 128, 128)
+		pdf.CellFormat(0, theme.h(6), eeg.InvoiceFooterText, "", 0, "C", false, 0, "")
+	})
+}
+
 // InvoiceTheme carries the visual knobs for the themed renderers
 // (GeneratePDFThemed, GenerateCreditNotePDFThemed, GenerateStornorechnungThemed).
 // Persisted per EEG as eeg.Invoice{Design,AccentColor,LogoLeft,FontFamily,FontSize}
@@ -1050,7 +1071,16 @@ func themedPricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domain.EE
 // pricing table matches the period tables above it at theme.size(-1), while
 // GenerateCreditNotePDFThemed's has no such table above it and stays at
 // theme.size(0)).
-func drawTotalRowThemed(pdf *fpdf.Fpdf, size float64, colDesc, colKwh, colPrice, colAmount, rowH float64, label string, totalKwh, totalAmount float64, negative bool) {
+// priceStr is the constant "Preis je kWh" to show on the total row, or "" to
+// leave the cell blank. Pass "" whenever the monthly rows behind this total
+// were drawn individually (their prices may differ, so a single total-row
+// price would be misleading) or the underlying tariff isn't constant. Pass a
+// formatted price when the monthly rows were collapsed into this total
+// specifically because the price didn't vary (see effShowCons/effShowGen /
+// showConsRows/showGenRows in GeneratePDFThemed and GenerateCreditNotePDFThemed)
+// — otherwise the invoice would show a "Preis je kWh" column header with no
+// value anywhere underneath it.
+func drawTotalRowThemed(pdf *fpdf.Fpdf, size float64, colDesc, colKwh, colPrice, colAmount, rowH float64, label string, totalKwh, totalAmount float64, negative bool, priceStr string) {
 	amountStr := formatAmount(totalAmount)
 	if negative {
 		amountStr = "-" + amountStr
@@ -1058,7 +1088,7 @@ func drawTotalRowThemed(pdf *fpdf.Fpdf, size float64, colDesc, colKwh, colPrice,
 	pdf.SetFont("Theme", "B", size)
 	pdf.CellFormat(colDesc, rowH, label, "1", 0, "L", false, 0, "")
 	pdf.CellFormat(colKwh, rowH, formatKwh(totalKwh), "1", 0, "R", false, 0, "")
-	pdf.CellFormat(colPrice, rowH, "", "1", 0, "R", false, 0, "")
+	pdf.CellFormat(colPrice, rowH, priceStr, "1", 0, "R", false, 0, "")
 	pdf.CellFormat(colAmount, rowH, amountStr, "1", 1, "R", false, 0, "")
 	pdf.SetFont("Theme", "", size)
 }
@@ -1547,6 +1577,7 @@ func drawPercentBarChartThemed(pdf *fpdf.Fpdf, theme InvoiceTheme, data []Monthl
 // for a pure consumer).
 func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, vat VATOptions, history []MonthlyKwh, energyRows []EnergyPeriodRow, generationRows []GenerationPeriodRow, theme InvoiceTheme) ([]byte, error) {
 	pdf := newThemedPDF(theme)
+	setThemedPageFooter(pdf, eeg, theme)
 	pdf.AddPage()
 	pdf.SetMargins(20, 20, 20)
 
@@ -1702,7 +1733,11 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 			}
 		}
 		if vat.ConsumptionKwh > 0 || vat.GenerationKwh == 0 {
-			drawTotalRowThemed(pdf, theme.size(-1), colDesc, colKwh, colPrice, colAmount, rowH, "Summe Bezug", totalConsKwh, totalConsAmount, false)
+			consPriceStr := ""
+			if !showConsRows && totalConsKwh > 0 {
+				consPriceStr = fmt.Sprintf("%.4f ct", totalConsAmount/totalConsKwh*100)
+			}
+			drawTotalRowThemed(pdf, theme.size(-1), colDesc, colKwh, colPrice, colAmount, rowH, "Summe Bezug", totalConsKwh, totalConsAmount, false, consPriceStr)
 		}
 		totalGenKwh := 0.0
 		totalGenAmount := 0.0
@@ -1724,7 +1759,11 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 			}
 		}
 		if vat.GenerationKwh > 0 {
-			drawTotalRowThemed(pdf, theme.size(-1), colDesc, colKwh, colPrice, colAmount, rowH, "Summe Einspeisung", totalGenKwh, totalGenAmount, true)
+			genPriceStr := ""
+			if !showGenRows && totalGenKwh > 0 {
+				genPriceStr = fmt.Sprintf("%.4f ct", totalGenAmount/totalGenKwh*100)
+			}
+			drawTotalRowThemed(pdf, theme.size(-1), colDesc, colKwh, colPrice, colAmount, rowH, "Summe Einspeisung", totalGenKwh, totalGenAmount, true, genPriceStr)
 		}
 		feeMonths := vat.FeeMonths
 		if feeMonths < 1 {
@@ -1948,13 +1987,11 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 	}
 
 	// ── Footer ───────────────────────────────────────────────────────────────
-	pdf.SetFont("Theme", "", theme.size(-2))
-	pdf.SetTextColor(128, 128, 128)
-	footerText := "Erstellt von eegabrechnung"
-	if eeg.InvoiceFooterText != "" {
-		footerText = eeg.InvoiceFooterText
+	if eeg.InvoiceFooterText != "" && eeg.InvoiceFooterMode != "page" {
+		pdf.SetFont("Theme", "", theme.size(-2))
+		pdf.SetTextColor(128, 128, 128)
+		pdf.CellFormat(0, theme.h(6), eeg.InvoiceFooterText, "", 1, "C", false, 0, "")
 	}
-	pdf.CellFormat(0, theme.h(6), footerText, "", 1, "C", false, 0, "")
 
 	if err := pdf.Error(); err != nil {
 		return nil, fmt.Errorf("pdf generation error: %w", err)
@@ -2046,6 +2083,7 @@ func creditNotePricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domai
 // caller — pass 0 when none applies. See GenerateCreditNotePDF's doc comment.
 func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, producerPriceCt, generationKwh float64, generationMeterPoints []MeterPointKwh, monthlyItems []MonthlyKwh, history []MonthlyKwh, theme InvoiceTheme, werbebonusNet float64) ([]byte, error) {
 	pdf := newThemedPDF(theme)
+	setThemedPageFooter(pdf, eeg, theme)
 	pdf.AddPage()
 	pdf.SetMargins(20, 20, 20)
 
@@ -2178,7 +2216,11 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 					"Einspeisung Strom "+monthLabel, formatKwh(m.GenerationKwh), fmt.Sprintf("%.4f ct", mPriceCt), formatAmount(genAmount))
 			}
 		}
-		drawTotalRowThemed(pdf, theme.size(0), colDesc, colKwh, colPrice, colAmount, rowH, "Summe Einspeisung", totalGenKwh, totalGenAmount, false)
+		genPriceStr := ""
+		if !showGenRows && totalGenKwh > 0 {
+			genPriceStr = fmt.Sprintf("%.4f ct", totalGenAmount/totalGenKwh*100)
+		}
+		drawTotalRowThemed(pdf, theme.size(0), colDesc, colKwh, colPrice, colAmount, rowH, "Summe Einspeisung", totalGenKwh, totalGenAmount, false, genPriceStr)
 		drawMpSubRowThemed(pdf, theme, generationMeterPoints)
 	} else {
 		drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
@@ -2264,13 +2306,11 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 	}
 
 	// ── Footer ───────────────────────────────────────────────────────────────
-	pdf.SetFont("Theme", "", theme.size(-2))
-	pdf.SetTextColor(128, 128, 128)
-	footerText := "Erstellt von eegabrechnung"
-	if eeg.InvoiceFooterText != "" {
-		footerText = eeg.InvoiceFooterText
+	if eeg.InvoiceFooterText != "" && eeg.InvoiceFooterMode != "page" {
+		pdf.SetFont("Theme", "", theme.size(-2))
+		pdf.SetTextColor(128, 128, 128)
+		pdf.CellFormat(0, theme.h(6), eeg.InvoiceFooterText, "", 1, "C", false, 0, "")
 	}
-	pdf.CellFormat(0, theme.h(6), footerText, "", 1, "C", false, 0, "")
 
 	if err := pdf.Error(); err != nil {
 		return nil, fmt.Errorf("pdf generation error: %w", err)
@@ -2287,6 +2327,7 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 // pricing/energy table to restyle, just header/logo/notice-box/total).
 func GenerateStornorechnungThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, theme InvoiceTheme) ([]byte, error) {
 	pdf := newThemedPDF(theme)
+	setThemedPageFooter(pdf, eeg, theme)
 	pdf.AddPage()
 	pdf.SetMargins(20, 20, 20)
 
@@ -2422,13 +2463,11 @@ func GenerateStornorechnungThemed(inv *domain.Invoice, eeg *domain.EEG, member *
 	theme.ln(pdf, 6)
 
 	// ── Footer ───────────────────────────────────────────────────────────────
-	pdf.SetFont("Theme", "", theme.size(-2))
-	pdf.SetTextColor(128, 128, 128)
-	footerText := "Erstellt von eegabrechnung"
-	if eeg.InvoiceFooterText != "" {
-		footerText = eeg.InvoiceFooterText
+	if eeg.InvoiceFooterText != "" && eeg.InvoiceFooterMode != "page" {
+		pdf.SetFont("Theme", "", theme.size(-2))
+		pdf.SetTextColor(128, 128, 128)
+		pdf.CellFormat(0, theme.h(6), eeg.InvoiceFooterText, "", 1, "C", false, 0, "")
 	}
-	pdf.CellFormat(0, theme.h(6), footerText, "", 1, "C", false, 0, "")
 
 	if err := pdf.Error(); err != nil {
 		return nil, fmt.Errorf("storno pdf generation error: %w", err)

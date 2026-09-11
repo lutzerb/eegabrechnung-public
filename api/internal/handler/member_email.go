@@ -281,7 +281,7 @@ func (h *MemberEmailHandler) SendCampaign(w http.ResponseWriter, r *http.Request
 			personalizedSubject := applyEmailPlaceholders(subject, m, eeg.DisplayNameOrName(), referralLink, bonusLabel)
 			personalizedBody := applyEmailPlaceholders(htmlBody, m, eeg.DisplayNameOrName(), referralLink, bonusLabel)
 			memID := m.ID
-			if err := h.sendHTMLEmail(context.Background(), smtpCfg, eeg.ID, &memID, m.Email, eeg.Name, personalizedSubject, personalizedBody, attachments); err != nil {
+			if err := h.sendHTMLEmail(context.Background(), smtpCfg, eeg.ID, &memID, m.Email, eeg.DisplayNameOrName(), personalizedSubject, personalizedBody, attachments); err != nil {
 				slog.Error("failed to send campaign email", "member_id", m.ID, "error", err)
 			} else {
 				sent++
@@ -297,7 +297,7 @@ func (h *MemberEmailHandler) SendCampaign(w http.ResponseWriter, r *http.Request
 func (h *MemberEmailHandler) sendHTMLEmail(ctx context.Context, smtpCfg invoice.SMTPConfig, eegID uuid.UUID, memberID *uuid.UUID, toEmail, fromName, subject, htmlBody string, attachments []campaignFile) error {
 	from := smtpCfg.From
 	if fromName != "" {
-		from = fmt.Sprintf("%s <%s>", fromName, smtpCfg.From)
+		from = mailutil.FormatAddress(fromName, smtpCfg.From)
 	}
 
 	var msgBuf bytes.Buffer

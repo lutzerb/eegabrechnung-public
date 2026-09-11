@@ -5,7 +5,8 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import type { EDAMessage, ActiveNetzbetreiber } from "@/lib/api";
 import { byMarktpartnerID } from "@/lib/netzbetreiber";
-import { EDA_PROCESS_TYPE_LABELS, EDA_PROCESS_STATUS_LABELS, EDA_PROCESS_STATUS_STYLES } from "@/lib/eda-status-labels";
+import { edaMessageTypeLabel } from "@/lib/eda-status-labels";
+import { DirectionBadge, MessageStatusBadge, XmlPreviewToggle } from "@/components/eda-badges";
 
 interface Props {
   messages: EDAMessage[];
@@ -46,58 +47,7 @@ function labelAddress(code: string | undefined, nbByID?: Map<string, string>): s
   return nb ? nb.name : code;
 }
 
-function DirectionBadge({ direction }: { direction: string }) {
-  const isInbound = direction === "inbound";
-  return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-      isInbound ? "bg-blue-50 text-blue-700" : "bg-orange-50 text-orange-700"
-    }`}>
-      {isInbound ? "Eingang" : "Ausgang"}
-    </span>
-  );
-}
-
-// pending/sent/error are the same concept as on eda_processes.status, so they share
-// label + color with EDA_PROCESS_STATUS_LABELS/STYLES; ack/processed only exist on messages.
-function MessageStatusBadge({ status }: { status: string }) {
-  if (status === "ack") {
-    return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700">Quittiert</span>;
-  }
-  if (status === "processed") {
-    return <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700">Verarbeitet</span>;
-  }
-  const cls = EDA_PROCESS_STATUS_STYLES[status] ?? "bg-yellow-50 text-yellow-700";
-  const label = EDA_PROCESS_STATUS_LABELS[status] ?? EDA_PROCESS_STATUS_LABELS.pending;
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${cls}`}>{label}</span>;
-}
-
-// Message/wire codes are a superset of the process types (also includes response codes
-// like ZUSTIMMUNG_ECON that never appear as an eda_processes.process_type). CM_REV_SP is
-// overridden to disambiguate from the customer-/NB-initiated revoke variants below.
-const PROCESS_LABELS: Record<string, string> = {
-  ...EDA_PROCESS_TYPE_LABELS,
-  DATEN_CRMSG:      "Energiedaten (Antwort)",
-  ANTWORT_PT:       "Edanet-Eingangsbestätigung",
-  CM_REV_SP:        "Widerruf (EEG)",
-  CM_REV_CUS:       "Widerruf durch Kunde",
-  CM_REV_IMP:       "Widerruf durch NB (Unmöglichkeit)",
-  ZUSTIMMUNG_ECON:  "Zustimmung",
-  ABLEHNUNG_ECON:   "Ablehnung",
-  ANTWORT_ECON:     "Zwischenbestätigung",
-  ABSCHLUSS_ECON:   "Abschluss",
-  SENDEN_ECP:       "Zählpunktliste",
-  ERSTE_ANM:        "Erst-Bestätigung",
-  FINALE_ANM:       "Final-Bestätigung",
-  ABLEHNUNG_ANM:    "Ablehnung",
-  ANFORDERUNG_ECON: "Zustimmungsanfrage",
-  ANFORDERUNG_ECP:  "Listanforderung",
-  ECMPList:         "Zählpunktliste",
-};
-
-function typeLabel(process: string, messageType: string): string {
-  const code = process || messageType;
-  return PROCESS_LABELS[code] ?? code;
-}
+const typeLabel = edaMessageTypeLabel;
 
 const DIRECTION_OPTIONS = [
   { value: "", label: "Alle Richtungen" },
@@ -181,19 +131,9 @@ function ExpandedRow({ msg, eegId, nbByID }: { msg: EDAMessage; eegId: string; n
           </div>
         )}
 
-        {/* XML download */}
+        {/* XML preview / download */}
         <div className="mt-3">
-          <a
-            href={`/api/eegs/${eegId}/eda/messages/${msg.id}/xml`}
-            download={`eda-${msg.process || msg.message_type}-${msg.id.slice(0, 8)}.xml`}
-            className="inline-flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 hover:underline"
-          >
-            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
-                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-            </svg>
-            XML herunterladen
-          </a>
+          <XmlPreviewToggle eegId={eegId} messageId={msg.id} filenameHint={msg.process || msg.message_type} />
         </div>
       </td>
     </tr>

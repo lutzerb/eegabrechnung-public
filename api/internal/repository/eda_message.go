@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -65,7 +66,19 @@ func (r *EDAMessageRepository) UpdateClassification(ctx context.Context, id uuid
 	return err
 }
 
-const edaMsgCols = `id, coalesce(message_id,''), direction, coalesce(process,''), message_type, subject, coalesce(body,''), coalesce(from_address,''), coalesce(to_address,''), coalesce(status,''), coalesce(error_msg,''), processed_at, created_at`
+// UpdateProcessID sets eda_process_id on an existing message (called once an inbound
+// message has been matched to its originating eda_processes row via ConversationID,
+// or via Zählpunkt+period overlap for DATEN_CRMSG) — lets the EDA-Prozesse UI show a
+// process's messages in chronological order.
+func (r *EDAMessageRepository) UpdateProcessID(ctx context.Context, id, processID uuid.UUID) error {
+	_, err := r.db.Exec(ctx,
+		`UPDATE eda_messages SET eda_process_id = $1 WHERE id = $2`,
+		processID, id,
+	)
+	return err
+}
+
+const edaMsgCols = `id, coalesce(message_id,''), direction, coalesce(process,''), message_type, subject, coalesce(body,''), coalesce(from_address,''), coalesce(to_address,''), coalesce(status,''), coalesce(error_msg,''), processed_at, created_at, eda_process_id`
 
 func scanEDAMessages(rows interface {
 	Next() bool
@@ -80,7 +93,7 @@ func scanEDAMessages(rows interface {
 		if err := rows.Scan(
 			&m.ID, &m.MessageID, &m.Direction, &m.Process, &m.MessageType, &m.Subject,
 			&m.Body, &m.FromAddress, &m.ToAddress,
-			&m.Status, &m.ErrorMsg, &m.ProcessedAt, &m.CreatedAt,
+			&m.Status, &m.ErrorMsg, &m.ProcessedAt, &m.CreatedAt, &m.EDAProcessID,
 		); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
@@ -188,6 +201,22 @@ func (r *EDAMessageRepository) ListByEEG(ctx context.Context, eegID uuid.UUID, d
 	return scanEDAMessages(rows)
 }
 
+// ListByProcessID returns the eda_messages tagged with a specific eda_process_id, oldest
+// first — the chronological back-and-forth (outbound request, intermediate/final inbound
+// confirmations) shown in the EDA-Prozesse accordion. Only messages the worker successfully
+// matched to this process (via ConversationID or, for DATEN_CRMSG, Zählpunkt+period overlap)
+// carry this tag; unmatched inbound messages remain visible only in the flat message log.
+func (r *EDAMessageRepository) ListByProcessID(ctx context.Context, eegID, processID uuid.UUID) ([]domain.EDAMessage, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT `+edaMsgCols+` FROM eda_messages WHERE eeg_id = $1 AND eda_process_id = $2 ORDER BY created_at ASC`,
+		eegID, processID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+	return scanEDAMessages(rows)
+}
+
 // GetXMLPayload returns the raw xml_payload for a single message, scoped to an EEG.
 func (r *EDAMessageRepository) GetXMLPayload(ctx context.Context, id, eegID uuid.UUID) (string, error) {
 	var payload string
@@ -199,6 +228,40 @@ func (r *EDAMessageRepository) GetXMLPayload(ctx context.Context, id, eegID uuid
 		return "", fmt.Errorf("get xml_payload: %w", err)
 	}
 	return payload, nil
+}
+
+// RawCRMsg is a minimal projection of a stored DATEN_CRMSG message, used to build the
+// per-OBIS-code index for the "Messwerte-Debug" view (see handler.obisIndexCache).
+type RawCRMsg struct {
+	ID         uuid.UUID
+	XMLPayload string
+	CreatedAt  time.Time
+}
+
+// ListCRMsgPayloadsByZaehlpunkt returns the most recent processed DATEN_CRMSG raw messages
+// for one Zählpunkt (exact match, scoped to eegID), newest first, capped at limit. Uses the
+// existing idx_eda_messages_zaehlpunkt index.
+func (r *EDAMessageRepository) ListCRMsgPayloadsByZaehlpunkt(ctx context.Context, eegID uuid.UUID, zaehlpunkt string, limit int) ([]RawCRMsg, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT id, xml_payload, created_at FROM eda_messages
+		 WHERE eeg_id = $1 AND zaehlpunkt = $2 AND message_type = 'DATEN_CRMSG' AND status = 'processed'
+		 ORDER BY created_at DESC
+		 LIMIT $3`,
+		eegID, zaehlpunkt, limit,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list CR_MSG payloads by zaehlpunkt: %w", err)
+	}
+	defer rows.Close()
+	var result []RawCRMsg
+	for rows.Next() {
+		var m RawCRMsg
+		if err := rows.Scan(&m.ID, &m.XMLPayload, &m.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		result = append(result, m)
+	}
+	return result, rows.Err()
 }
 
 // List returns EDA messages ordered by created_at DESC (all EEGs, for backward compat).

@@ -105,6 +105,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
       invoice_pre_text: (formData.get("invoice_pre_text") as string) || "",
       invoice_post_text: (formData.get("invoice_post_text") as string) || "",
       invoice_footer_text: (formData.get("invoice_footer_text") as string) || "",
+      invoice_footer_mode: (formData.get("invoice_footer_mode") as string) || "inline",
       invoice_payment_notice_mode: (formData.get("invoice_payment_notice_mode") as string) || "sepa_lastschrift",
       invoice_payment_notice_text: (formData.get("invoice_payment_notice_text") as string) || "",
       fee_billing_mode: (formData.get("fee_billing_mode") as string) || "per_month",
@@ -156,6 +157,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
       energy_imbalance_threshold_promille: parseFloat(formData.get("energy_imbalance_threshold_promille") as string) || 1,
       // Member portal
       portal_show_full_energy: formData.get("portal_show_full_energy") === "on",
+      portal_show_community_stats: formData.get("portal_show_community_stats") === "on",
       // Invoice visual design
       invoice_design: (formData.get("invoice_design") as string) || "standard",
       invoice_accent_color: (formData.get("invoice_accent_color") as string) || "#c9b89a",
@@ -322,6 +324,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
         {activeTab !== "rechnungsdesign" && (
           <>
             <input type="hidden" name="invoice_footer_text" value={eeg.invoice_footer_text || ""} />
+            <input type="hidden" name="invoice_footer_mode" value={(eeg as any).invoice_footer_mode || "inline"} />
             <input type="hidden" name="invoice_pre_text" value={eeg.invoice_pre_text || ""} />
             <input type="hidden" name="invoice_post_text" value={eeg.invoice_post_text || ""} />
             <input type="hidden" name="invoice_energy_label_zeitraum_von" value={(eeg as any).invoice_energy_label_zeitraum_von || "Zeitraum von"} />
@@ -379,7 +382,10 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
           </>
         )}
         {activeTab !== "portal" && (
-          <input type="hidden" name="portal_show_full_energy" value={(eeg as any).portal_show_full_energy !== false ? "on" : ""} />
+          <>
+            <input type="hidden" name="portal_show_full_energy" value={(eeg as any).portal_show_full_energy !== false ? "on" : ""} />
+            <input type="hidden" name="portal_show_community_stats" value={(eeg as any).portal_show_community_stats === true ? "on" : ""} />
+          </>
         )}
         {activeTab !== "rechnungsdesign" && (
           <>
@@ -929,6 +935,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
             initialFontSize={(eeg as any).invoice_font_size || 10}
             initialRowSpacing={(eeg as any).invoice_row_spacing || 1.0}
             initialFooterText={eeg.invoice_footer_text || ""}
+            initialFooterMode={(eeg as any).invoice_footer_mode || "inline"}
             initialPreText={eeg.invoice_pre_text || ""}
             initialPostText={eeg.invoice_post_text || ""}
             initialLabelZeitraumVon={(eeg as any).invoice_energy_label_zeitraum_von || "Zeitraum von"}
@@ -1322,6 +1329,27 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
                   </p>
                 </div>
               </div>
+
+              <div className="flex items-start gap-3 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <input
+                  type="checkbox"
+                  name="portal_show_community_stats"
+                  id="portal_show_community_stats"
+                  defaultChecked={(eeg as any).portal_show_community_stats === true}
+                  className="mt-0.5 h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                <div>
+                  <label htmlFor="portal_show_community_stats" className="text-sm font-medium text-slate-700 cursor-pointer">
+                    Gemeinschaftsübersicht (EEG-weite Kennzahlen) anzeigen
+                  </label>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Wenn aktiviert, sehen Mitglieder im Portal zusätzlich eine „Übersicht Gemeinschaft" mit
+                    EEG-weiten Kennzahlen (Gesamterzeugung, Autarkiegrad, Eigenverbrauchsanteil u.&nbsp;a.) und
+                    einem Vergleichsdiagramm über alle Mitglieder hinweg. Standardmäßig deaktiviert, da diese
+                    Daten aggregierte Werte anderer Mitglieder offenlegen.
+                  </p>
+                </div>
+              </div>
             </div>
           </>
         )}
@@ -1405,6 +1433,20 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
               className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors"
             >
               E-Mail-Protokoll öffnen
+            </Link>
+          </div>
+
+          {/* Readings debug link */}
+          <div className="mt-8 p-6 bg-white rounded-xl border border-slate-200">
+            <h3 className="text-base font-semibold text-slate-900 mb-1">Messwerte-Debug</h3>
+            <p className="text-sm text-slate-500 mb-4">
+              Rohdaten aus energy_readings inkl. OBIS-Code-Aufschlüsselung für einen einzelnen Zählpunkt einsehen (15-Minuten-Werte).
+            </p>
+            <Link
+              href={`/eegs/${eegId}/settings/readings-debug`}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-slate-800 text-white text-sm font-medium rounded-lg hover:bg-slate-700 transition-colors"
+            >
+              Messwerte-Debug öffnen
             </Link>
           </div>
 

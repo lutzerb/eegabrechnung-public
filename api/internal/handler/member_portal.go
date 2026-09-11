@@ -36,6 +36,7 @@ type MemberPortalHandler struct {
 	edaProcRepo    *repository.EDAProcessRepository
 	jobRepo        *repository.JobRepository
 	emailLogRepo   *repository.EmailLogRepository
+	reportRepo     *repository.ReportRepository
 }
 
 // NewMemberPortalHandler creates a MemberPortalHandler.
@@ -51,6 +52,7 @@ func NewMemberPortalHandler(
 	edaProcRepo *repository.EDAProcessRepository,
 	jobRepo *repository.JobRepository,
 	emailLogRepo *repository.EmailLogRepository,
+	reportRepo *repository.ReportRepository,
 ) *MemberPortalHandler {
 	return &MemberPortalHandler{
 		portalRepo:     portalRepo,
@@ -64,6 +66,7 @@ func NewMemberPortalHandler(
 		edaProcRepo:    edaProcRepo,
 		jobRepo:        jobRepo,
 		emailLogRepo:   emailLogRepo,
+		reportRepo:     reportRepo,
 	}
 }
 
@@ -207,7 +210,7 @@ Ihr EEG-Team
 --
 Dieser Link läuft in 30 Minuten ab.`, fullName, link)
 
-	msg := []byte(mailutil.Headers(eeg.SMTPFrom, toEmail, subject) +
+	msg := []byte(mailutil.Headers(mailutil.FormatAddress(eeg.DisplayNameOrName(), eeg.SMTPFrom), toEmail, subject) +
 		"Content-Type: text/plain; charset=UTF-8\r\n" +
 		"\r\n" +
 		body)
@@ -467,6 +470,87 @@ func (h *MemberPortalHandler) GetEnergy(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		jsonError(w, "query error", http.StatusInternalServerError)
 		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(rows)
+}
+
+var validCommunityGranularities = map[string]bool{
+	"year": true, "quarter": true, "month": true, "day": true, "15min": true,
+}
+
+// GetCommunityEnergy handles GET /api/v1/public/portal/community-energy
+//
+//	@Summary		Get EEG-wide community energy summary for the portal
+//	@Description	Returns EEG-wide aggregated energy readings (Gesamterzeugung, Bezug EEG, Restbedarf etc.), scoped to the authenticated member's own EEG. Requires the EEG's portal_show_community_stats flag to be enabled; returns 403 otherwise.
+//	@Tags			Mitgliederportal
+//	@Produce		json
+//	@Param			X-Portal-Session	header	string	true	"Portal session token"
+//	@Param			from				query	string	true	"Start date (YYYY-MM-DD)"
+//	@Param			to					query	string	true	"End date (YYYY-MM-DD, exclusive)"
+//	@Param			granularity			query	string	false	"year, quarter, month, day, or 15min (default: month)"
+//	@Success		200					{array}		domain.EnergySummaryRow
+//	@Failure		401					{object}	map[string]string
+//	@Failure		403					{object}	map[string]string
+//	@Router			/public/portal/community-energy [get]
+func (h *MemberPortalHandler) GetCommunityEnergy(w http.ResponseWriter, r *http.Request) {
+	_, eegID, ok := h.portalAuth(r)
+	if !ok {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+
+	eeg, err := h.eegRepo.GetByIDInternal(r.Context(), eegID)
+	if err != nil || eeg == nil {
+		jsonError(w, "not found", http.StatusNotFound)
+		return
+	}
+	// Server-side enforcement — unlike portal_show_full_energy, which today is only
+	// enforced client-side. Community-wide data is more sensitive (aggregate behavior
+	// of other members) and must not leak via a direct API call even when the flag is
+	// off in the UI.
+	if !eeg.PortalShowCommunityStats {
+		jsonError(w, "community statistics are not enabled for this EEG", http.StatusForbidden)
+		return
+	}
+
+	fromStr := r.URL.Query().Get("from")
+	toStr := r.URL.Query().Get("to")
+	if fromStr == "" || toStr == "" {
+		jsonError(w, "from and to are required", http.StatusBadRequest)
+		return
+	}
+	from, err := time.Parse("2006-01-02", fromStr)
+	if err != nil {
+		jsonError(w, "invalid from date (YYYY-MM-DD)", http.StatusBadRequest)
+		return
+	}
+	to, err := time.Parse("2006-01-02", toStr)
+	if err != nil {
+		jsonError(w, "invalid to date (YYYY-MM-DD)", http.StatusBadRequest)
+		return
+	}
+
+	granularity := r.URL.Query().Get("granularity")
+	if !validCommunityGranularities[granularity] {
+		granularity = "month"
+	}
+	if granularity == "day" && to.Sub(from) > 366*24*time.Hour {
+		jsonError(w, "day granularity: max range is 366 days", http.StatusBadRequest)
+		return
+	}
+	if granularity == "15min" && to.Sub(from) > 7*24*time.Hour {
+		jsonError(w, "15min granularity: max range is 7 days", http.StatusBadRequest)
+		return
+	}
+
+	rows, err := h.reportRepo.EnergySummary(r.Context(), eegID, from, to, granularity, nil, nil)
+	if err != nil {
+		jsonError(w, "query error", http.StatusInternalServerError)
+		return
+	}
+	if rows == nil {
+		rows = []domain.EnergySummaryRow{}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(rows)
@@ -1005,7 +1089,7 @@ Das bisherige Mandat wurde archiviert. Falls Sie diese Änderung nicht selbst vo
 Mit freundlichen Grüßen
 Ihr EEG-Team`, fullName, newIBAN)
 
-	memberMsg := []byte(mailutil.Headers(eeg.SMTPFrom, member.Email, memberSubject) +
+	memberMsg := []byte(mailutil.Headers(mailutil.FormatAddress(eeg.DisplayNameOrName(), eeg.SMTPFrom), member.Email, memberSubject) +
 		"Content-Type: text/plain; charset=UTF-8\r\n" +
 		"\r\n" +
 		memberBody)
@@ -1028,7 +1112,7 @@ Neue IBAN: %s
 Das bisherige Mandat wurde archiviert und ist über die Mandats-Historie auf der Mitgliederseite einsehbar.`,
 		fullName, member.MitgliedsNr, orDash(oldIBAN), newIBAN)
 
-	adminMsg := []byte(mailutil.Headers(eeg.SMTPFrom, eeg.SMTPFrom, adminSubject) +
+	adminMsg := []byte(mailutil.Headers(mailutil.FormatAddress(eeg.DisplayNameOrName(), eeg.SMTPFrom), eeg.SMTPFrom, adminSubject) +
 		"Content-Type: text/plain; charset=UTF-8\r\n" +
 		"\r\n" +
 		adminBody)
@@ -1075,7 +1159,7 @@ Falls Sie diese Änderung nicht selbst veranlasst haben, ignorieren Sie diese E-
 Mit freundlichen Grüßen
 Ihr EEG-Team`, fullName, confirmLink)
 
-	msg := []byte(mailutil.Headers(eeg.SMTPFrom, newEmail, subject) +
+	msg := []byte(mailutil.Headers(mailutil.FormatAddress(eeg.DisplayNameOrName(), eeg.SMTPFrom), newEmail, subject) +
 		"Content-Type: text/plain; charset=UTF-8\r\n" +
 		"\r\n" +
 		body)
@@ -1109,7 +1193,7 @@ Ihre E-Mail-Adresse für das Mitglieder-Portal wurde erfolgreich auf diese Adres
 
 Mit freundlichen Grüßen
 Ihr EEG-Team`, fullName)
-	newMsg := []byte(mailutil.Headers(eeg.SMTPFrom, member.Email, newSubject) +
+	newMsg := []byte(mailutil.Headers(mailutil.FormatAddress(eeg.DisplayNameOrName(), eeg.SMTPFrom), member.Email, newSubject) +
 		"Content-Type: text/plain; charset=UTF-8\r\n" +
 		"\r\n" +
 		newBody)
@@ -1128,7 +1212,7 @@ Falls Sie diese Änderung nicht selbst vorgenommen haben, kontaktieren Sie uns b
 
 Mit freundlichen Grüßen
 Ihr EEG-Team`, fullName, member.Email)
-		oldMsg := []byte(mailutil.Headers(eeg.SMTPFrom, oldEmail, oldSubject) +
+		oldMsg := []byte(mailutil.Headers(mailutil.FormatAddress(eeg.DisplayNameOrName(), eeg.SMTPFrom), oldEmail, oldSubject) +
 			"Content-Type: text/plain; charset=UTF-8\r\n" +
 			"\r\n" +
 			oldBody)
@@ -1147,7 +1231,7 @@ Ihr EEG-Team`, fullName, member.Email)
 Mitglied: %s (Nr. %s)
 Bisherige E-Mail: %s
 Neue E-Mail: %s`, fullName, member.MitgliedsNr, orDash(oldEmail), member.Email)
-	adminMsg := []byte(mailutil.Headers(eeg.SMTPFrom, eeg.SMTPFrom, adminSubject) +
+	adminMsg := []byte(mailutil.Headers(mailutil.FormatAddress(eeg.DisplayNameOrName(), eeg.SMTPFrom), eeg.SMTPFrom, adminSubject) +
 		"Content-Type: text/plain; charset=UTF-8\r\n" +
 		"\r\n" +
 		adminBody)

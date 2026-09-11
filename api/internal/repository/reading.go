@@ -107,6 +107,60 @@ func (r *ReadingRepository) BulkInsertSkipExisting(ctx context.Context, readings
 	return inserted, nil
 }
 
+// CountByMeterPoint returns the number of energy_readings rows for one meter point,
+// optionally bounded by a ts range. A zero-value from/to means "no lower/upper bound".
+func (r *ReadingRepository) CountByMeterPoint(ctx context.Context, meterPointID uuid.UUID, from, to time.Time) (int, error) {
+	q := `SELECT COUNT(*) FROM energy_readings WHERE meter_point_id = $1`
+	args := []any{meterPointID}
+	if !from.IsZero() {
+		args = append(args, from)
+		q += fmt.Sprintf(" AND ts >= $%d", len(args))
+	}
+	if !to.IsZero() {
+		args = append(args, to)
+		q += fmt.Sprintf(" AND ts <= $%d", len(args))
+	}
+	var count int
+	if err := r.db.QueryRow(ctx, q, args...).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count by meter point: %w", err)
+	}
+	return count, nil
+}
+
+// ListByMeterPoint returns raw energy_readings rows for one meter point, oldest first,
+// optionally bounded by a ts range, for the admin "Messwerte-Debug" inspection view.
+// A zero-value from/to means "no lower/upper bound".
+func (r *ReadingRepository) ListByMeterPoint(ctx context.Context, meterPointID uuid.UUID, from, to time.Time, limit, offset int) ([]domain.EnergyReading, error) {
+	q := `SELECT id, meter_point_id, ts, wh_total, wh_community, wh_self, source, quality, created_at
+	      FROM energy_readings WHERE meter_point_id = $1`
+	args := []any{meterPointID}
+	if !from.IsZero() {
+		args = append(args, from)
+		q += fmt.Sprintf(" AND ts >= $%d", len(args))
+	}
+	if !to.IsZero() {
+		args = append(args, to)
+		q += fmt.Sprintf(" AND ts <= $%d", len(args))
+	}
+	args = append(args, limit, offset)
+	q += fmt.Sprintf(" ORDER BY ts ASC LIMIT $%d OFFSET $%d", len(args)-1, len(args))
+
+	rows, err := r.db.Query(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list by meter point: %w", err)
+	}
+	defer rows.Close()
+	var result []domain.EnergyReading
+	for rows.Next() {
+		var rd domain.EnergyReading
+		if err := rows.Scan(&rd.ID, &rd.MeterPointID, &rd.Ts, &rd.WhTotal, &rd.WhCommunity, &rd.WhSelf, &rd.Source, &rd.Quality, &rd.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		result = append(result, rd)
+	}
+	return result, rows.Err()
+}
+
 // GetAllByEEG returns all energy readings for an EEG, joined through meter_points.
 func (r *ReadingRepository) GetAllByEEG(ctx context.Context, eegID uuid.UUID) ([]domain.EnergyReading, error) {
 	q := `SELECT er.id, er.meter_point_id, er.ts, er.wh_total, er.wh_community, er.wh_self, er.source, er.quality

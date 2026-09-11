@@ -105,7 +105,7 @@ func main() {
 	importHandler := handler.NewImportHandler(eegRepo, memberRepo, meterPointRepo, readingRepo)
 	billingHandler := handler.NewBillingHandler(billingSvc, invoiceRepo, billingRunRepo, memberRepo, eegRepo, emailLogRepo, referralBonusRepo)
 	memberHandler := handler.NewMemberHandler(memberRepo, meterPointRepo, eegRepo, edaProcessRepo, jobRepo, participationRepo)
-	meterPointHandler := handler.NewMeterPointHandler(meterPointRepo, memberRepo, eegRepo, edaProcessRepo)
+	meterPointHandler := handler.NewMeterPointHandler(meterPointRepo, memberRepo, eegRepo, edaProcessRepo, readingRepo, edaMessageRepo)
 	statsHandler := handler.NewStatsHandler(eegRepo, edaMessageRepo)
 	authHandler := handler.NewAuthHandler(userRepo, jwtSecret)
 	oemagHandler := handler.NewOemagHandler(eegRepo)
@@ -140,7 +140,7 @@ func main() {
 	}()
 
 	portalRepo := repository.NewMemberPortalRepository(pool)
-	portalHandler := handler.NewMemberPortalHandler(portalRepo, memberRepo, meterPointRepo, participationRepo, readingRepo, invoiceRepo, eegRepo, orgRepo, edaProcessRepo, jobRepo, emailLogRepo)
+	portalHandler := handler.NewMemberPortalHandler(portalRepo, memberRepo, meterPointRepo, participationRepo, readingRepo, invoiceRepo, eegRepo, orgRepo, edaProcessRepo, jobRepo, emailLogRepo, reportRepo)
 
 	memberEmailHandler := handler.NewMemberEmailHandler(memberEmailRepo, memberRepo, eegRepo, emailLogRepo)
 	eegDocumentHandler := handler.NewEEGDocumentHandler(eegDocumentRepo, portalRepo, eegRepo)
@@ -193,6 +193,7 @@ func main() {
 	r.With(portalLimiter.Middleware).Post("/api/v1/public/portal/set-password", portalHandler.SetPassword)
 	r.Get("/api/v1/public/portal/me", portalHandler.GetMe)
 	r.Get("/api/v1/public/portal/energy", portalHandler.GetEnergy)
+	r.Get("/api/v1/public/portal/community-energy", portalHandler.GetCommunityEnergy)
 	r.Get("/api/v1/public/portal/invoices", portalHandler.GetInvoices)
 	r.Get("/api/v1/public/portal/invoices/{invoiceID}/pdf", portalHandler.GetInvoicePDF)
 	r.Get("/api/v1/public/portal/documents", eegDocumentHandler.PortalListDocuments)
@@ -263,11 +264,13 @@ func main() {
 		r.Put("/eegs/{eegID}/meter-points/{meterPointID}", meterPointHandler.UpdateMeterPoint)
 		r.Delete("/eegs/{eegID}/meter-points/{meterPointID}", meterPointHandler.DeleteMeterPoint)
 		r.Get("/eegs/{eegID}/meter-points/{meterPointID}/history", meterPointHandler.GetMeterPointHistory)
+		r.Get("/eegs/{eegID}/meter-points/{meterPointID}/readings", meterPointHandler.GetMeterPointReadings)
 
 		// Stats + EDA messages
 		r.Get("/eegs/{eegID}/stats", statsHandler.GetStats)
 		r.Get("/eegs/{eegID}/eda/messages", statsHandler.GetEDAMessages)
 		r.Get("/eegs/{eegID}/eda/messages/{msgID}/xml", statsHandler.GetEDAMessageXML)
+		r.Get("/eegs/{eegID}/eda/processes/{processID}/messages", statsHandler.GetEDAProcessMessages)
 
 		// EDA process management
 		r.Get("/eegs/{eegID}/eda/processes", edaHandler.ListProcesses)

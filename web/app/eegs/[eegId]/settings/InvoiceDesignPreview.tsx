@@ -11,6 +11,7 @@ interface Props {
   initialFontSize: number;
   initialRowSpacing: number;
   initialFooterText: string;
+  initialFooterMode: string;
   initialPreText: string;
   initialPostText: string;
   initialLabelZeitraumVon: string;
@@ -70,6 +71,7 @@ export default function InvoiceDesignPreview({
   initialFontSize,
   initialRowSpacing,
   initialFooterText,
+  initialFooterMode,
   initialPreText,
   initialPostText,
   initialLabelZeitraumVon,
@@ -104,6 +106,7 @@ export default function InvoiceDesignPreview({
   const [fontSize, setFontSize] = useState(initialFontSize || 10);
   const [rowSpacing, setRowSpacing] = useState(initialRowSpacing || 1.0);
   const [footerText, setFooterText] = useState(initialFooterText || "");
+  const [footerMode, setFooterMode] = useState(initialFooterMode || "inline");
   const [preText, setPreText] = useState(initialPreText || "");
   const [postText, setPostText] = useState(initialPostText || "");
   const [labelZeitraumVon, setLabelZeitraumVon] = useState(initialLabelZeitraumVon || "Zeitraum von");
@@ -160,6 +163,7 @@ export default function InvoiceDesignPreview({
             invoice_font_size: fontSize,
             invoice_row_spacing: rowSpacing,
             invoice_footer_text: footerText,
+            invoice_footer_mode: footerMode,
             invoice_pre_text: preText,
             invoice_post_text: postText,
             invoice_energy_label_zeitraum_von: labelZeitraumVon,
@@ -224,6 +228,7 @@ export default function InvoiceDesignPreview({
     fontSize,
     rowSpacing,
     footerText,
+    footerMode,
     preText,
     postText,
     labelZeitraumVon,
@@ -337,10 +342,44 @@ export default function InvoiceDesignPreview({
               rows={2}
               value={footerText}
               onChange={(e) => setFooterText(e.target.value)}
-              placeholder="Erstellt von eegabrechnung"
+              placeholder="z. B. Erstellt von eegabrechnung — leer lassen für keine Fußzeile"
               className={inputClass}
             />
           </div>
+          {design === "individuell" ? (
+            <div>
+              <label className={labelClass}>Fußzeilen-Art</label>
+              <div className="flex flex-col gap-2">
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="radio"
+                    name="invoice_footer_mode"
+                    value="inline"
+                    checked={footerMode === "inline"}
+                    onChange={() => setFooterMode("inline")}
+                    className="h-4 w-4 border-slate-300 text-blue-700 focus:ring-blue-500"
+                  />
+                  Im Textfluss (einmalig, auf der letzten Seite)
+                </label>
+                <label className="flex items-center gap-2 text-sm text-slate-700">
+                  <input
+                    type="radio"
+                    name="invoice_footer_mode"
+                    value="page"
+                    checked={footerMode === "page"}
+                    onChange={() => setFooterMode("page")}
+                    className="h-4 w-4 border-slate-300 text-blue-700 focus:ring-blue-500"
+                  />
+                  Fixiert am unteren Rand jeder Seite
+                </label>
+              </div>
+              <p className="text-xs text-slate-500 mt-1">
+                Nur bei mehrseitigen Rechnungen sichtbar unterschiedlich.
+              </p>
+            </div>
+          ) : (
+            <input type="hidden" name="invoice_footer_mode" value={footerMode} />
+          )}
         </div>
 
         {design === "individuell" && (

@@ -159,7 +159,7 @@ func (g *GapChecker) sendGapEmail(ctx context.Context, eeg *domain.EEG, gaps []r
 
 func (g *GapChecker) sendHTMLEmail(ctx context.Context, eeg *domain.EEG, emailType, subject, htmlBody string) {
 	var msg strings.Builder
-	msg.WriteString(mailutil.Headers(eeg.SMTPFrom, eeg.SMTPFrom, subject))
+	msg.WriteString(mailutil.Headers(mailutil.FormatAddress(eeg.DisplayNameOrName(), eeg.SMTPFrom), eeg.SMTPFrom, subject))
 	msg.WriteString("MIME-Version: 1.0\r\n")
 	msg.WriteString("Content-Type: text/html; charset=utf-8\r\n")
 	msg.WriteString("\r\n")

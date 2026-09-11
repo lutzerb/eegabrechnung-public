@@ -35,18 +35,18 @@ func genEnergyData(meterCode string, value float64) edaxml.CRMsgEnergyData {
 	}
 }
 
-// On Mehrfachteilnahme meters the NB sends both G.01 (100% of the plant) and
-// G.01T (scaled by the participation factor) — in arbitrary document order.
-// G.01T must win regardless of position; wh_community derives from the scaled total.
-func TestBuildReadingsFromCRMsg_ScaledTotalWinsRegardlessOfOrder(t *testing.T) {
+// Generation meters (2.9.0): wh_total is always the plain G.01 (100% plant total),
+// regardless of whether G.01T is present. wh_community is derived separately as
+// G.01T − P.01T (scaled basis) when G.01T is present — in arbitrary document order.
+func TestBuildReadingsFromCRMsg_GenerationTotalAlwaysPlainCommunityFromScaled(t *testing.T) {
 	mpID := uuid.New()
 	resolve := func(ts time.Time) (uuid.UUID, bool) { return mpID, true }
 
 	orders := map[string][]edaxml.CRMsgEnergyData{
 		"G.01 first (daily push order)": {
-			genEnergyData("1-1:2.9.0 G.01", 2.0),   // 100% plant total
-			genEnergyData("1-1:2.9.0 G.01T", 0.8),  // × 40% Teilnahmefaktor
-			genEnergyData("1-1:2.9.0 P.01T", 0.3),  // Restnetzüberschuss (40% basis)
+			genEnergyData("1-1:2.9.0 G.01", 2.0),  // 100% plant total
+			genEnergyData("1-1:2.9.0 G.01T", 0.8), // × 40% Teilnahmefaktor
+			genEnergyData("1-1:2.9.0 P.01T", 0.3), // Restnetzüberschuss (40% basis)
 		},
 		"G.01 last (CR_REQ_PT response order)": {
 			genEnergyData("1-1:2.9.0 P.01T", 0.3),
@@ -56,13 +56,13 @@ func TestBuildReadingsFromCRMsg_ScaledTotalWinsRegardlessOfOrder(t *testing.T) {
 	}
 
 	for name, data := range orders {
-		readings := buildReadingsFromCRMsg(resolve, crMsgRecordWith(data))
+		readings := buildReadingsFromCRMsg(resolve, crMsgRecordWith(data), time.Time{})
 		if len(readings) != 1 {
 			t.Fatalf("%s: expected 1 reading, got %d", name, len(readings))
 		}
 		r := readings[0]
-		if r.WhTotal != 0.8 {
-			t.Errorf("%s: wh_total = %v, want 0.8 (G.01T must win over G.01)", name, r.WhTotal)
+		if r.WhTotal != 2.0 {
+			t.Errorf("%s: wh_total = %v, want 2.0 (plain G.01, regardless of G.01T)", name, r.WhTotal)
 		}
 		if r.WhSelf != 0.3 {
 			t.Errorf("%s: wh_self = %v, want 0.3 (P.01T)", name, r.WhSelf)
@@ -73,15 +73,16 @@ func TestBuildReadingsFromCRMsg_ScaledTotalWinsRegardlessOfOrder(t *testing.T) {
 	}
 }
 
-// Meters without Mehrfachteilnahme only get G.01 — it must still fill wh_total.
-func TestBuildReadingsFromCRMsg_PlainTotalWithoutScaled(t *testing.T) {
+// Generation meters without Mehrfachteilnahme only get G.01 — it must still fill
+// wh_total, and wh_community must fall back to the plain G.01 basis (no G.01T).
+func TestBuildReadingsFromCRMsg_GenerationPlainTotalWithoutScaled(t *testing.T) {
 	mpID := uuid.New()
 	resolve := func(ts time.Time) (uuid.UUID, bool) { return mpID, true }
 
 	readings := buildReadingsFromCRMsg(resolve, crMsgRecordWith([]edaxml.CRMsgEnergyData{
 		genEnergyData("1-1:2.9.0 G.01", 2.0),
 		genEnergyData("1-1:2.9.0 P.01T", 0.3),
-	}))
+	}), time.Time{})
 	if len(readings) != 1 {
 		t.Fatalf("expected 1 reading, got %d", len(readings))
 	}
@@ -91,6 +92,40 @@ func TestBuildReadingsFromCRMsg_PlainTotalWithoutScaled(t *testing.T) {
 	}
 	if diff := r.WhCommunity - 1.7; diff > 1e-9 || diff < -1e-9 {
 		t.Errorf("wh_community = %v, want 1.7", r.WhCommunity)
+	}
+}
+
+// Consumption meters (1.9.0): G.01T is unreliable on some Netzbetreiber — reported
+// as a persistent 0 while G.01 has the real total (observed 2026-09-04,
+// AT0082300807...19832). Unlike generation, G.01 always wins here regardless of
+// G.01T's value or document order.
+func TestBuildReadingsFromCRMsg_ConsumptionPlainTotalAlwaysWinsOverScaled(t *testing.T) {
+	mpID := uuid.New()
+	resolve := func(ts time.Time) (uuid.UUID, bool) { return mpID, true }
+
+	orders := map[string][]edaxml.CRMsgEnergyData{
+		"G.01 first, G.01T nonzero": {
+			genEnergyData("1-1:1.9.0 G.01", 2.0),
+			genEnergyData("1-1:1.9.0 G.01T", 0.8),
+		},
+		"G.01 last, G.01T nonzero": {
+			genEnergyData("1-1:1.9.0 G.01T", 0.8),
+			genEnergyData("1-1:1.9.0 G.01", 2.0),
+		},
+		"G.01T reported as 0 (Netzbetreiber quirk)": {
+			genEnergyData("1-1:1.9.0 G.01", 2.0),
+			genEnergyData("1-1:1.9.0 G.01T", 0),
+		},
+	}
+
+	for name, data := range orders {
+		readings := buildReadingsFromCRMsg(resolve, crMsgRecordWith(data), time.Time{})
+		if len(readings) != 1 {
+			t.Fatalf("%s: expected 1 reading, got %d", name, len(readings))
+		}
+		if r := readings[0]; r.WhTotal != 2.0 {
+			t.Errorf("%s: wh_total = %v, want 2.0 (consumption G.01 must win over G.01T)", name, r.WhTotal)
+		}
 	}
 }
 

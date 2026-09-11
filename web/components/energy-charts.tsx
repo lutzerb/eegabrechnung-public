@@ -3,7 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import {
   BarChart,
+  ComposedChart,
   Bar,
+  Line,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -65,7 +67,7 @@ function intervalLabel(iso: string) {
   return `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`;
 }
 
-function fmtKwh(v: number) {
+export function fmtKwh(v: number) {
   if (v >= 100000)
     return new Intl.NumberFormat("de-AT", { maximumFractionDigits: 1 }).format(v / 1000) + " MWh";
   return new Intl.NumberFormat("de-AT", { maximumFractionDigits: 1 }).format(v) + " kWh";
@@ -648,6 +650,93 @@ export function EnergySummaryChart({ data, granularity, forecastDailyTotals, fro
             <Bar dataKey="Keine Daten"         stackId="cons" shape={MissingBarShape as never} maxBarSize={40} minPointSize={0} isAnimationActive={false} legendType="none" />
             <Bar dataKey="Keine Daten"         stackId="gen"  shape={MissingBarShape as never} maxBarSize={40} minPointSize={0} isAnimationActive={false} legendType="none" />
           </BarChart>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Generic combo chart: two stacked bars (left axis) + one line (right axis) ──
+// Used by the member portal's "Übersicht Gemeinschaft" community stats, for two
+// mirrored pairings: member consumption bars + EEG-wide generation line, and
+// member generation bars + EEG-wide consumption line. The two data sources are
+// on very different scales, so the line always gets its own right-hand axis
+// instead of sharing the bars' left axis.
+
+export interface ComboBarLineRow {
+  label: string;  // x-axis tick label, pre-formatted by the caller
+  period: string; // sort/dedupe key, e.g. an ISO date — not rendered
+  barA: number;   // kWh — bottom bar segment (stacked), left axis
+  barB: number;   // kWh — top bar segment (stacked), left axis
+  line: number;   // kWh — rendered as the overlaid line, right axis
+}
+
+interface ProductionConsumptionChartProps {
+  data: ComboBarLineRow[];
+  barALabel: string;
+  barBLabel: string;
+  lineLabel: string;
+  lineHint: string;
+  barAColor?: string;
+  barBColor?: string;
+  lineColor?: string;
+}
+
+export function ProductionConsumptionChart({
+  data, barALabel, barBLabel, lineLabel, lineHint,
+  barAColor = "#3b82f6", barBColor = "#f59e0b", lineColor = "#059669",
+}: ProductionConsumptionChartProps) {
+  const mounted = useIsMounted();
+  const [containerRef, width] = useContainerWidth();
+
+  if (!mounted || data.length === 0) {
+    return <EmptyChart label="Keine Daten für den gewählten Zeitraum." />;
+  }
+
+  return (
+    <div>
+      {/* Legend rendered as plain HTML above the chart, not recharts' <Legend> — the
+          latter is positioned at the bottom of the chart's own box and overlaps the
+          XAxis tick labels. Same approach as EnergySummaryChart above. */}
+      <div className="flex flex-wrap gap-4 mb-3 text-xs text-slate-500">
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-2.5 rounded-sm inline-block" style={{ backgroundColor: barAColor }} />
+          <span>{barALabel}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-2.5 rounded-sm inline-block" style={{ backgroundColor: barBColor }} />
+          <span>{barBLabel}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="w-3 h-0.5 inline-block" style={{ backgroundColor: lineColor }} />
+          <span>{lineLabel} <span className="text-slate-400">{lineHint}</span></span>
+        </div>
+      </div>
+
+      <div ref={containerRef} style={{ width: "100%", height: 300 }}>
+        {width > 0 && (
+          <ComposedChart width={width} height={300} data={data} margin={{ top: 8, right: 16, left: 0, bottom: 4 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
+            <XAxis orientation="bottom" type="category" scale="auto" height={30} mirror={false} dataKey="label" tick={{ fontSize: 12, fill: "#64748b" }} />
+            <YAxis
+              yAxisId="left"
+              orientation="left" type="number" scale="auto" mirror={false}
+              tick={{ fontSize: 11, fill: "#94a3b8" }}
+              tickFormatter={(v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)} MWh` : `${v}`)}
+              width={64}
+            />
+            <YAxis
+              yAxisId="right"
+              orientation="right" type="number" scale="auto" mirror={false}
+              tick={{ fontSize: 11, fill: "#94a3b8" }}
+              tickFormatter={(v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)} MWh` : `${v}`)}
+              width={64}
+            />
+            <Tooltip formatter={(v: number, name: string) => [fmtKwh(v), name]} contentStyle={{ fontSize: 12 }} />
+            <Bar yAxisId="left" dataKey="barA" name={barALabel} stackId="stack" fill={barAColor} maxBarSize={40} minPointSize={0} isAnimationActive={false} />
+            <Bar yAxisId="left" dataKey="barB" name={barBLabel} stackId="stack" fill={barBColor} radius={[3, 3, 0, 0]} maxBarSize={40} minPointSize={0} isAnimationActive={false} />
+            <Line yAxisId="right" dataKey="line" name={lineLabel} stroke={lineColor} strokeWidth={2} dot={{ r: 3 }} isAnimationActive={false} />
+          </ComposedChart>
         )}
       </div>
     </div>

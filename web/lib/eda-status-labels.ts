@@ -29,3 +29,44 @@ export const EDA_PROCESS_STATUS_STYLES: Record<string, string> = {
   rejected:        "bg-red-50 text-red-700",
   error:           "bg-red-100 text-red-800",
 };
+
+// Message/wire codes are a superset of the process types (also includes response codes
+// like ZUSTIMMUNG_ECON that never appear as an eda_processes.process_type). CM_REV_SP is
+// overridden to disambiguate from the customer-/NB-initiated revoke variants below.
+// Shared by the Nachrichten tab (eda-messages-table.tsx) and the per-process message
+// accordion (eda-processes-table.tsx) so message-type wording never drifts between them.
+export const EDA_MESSAGE_TYPE_LABELS: Record<string, string> = {
+  ...EDA_PROCESS_TYPE_LABELS,
+  DATEN_CRMSG:      "Energiedaten (Antwort)",
+  ANTWORT_PT:       "Edanet-Eingangsbestätigung",
+  CM_REV_SP:        "Widerruf (EEG)",
+  CM_REV_CUS:       "Widerruf durch Kunde",
+  CM_REV_IMP:       "Widerruf durch NB (Unmöglichkeit)",
+  ZUSTIMMUNG_ECON:  "Zustimmung",
+  ABLEHNUNG_ECON:   "Ablehnung",
+  ANTWORT_ECON:     "Zwischenbestätigung",
+  ABSCHLUSS_ECON:   "Abschluss",
+  SENDEN_ECP:       "Zählpunktliste",
+  ERSTE_ANM:        "Erst-Bestätigung",
+  FINALE_ANM:       "Final-Bestätigung",
+  ABLEHNUNG_ANM:    "Ablehnung",
+  ANFORDERUNG_ECON: "Zustimmungsanfrage",
+  ANFORDERUNG_ECP:  "Listanforderung",
+  ECMPList:         "Zählpunktliste",
+};
+
+export function edaMessageTypeLabel(process: string, messageType: string): string {
+  const code = process || messageType;
+  return EDA_MESSAGE_TYPE_LABELS[code] ?? code;
+}
+
+// pending/sent/error are the same concept as on eda_processes.status, so they share
+// label + color with EDA_PROCESS_STATUS_LABELS/STYLES; ack/processed only exist on messages.
+export function edaMessageStatusLabelAndStyle(status: string): { label: string; cls: string } {
+  if (status === "ack") return { label: "Quittiert", cls: "bg-green-50 text-green-700" };
+  if (status === "processed") return { label: "Verarbeitet", cls: "bg-green-50 text-green-700" };
+  return {
+    label: EDA_PROCESS_STATUS_LABELS[status] ?? EDA_PROCESS_STATUS_LABELS.pending,
+    cls: EDA_PROCESS_STATUS_STYLES[status] ?? "bg-yellow-50 text-yellow-700",
+  };
+}

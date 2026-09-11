@@ -654,7 +654,13 @@ func (h *EDAHandler) ZaehlerstandsgangAnfordern(w http.ResponseWriter, r *http.R
 		Status:         "pending",
 		ConversationID: convID,
 		Zaehlpunkt:     req.Zaehlpunkt,
-		InitiatedAt:    now,
+		// Requested range (dateTo already bumped by one day above, exclusive upper
+		// bound) — the worker uses this to verify an inbound DATEN_CRMSG actually
+		// overlaps the request before auto-completing it, instead of matching
+		// whichever message for this Zählpunkt happens to arrive next.
+		ValidFrom:   &dateFrom,
+		DateTo:      &dateTo,
+		InitiatedAt: now,
 	}
 	if err := h.edaProcRepo.Create(r.Context(), proc); err != nil {
 		jsonError(w, "failed to create EDA process record", http.StatusInternalServerError)

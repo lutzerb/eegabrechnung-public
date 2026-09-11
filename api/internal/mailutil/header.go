@@ -10,6 +10,7 @@ package mailutil
 
 import (
 	"mime"
+	"net/mail"
 	"strings"
 )
 
@@ -33,6 +34,14 @@ func SanitizeHeaderValue(s string) string {
 // value is sanitised first, guarantees no CR/LF survives into the header.
 func EncodeSubject(s string) string {
 	return mime.QEncoding.Encode("utf-8", SanitizeHeaderValue(s))
+}
+
+// FormatAddress renders "Name <address>" per RFC 5322, quoting the name and
+// RFC 2047-encoding it if it contains non-ASCII characters (e.g. German
+// umlauts). Use this to give an outbound mail's From header a display name
+// instead of the bare address, without hand-rolling escaping/encoding.
+func FormatAddress(name, address string) string {
+	return (&mail.Address{Name: SanitizeHeaderValue(name), Address: address}).String()
 }
 
 // Headers returns the standard From/To/Subject header block (each line CRLF

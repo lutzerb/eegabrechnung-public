@@ -602,9 +602,9 @@ func (h *OnboardingHandler) UpdateOnboardingStatus(w http.ResponseWriter, r *htt
 		return
 	}
 
-	validStatuses := map[string]bool{"pending": true, "approved": true, "rejected": true, "eda_sent": true, "active": true, "admin_created": true}
+	validStatuses := map[string]bool{"pending": true, "approved": true, "rejected": true, "eda_sent": true, "eda_rejected": true, "active": true, "admin_created": true}
 	if !validStatuses[body.Status] {
-		jsonError(w, "invalid status; must be pending, approved, rejected, eda_sent or active", http.StatusBadRequest)
+		jsonError(w, "invalid status; must be pending, approved, rejected, eda_sent, eda_rejected or active", http.StatusBadRequest)
 		return
 	}
 
@@ -1050,7 +1050,7 @@ func (h *OnboardingHandler) sendAdminNotificationEmail(ctx context.Context, eegI
 			adminURL, adminURL, adminURL,
 		)
 		var msg strings.Builder
-		msg.WriteString("From: " + smtpCfg.From + "\r\n")
+		msg.WriteString("From: " + mailutil.FormatAddress(eeg.DisplayNameOrName(), smtpCfg.From) + "\r\n")
 		msg.WriteString("To: " + mailutil.SanitizeHeaderValue(rcpt.email) + "\r\n")
 		msg.WriteString("Subject: " + mailutil.EncodeSubject(subject) + "\r\n")
 		msg.WriteString("MIME-Version: 1.0\r\n")
@@ -1231,7 +1231,7 @@ func (h *OnboardingHandler) sendEmailVerificationLink(eegID uuid.UUID, toEmail, 
 </html>`, greeting, verifyLink, verifyLink, verifyLink)
 
 	var msgBuilder strings.Builder
-	msgBuilder.WriteString("From: " + smtpCfg.From + "\r\n")
+	msgBuilder.WriteString("From: " + mailutil.FormatAddress(eeg.DisplayNameOrName(), smtpCfg.From) + "\r\n")
 	msgBuilder.WriteString("To: " + mailutil.SanitizeHeaderValue(toEmail) + "\r\n")
 	msgBuilder.WriteString("Subject: " + mailutil.EncodeSubject(subject) + "\r\n")
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
@@ -1307,7 +1307,7 @@ func (h *OnboardingHandler) sendMagicTokenEmail(req *domain.OnboardingRequest, e
 
 	// Build simple MIME message
 	var msgBuilder strings.Builder
-	msgBuilder.WriteString("From: " + smtpCfg.From + "\r\n")
+	msgBuilder.WriteString("From: " + mailutil.FormatAddress(eeg.DisplayNameOrName(), smtpCfg.From) + "\r\n")
 	msgBuilder.WriteString("To: " + mailutil.SanitizeHeaderValue(req.Email) + "\r\n")
 	msgBuilder.WriteString("Subject: " + mailutil.EncodeSubject(subject) + "\r\n")
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
@@ -1391,7 +1391,7 @@ func (h *OnboardingHandler) sendConversionEmail(req *domain.OnboardingRequest, e
 
 	smtpCfg2 := invoice.SMTPConfig{Host: eeg2.SMTPHost, From: eeg2.SMTPFrom, Username: eeg2.SMTPUser, Password: eeg2.SMTPPassword}
 	var msgBuilder strings.Builder
-	msgBuilder.WriteString("From: " + smtpCfg2.From + "\r\n")
+	msgBuilder.WriteString("From: " + mailutil.FormatAddress(eeg2.DisplayNameOrName(), smtpCfg2.From) + "\r\n")
 	msgBuilder.WriteString("To: " + mailutil.SanitizeHeaderValue(req.Email) + "\r\n")
 	msgBuilder.WriteString("Subject: " + mailutil.EncodeSubject(subject) + "\r\n")
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
@@ -1451,7 +1451,7 @@ func (h *OnboardingHandler) RunReminderCheck(ctx context.Context) {
 			slog.Warn("reminder check: abandoned send failed", "email", a.Email, "error", err)
 			continue
 		}
-		if err := h.onboardingRepo.SetEmailVerifyReminderSent(ctx, a.ID); err != nil {
+		if err := h.onboardingRepo.SetEmailVerifyReminderSent(ctx, a.EegID, a.Email); err != nil {
 			slog.Error("reminder check: SetEmailVerifyReminderSent failed", "id", a.ID, "error", err)
 		} else {
 			slog.Info("abandoned form reminder sent", "email", a.Email, "eeg_id", a.EegID)
@@ -1547,7 +1547,7 @@ func (h *OnboardingHandler) sendReminderEmail(req *domain.OnboardingRequest, eeg
 	}
 
 	var msgBuilder strings.Builder
-	msgBuilder.WriteString("From: " + smtpCfg.From + "\r\n")
+	msgBuilder.WriteString("From: " + mailutil.FormatAddress(eeg.DisplayNameOrName(), smtpCfg.From) + "\r\n")
 	msgBuilder.WriteString("To: " + mailutil.SanitizeHeaderValue(req.Email) + "\r\n")
 	msgBuilder.WriteString(ccHeader)
 	msgBuilder.WriteString("Subject: " + mailutil.EncodeSubject(subject) + "\r\n")
@@ -1624,7 +1624,7 @@ func (h *OnboardingHandler) sendAbandonedFormEmail(a repository.AbandonedEmailVe
 	}
 
 	var msgBuilder strings.Builder
-	msgBuilder.WriteString("From: " + adminEmail + "\r\n")
+	msgBuilder.WriteString("From: " + mailutil.FormatAddress(eeg.DisplayNameOrName(), adminEmail) + "\r\n")
 	msgBuilder.WriteString("To: " + mailutil.SanitizeHeaderValue(a.Email) + "\r\n")
 	msgBuilder.WriteString(ccHeader)
 	msgBuilder.WriteString("Subject: " + mailutil.EncodeSubject(subject) + "\r\n")
@@ -2009,7 +2009,7 @@ func (h *OnboardingHandler) sendManualConfirmationEmail(req *domain.OnboardingRe
 	_ = mpRows // used inline above
 
 	var msgBuilder strings.Builder
-	msgBuilder.WriteString("From: " + smtpCfg.From + "\r\n")
+	msgBuilder.WriteString("From: " + mailutil.FormatAddress(eeg.DisplayNameOrName(), smtpCfg.From) + "\r\n")
 	msgBuilder.WriteString("To: " + mailutil.SanitizeHeaderValue(req.Email) + "\r\n")
 	msgBuilder.WriteString("Subject: " + mailutil.EncodeSubject(subject) + "\r\n")
 	msgBuilder.WriteString("MIME-Version: 1.0\r\n")

@@ -1,13 +1,18 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 export default function CopyLinkButton({ url }: { url: string }) {
   const [copied, setCopied] = useState(false);
+  const [fullUrl, setFullUrl] = useState(url);
+
+  useEffect(() => {
+    setFullUrl(`${window.location.origin}${url}`);
+  }, [url]);
 
   async function handleCopy() {
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(fullUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -20,7 +25,7 @@ export default function CopyLinkButton({ url }: { url: string }) {
       <input
         type="text"
         readOnly
-        value={url}
+        value={fullUrl}
         className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm bg-slate-50 text-slate-700 font-mono"
         onClick={(e) => (e.target as HTMLInputElement).select()}
       />
