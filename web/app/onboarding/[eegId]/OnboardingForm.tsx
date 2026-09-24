@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { validateIBAN, validateBIC, validateZaehlpunkt, validateUIDNummer, formatIBAN } from "@/lib/validation";
+import { validateIBAN, validateBIC, validateZaehlpunkt, validateUIDNummer, formatIBAN, NetzbetreiberContext } from "@/lib/validation";
 
 interface MeterPointEntry {
   zaehlpunkt: string;
@@ -56,6 +56,11 @@ interface Props {
   verifiedEmail?: string;
   verifiedName1?: string;
   verifiedName2?: string;
+  // Netzbetreiber-plausibility check for entered Zählpunkte (see lib/validation.ts).
+  gemeinschaftTyp?: string;
+  edaNetzbetreiberId?: string;
+  knownNetzbetreiberPrefixes?: string[];
+  netzbetreiberOverrides?: Record<string, string>;
 }
 
 const STEPS = [
@@ -140,7 +145,21 @@ export default function OnboardingForm({
   verifiedEmail,
   verifiedName1,
   verifiedName2,
+  gemeinschaftTyp,
+  edaNetzbetreiberId,
+  knownNetzbetreiberPrefixes,
+  netzbetreiberOverrides,
 }: Props) {
+  const netzbetreiberContext: NetzbetreiberContext | undefined =
+    gemeinschaftTyp && knownNetzbetreiberPrefixes && knownNetzbetreiberPrefixes.length > 0
+      ? {
+          gemeinschaftTyp,
+          edaNetzbetreiberId: edaNetzbetreiberId || "",
+          knownPrefixes: knownNetzbetreiberPrefixes,
+          overrides: netzbetreiberOverrides || {},
+        }
+      : undefined;
+
   // If verifiedEmail is set, skip straight to step 2
   const initialStep = verifiedEmail ? 2 : 1;
 
@@ -289,7 +308,7 @@ export default function OnboardingForm({
     }
     formData.meterPoints.forEach((mp, i) => {
       if (mp.zaehlpunkt.trim()) {
-        const err = validateZaehlpunkt(mp.zaehlpunkt);
+        const err = validateZaehlpunkt(mp.zaehlpunkt, netzbetreiberContext);
         if (err) errors[`zaehlpunkt_${i}`] = err;
       }
     });
@@ -1031,7 +1050,7 @@ Datum der elektronischen Unterzeichnung: ${today}`;
                       updateMeterPoint(index, "zaehlpunkt", e.target.value.replace(/\s+/g, "").toUpperCase())
                     }
                     onBlur={(e) => {
-                      const err = validateZaehlpunkt(e.target.value);
+                      const err = validateZaehlpunkt(e.target.value, netzbetreiberContext);
                       const key = `zaehlpunkt_${index}`;
                       setFieldErrors((prev) => err ? { ...prev, [key]: err } : Object.fromEntries(Object.entries(prev).filter(([k]) => k !== key)));
                     }}

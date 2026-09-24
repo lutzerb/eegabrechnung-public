@@ -460,6 +460,14 @@ func (w *Worker) processInboundMessages(ctx context.Context, msgs []*types.Messa
 					w.log.Warn("failed to set eeg_id on CPNotification", "id", msgID, "error", err)
 				}
 			}
+			// Tag the message with the process it acknowledges so it shows up under
+			// that process in the EDA-Prozesse "Nachrichten" accordion — otherwise it's
+			// only ever visible in the flat message log even though we resolved it above.
+			if notifProc != nil {
+				if err := w.edaMsgRepo.UpdateProcessID(ctx, msgID, notifProc.ID); err != nil {
+					w.log.Warn("failed to set eda_process_id on CPNotification", "id", msgID, "process_id", notifProc.ID, "error", err)
+				}
+			}
 			// ABLEHNUNG_PT = edanet rejected our outbound message (e.g. ResponseCode 55 = unknown Zählpunkt).
 			// A rejection can carry more than one ResponseCode (e.g. 181+76 for EC_PODLIST) —
 			// format as "response_codes=[...]" so the frontend's parseEdaErrorCodes() shows all of them.
@@ -808,10 +816,23 @@ func (w *Worker) processCRMsg(ctx context.Context, msgID uuid.UUID, msg *types.M
 	// the overlap check, a routine daily push for unrelated recent dates that happens
 	// to arrive before the real historical answer would wrongly close out the request,
 	// leaving the actually-requested data silently undelivered.
-	if proc, err := w.edaProcRepo.FindSentReqPTByZaehlpunkt(ctx, knownEegID, record.Zaehlpunkt); err == nil {
-		if proc.ValidFrom == nil || proc.DateTo == nil || crMsgOverlapsRange(record, *proc.ValidFrom, *proc.DateTo) {
+	//
+	// A Zählpunkt can have several CR_REQ_PT requests in flight simultaneously (e.g. a
+	// large historical range split into weekly chunks sent back-to-back) — check every
+	// candidate's own period instead of only the most recently initiated one, otherwise
+	// a response for an earlier chunk never gets matched to anything.
+	if candidates, err := w.edaProcRepo.ListSentReqPTByZaehlpunkt(ctx, knownEegID, record.Zaehlpunkt); err == nil {
+		var matched *domain.EDAProcess
+		for i := range candidates {
+			c := &candidates[i]
+			if c.ValidFrom == nil || c.DateTo == nil || crMsgOverlapsRange(record, *c.ValidFrom, *c.DateTo) {
+				matched = c
+				break
+			}
+		}
+		if matched != nil {
 			now := time.Now().UTC()
-			if upErr := w.edaProcRepo.UpdateStatus(ctx, proc.ID, "completed", &now, ""); upErr != nil {
+			if upErr := w.edaProcRepo.UpdateStatus(ctx, matched.ID, "completed", &now, ""); upErr != nil {
 				w.log.Warn("CR_MSG: failed to mark CR_REQ_PT process completed",
 					"zaehlpunkt", record.Zaehlpunkt,
 					"error", upErr,
@@ -819,20 +840,18 @@ func (w *Worker) processCRMsg(ctx context.Context, msgID uuid.UUID, msg *types.M
 			} else {
 				w.log.Info("CR_MSG: CR_REQ_PT process marked completed",
 					"zaehlpunkt", record.Zaehlpunkt,
-					"process_id", proc.ID,
+					"process_id", matched.ID,
 				)
 			}
 			// Tag the message so it shows up under this process in the EDA-Prozesse UI —
 			// only for the overlapping message, same reasoning as the completion check above.
-			if upErr := w.edaMsgRepo.UpdateProcessID(ctx, msgID, proc.ID); upErr != nil {
-				w.log.Warn("CR_MSG: failed to set eda_process_id", "id", msgID, "process_id", proc.ID, "error", upErr)
+			if upErr := w.edaMsgRepo.UpdateProcessID(ctx, msgID, matched.ID); upErr != nil {
+				w.log.Warn("CR_MSG: failed to set eda_process_id", "id", msgID, "process_id", matched.ID, "error", upErr)
 			}
-		} else {
-			w.log.Info("CR_MSG: message period does not overlap open CR_REQ_PT request — leaving it in 'sent' status",
+		} else if len(candidates) > 0 {
+			w.log.Info("CR_MSG: message period does not overlap any open CR_REQ_PT request — leaving them in 'sent' status",
 				"zaehlpunkt", record.Zaehlpunkt,
-				"process_id", proc.ID,
-				"requested_from", *proc.ValidFrom,
-				"requested_to", *proc.DateTo,
+				"candidate_count", len(candidates),
 			)
 		}
 	}
@@ -1980,7 +1999,7 @@ func (w *Worker) processCMRevoke(ctx context.Context, msgID uuid.UUID, msg *type
 	now := time.Now().UTC()
 	errMsg := "Zustimmung durch Kunden widerrufen (CM_REV_CUS)"
 	if isIMP {
-		errMsg = fmt.Sprintf("Anmeldung durch Netzbetreiber aufgehoben (%s)", result.MessageCode)
+		errMsg = fmt.Sprintf("Anmeldung durch Netzbetreiber aufgehoben (%s): %s", result.MessageCode, result.ReasonText())
 	}
 	if err := w.edaProcRepo.UpdateStatus(ctx, proc.ID, "completed", &now, errMsg); err != nil {
 		return uuid.Nil, fmt.Errorf("update EDA process status after CMRevoke: %w", err)
@@ -2040,10 +2059,7 @@ func (w *Worker) processCMRevokeUnsolicited(ctx context.Context, result *edaxml.
 		return uuid.Nil, nil
 	}
 
-	reason := result.Reason
-	if reason == "" {
-		reason = result.MessageCode
-	}
+	reason := result.ReasonText()
 
 	if result.ConsentEnd == "" {
 		w.log.Warn("CMRevoke: unsolicited revoke has no ConsentEnd — cannot close registration period",
@@ -2068,18 +2084,93 @@ func (w *Worker) processCMRevokeUnsolicited(ctx context.Context, result *edaxml.
 
 	if isIMP {
 		if eeg, eegErr := w.eegRepo.GetByIDInternal(ctx, mp.EegID); eegErr == nil {
-			syntheticProc := &domain.EDAProcess{
-				EegID:       mp.EegID,
-				ProcessType: "CM_REV_SP",
-				Zaehlpunkt:  mp.Zaehlpunkt,
-				Status:      "completed",
-				ErrorMsg:    fmt.Sprintf("Vom Netzbetreiber aufgehoben (%s): %s", result.MessageCode, reason),
-			}
-			go w.sendEDAErrorNotification(context.WithoutCancel(ctx), syntheticProc, eeg)
+			go w.sendUnsolicitedRevokeNotification(context.WithoutCancel(ctx), mp, eeg, result, consentEndDate)
 		}
 	}
 
 	return mp.EegID, nil
+}
+
+// sendUnsolicitedRevokeNotification informs the operator when the Netzbetreiber has revoked a
+// meter point's EEG-participation consent on its own initiative (isIMP variants of CMRevoke)
+// without a matching outbound CM_REV_SP from us — typically because a Zählpunkt-Lieferantenwechsel
+// resets third-party consents. Unlike sendEDAErrorNotification, this does not reference a
+// (non-existent) eda_process and explains the situation in plain language instead of reusing the
+// generic process-failure template. Called in a goroutine, non-blocking.
+func (w *Worker) sendUnsolicitedRevokeNotification(ctx context.Context, mp *domain.MeterPoint, eeg *domain.EEG, result *edaxml.CMRevokeDoc, consentEnd time.Time) {
+	if eeg.SMTPHost == "" || eeg.SMTPFrom == "" {
+		w.log.Warn("unsolicited revoke notification: no SMTP configured for EEG — skipping",
+			"eeg_id", eeg.ID,
+			"meter_point_id", mp.ID,
+		)
+		return
+	}
+	memberName := ""
+	if member, mErr := w.memberRepo.GetByID(ctx, mp.MemberID); mErr == nil {
+		memberName = member.Name1
+		if member.Name2 != "" {
+			memberName = member.Name2 + " " + member.Name1
+		}
+	}
+
+	reasonText := result.ReasonText()
+	// Fixed ReasonKey 1-3 comes with a defined meaning; append any accompanying free text
+	// from the Netzbetreiber (spec only requires it for key 0, but some send it anyway).
+	codeDetail := fmt.Sprintf("ReasonKey %d", result.ReasonKey)
+	if result.Reason != "" && result.Reason != reasonText {
+		codeDetail += fmt.Sprintf(", Rohtext %q", result.Reason)
+	}
+	codeDetail += fmt.Sprintf(", MessageCode %s", result.MessageCode)
+
+	subject := fmt.Sprintf("[EDA Hinweis] Zählpunkt %s vom Netzbetreiber aus der Gemeinschaft ausgetragen", mp.Zaehlpunkt)
+	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; color: #1e293b;">
+<h2 style="color: #b45309;">Zählpunkt vom Netzbetreiber ausgetragen</h2>
+<p>Der Netzbetreiber hat die Teilnahme des folgenden Zählpunkts an der Energiegemeinschaft <strong>%s</strong> von sich aus beendet — nicht auf unsere Veranlassung (kein CM_REV_SP von uns vorausgegangen).</p>
+<table style="border-collapse: collapse; width: 100%%; font-size: 14px;">
+  <tr><td style="padding: 6px 12px; background: #f1f5f9; font-weight: 600; width: 40%%;">Mitglied</td>
+      <td style="padding: 6px 12px;">%s</td></tr>
+  <tr><td style="padding: 6px 12px; background: #f1f5f9; font-weight: 600;">Zählpunkt</td>
+      <td style="padding: 6px 12px;"><code>%s</code></td></tr>
+  <tr><td style="padding: 6px 12px; background: #f1f5f9; font-weight: 600;">Energierichtung</td>
+      <td style="padding: 6px 12px;">%s</td></tr>
+  <tr><td style="padding: 6px 12px; background: #f1f5f9; font-weight: 600;">Abgemeldet zum</td>
+      <td style="padding: 6px 12px; color: #b45309; font-weight: 600;">%s</td></tr>
+  <tr><td style="padding: 6px 12px; background: #f1f5f9; font-weight: 600;">Grund laut Netzbetreiber</td>
+      <td style="padding: 6px 12px;">%s<br><span style="color: #64748b; font-size: 12px;">%s</span></td></tr>
+</table>
+<p style="margin-top: 16px;">Der Zählpunkt wurde im System bereits automatisch mit diesem Datum als abgemeldet markiert (siehe Registrierungshistorie auf der Zählpunkt-Seite). Es ist daher <strong>keine weitere Aktion nötig</strong> — außer die Abmeldung war ungewollt: In dem Fall muss der Zählpunkt über eine neue Online-Anmeldung (EC_REQ_ONL) erneut bei der Gemeinschaft angemeldet werden.</p>
+<hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
+<p style="color: #94a3b8; font-size: 12px;">Diese Nachricht wurde automatisch generiert.</p>
+</body>
+</html>`, eeg.DisplayNameOrName(), func() string {
+		if memberName != "" {
+			return memberName
+		}
+		return "(unbekannt)"
+	}(), mp.Zaehlpunkt, mp.Energierichtung, consentEnd.Format("02.01.2006"), reasonText, codeDetail)
+
+	var msgBuilder strings.Builder
+	msgBuilder.WriteString(mailutil.Headers(mailutil.FormatAddress(eeg.DisplayNameOrName(), eeg.SMTPFrom), eeg.SMTPFrom, subject))
+	msgBuilder.WriteString("MIME-Version: 1.0\r\n")
+	msgBuilder.WriteString("Content-Type: text/html; charset=utf-8\r\n")
+	msgBuilder.WriteString("\r\n")
+	msgBuilder.WriteString(htmlBody)
+
+	smtpCfg := invoicepkg.SMTPConfig{Host: eeg.SMTPHost, From: eeg.SMTPFrom, Username: eeg.SMTPUser, Password: eeg.SMTPPassword}
+	if err := invoicepkg.SendLogged(ctx, w.emailLogRepo, smtpCfg, eeg.ID, "eda_unsolicited_revoke", eeg.SMTPFrom, subject, nil, nil, []byte(msgBuilder.String())); err != nil {
+		w.log.Warn("unsolicited revoke notification email failed", "meter_point_id", mp.ID, "error", err)
+		return
+	}
+	w.log.Info("unsolicited revoke notification sent",
+		"meter_point_id", mp.ID,
+		"zaehlpunkt", mp.Zaehlpunkt,
+		"message_code", result.MessageCode,
+		"reason_key", result.ReasonKey,
+		"consent_end", consentEnd.Format("2006-01-02"),
+	)
 }
 
 // sendEDAErrorNotification emails the EEG operator when an EDA process reaches

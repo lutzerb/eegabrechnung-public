@@ -3,7 +3,8 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { getEEG, getMember, createMeterPoint } from "@/lib/api";
-import { ValidatedInput } from "@/components/validated-input";
+import { ZaehlpunktInput } from "@/components/zaehlpunkt-input";
+import type { NetzbetreiberContext } from "@/lib/validation";
 import Link from "next/link";
 import { eegDisplayName } from "@/lib/eeg-display-name";
 
@@ -24,6 +25,7 @@ export default async function NewMeterPointPage({ params, searchParams }: Props)
   let eeg = null;
   let member = null;
   let loadError: string | null = null;
+  let netzbetreiberContext: NetzbetreiberContext | null = null;
 
   try {
     [eeg, member] = await Promise.all([
@@ -33,6 +35,23 @@ export default async function NewMeterPointPage({ params, searchParams }: Props)
   } catch (err: unknown) {
     const apiError = err as { message?: string };
     loadError = apiError.message || "Fehler beim Laden.";
+  }
+
+  if (eeg) {
+    try {
+      const nbRes = await fetch(`${API}/api/v1/public/netzbetreiber-prefixes`, { cache: "force-cache", next: { revalidate: 3600 } });
+      if (nbRes.ok) {
+        const nbData = await nbRes.json();
+        netzbetreiberContext = {
+          gemeinschaftTyp: eeg.gemeinschaft_typ,
+          edaNetzbetreiberId: eeg.eda_netzbetreiber_id || "",
+          knownPrefixes: nbData.known_prefixes || [],
+          overrides: nbData.overrides || {},
+        };
+      }
+    } catch {
+      // Reference data unavailable — ZaehlpunktInput falls back to format-only validation.
+    }
   }
 
   if (loadError || !eeg || !member) {
@@ -166,11 +185,11 @@ export default async function NewMeterPointPage({ params, searchParams }: Props)
             <label className={labelClass}>
               Zählpunkt-ID <span className="text-red-500">*</span>
             </label>
-            <ValidatedInput
+            <ZaehlpunktInput
               name="zaehlpunkt"
               placeholder="AT0010000000000000001000000000001"
-              validatorName="zaehlpunkt"
               inputClassName={inputClass}
+              netzbetreiberContext={netzbetreiberContext}
             />
             <p className="text-xs text-slate-400 mt-1">33-stellige Zählpunktnummer gemäß österreichischem Standard.</p>
           </div>

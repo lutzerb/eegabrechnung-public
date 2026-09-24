@@ -423,7 +423,8 @@ Zaehlerstandsgang request body:
 
 ### Key EDA files
 - `api/internal/eda/transport/file.go` — FILE transport (inbox/outbox directories)
-- `api/internal/eda/transport/mail.go` — MAIL transport (IMAP polling + SMTP send); edanetProzessID map
+- `api/internal/eda/transport/mail.go` — MAIL transport (IMAP polling + SMTP send); edanetProzessIDHistory
+- `api/internal/eda/edaversion/edaversion.go` — EDA Marktprozesse version cutover dates + generic history resolver
 - `api/internal/eda/xml/cprequest_builder.go` — builds outbound CPRequest XML (CR_REQ_PT, EC_PODLIST)
 - `api/internal/eda/xml/cmrequest_builder.go` — builds outbound CMRequest XML (EC_REQ_ONL)
 - `api/internal/eda/xml/ecmplist_builder.go` — builds outbound ECMPList XML (EC_PRTFACT_CHG)
@@ -439,7 +440,7 @@ Critical: namespace prefixes in XML struct tags must exactly match the schema.
 
 | XML document | Applies to | Rule |
 |---|---|---|
-| ECMPList 01.10 | ALL elements in MarketParticipantDirectory AND ProcessDirectory | `cp:` prefix — including `MessageId`, `ConversationId`, `MeteringPoint` |
+| ECMPList 01.10 (until 2026-10-04) / 01.20 (from 2026-10-05) | ALL elements in MarketParticipantDirectory AND ProcessDirectory | `cp:` prefix — including `MessageId`, `ConversationId`, `MeteringPoint` |
 | CMRequest 01.30 | document elements `cp:`, RoutingHeader sub-elements `ct:` | See cmrequest_builder.go |
 | CPRequest 01.12 | document elements `cp:`, RoutingHeader sub-elements `ct:` | See cprequest_builder.go |
 
@@ -450,17 +451,25 @@ Critical: namespace prefixes in XML struct tags must exactly match the schema.
 - Before that date edanet returns "No activated XML Schema for MessageType:null Version:null" — not a bug, just timing
 - Code in `cmrequest_builder.go` is already on 01.30
 
-### edanetProzessID map (email Subject line)
-Process type → edanet Subject field (in `api/internal/eda/transport/mail.go`):
-```
-EC_PRTFACT_CHG → EC_PRTFACT_CHANGE_01.00
-EC_REQ_ONL     → EC_REQ_ONL_02.30
-CR_REQ_PT      → CR_REQ_PT_04.10
-EC_PODLIST     → EC_PODLIST_01.00
-CM_REV_SP      → CM_REV_SP_01.00
-```
+### EDA version cutovers (`api/internal/eda/edaversion/`)
+edanet republishes its "Marktprozesse" interface list periodically with new Prozess-Id subject values and/or new XML schema versions, effective from a fixed calendar date — while this service is deployed continuously (not only on the cutover date). To avoid breaking still-valid old values on an early deploy, or needing a deploy timed exactly to the cutover date, both the old and new values live in the code simultaneously as a `[]edaversion.Entry[T]` history table, and `edaversion.Resolve(history, time.Now())` (Vienna-local) picks the one that's currently effective. **Any future EDA version update should add a new `edaversion.CutoverYYYY_MM_DD` constant + append entries to the relevant history tables — not edit values in place.**
+
+Currently defined: `edaversion.Cutover2026_10_05` (Marktprozesse 04.10, Oktober 2026).
+
+### edanetProzessID history (email Subject line)
+Process type → edanet Subject field, per cutover (in `api/internal/eda/transport/mail.go`, `edanetProzessIDHistory`, resolved via `edaversion.Resolve`):
+
+| Process | until 2026-10-04 | from 2026-10-05 |
+|---|---|---|
+| `EC_PRTFACT_CHG` | `EC_PRTFACT_CHANGE_01.00` | `EC_PRTFACT_CHANGE_01.10` |
+| `EC_REQ_ONL` | `EC_REQ_ONL_02.30` | `EC_REQ_ONL_02.40` |
+| `CR_REQ_PT` | `CR_REQ_PT_04.10` | `CR_REQ_PT_04.30` |
+| `EC_PODLIST` | `EC_PODLIST_01.00` | `EC_PODLIST_02.10` |
+| `CM_REV_SP` | `CM_REV_SP_01.00` | `CM_REV_SP_01.30` |
 
 **Internal vs. official process names**: the left-hand values are internal DB/code identifiers (`eda_processes.process_type`, handlers, jobs). Only `EC_PRTFACT_CHG` still differs from the official ebutilities.at name (**EC_PRTFACT_CHANGE**) — kept deliberately as internal short form. `EC_REQ_PT` was renamed to the canonical **CR_REQ_PT** in code + data (migration 087, analogous to 054 EC_EINZEL_ANM → EC_REQ_ONL); the wire format (Subject Prozess-Id, XML MessageCodes) was always correct.
+
+**ECMPList schema bump to 01.20 (from 2026-10-05)**: only affects our outbound `ANFORDERUNG_CPF` (Teilnahmefaktor-Änderung, `EC_PRTFACT_CHG`) via `BuildECMPList` in `ecmplist_builder.go` — inbound ECMPList parsing (`ecmplist_parser.go`) is namespace-agnostic and unaffected. Schema 01.20 adds a required `DataType` field (xsd:string, max 30, "Datentypen der Anfrage"), rendered only from the cutover onward (`ecmpMPTimeDataXML.DataType`, `omitempty`); the caller in `handler/eda.go` currently passes a placeholder value (`"EnergyCommunityRegistration"`, mirrors CMRequest's `ReqDatType`) — **confirm the real expected value with EDA GmbH/Netzbetreiber before 2026-10-05**. The related new process `EC_PRT_CHANGE` (ANFORDERUNG_ECC, "Änderung der Aufteilung") introduced in the same release is deliberately **not implemented** — all communities use dynamic allocation (`ECDisModel=D`), for which it's not needed.
 
 ### IMAP / Worker Operational Notes
 

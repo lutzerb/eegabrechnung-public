@@ -470,6 +470,14 @@ func (h *EDAHandler) TeilnahmefaktorAendern(w http.ResponseWriter, r *http.Reque
 		EnergyDirection: energyDirection,
 		ECPartFact:      req.ParticipationFactor,
 		ECShare:         req.ECShare,
+		// TODO(2026-10): ECMPList schema 01.20 requires DataType from 2026-10-05
+		// onward (see edaxml.BuildECMPList / ecmpListSchemaHistory) but
+		// ebutilities.at's Marktprozesse-Doku does not enumerate valid values.
+		// Placeholder mirrors CMRequest's ReqDatType ("Datentypen der Anfrage" —
+		// same field description). Confirm the real value before 2026-10-05
+		// (EDA GmbH / Netzbetreiber, or from a live inbound ECMPList 01.20
+		// message) and update here.
+		DataType: "EnergyCommunityRegistration",
 	})
 	if err != nil {
 		jsonError(w, fmt.Sprintf("build XML: %v", err), http.StatusInternalServerError)

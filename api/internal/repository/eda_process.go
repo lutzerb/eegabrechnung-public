@@ -146,25 +146,35 @@ func (r *EDAProcessRepository) UpdateStatus(ctx context.Context, id uuid.UUID, s
 	return err
 }
 
-// FindSentReqPTByZaehlpunkt returns the most recent CR_REQ_PT process in "sent"
-// status for a given Zählpunkt within one EEG. Used to auto-complete the process
-// when a DATEN_CRMSG (ConsumptionRecord) arrives. The eeg_id scope matters for
-// Mehrfachteilnahme: the same Zählpunkt can have open data requests in two EEGs,
-// and an unscoped match could complete the wrong one.
-func (r *EDAProcessRepository) FindSentReqPTByZaehlpunkt(ctx context.Context, eegID uuid.UUID, zaehlpunkt string) (*domain.EDAProcess, error) {
+// ListSentReqPTByZaehlpunkt returns all CR_REQ_PT processes in "sent" status for a given
+// Zählpunkt within one EEG, most recently initiated first. Used to auto-complete the right
+// process when a DATEN_CRMSG (ConsumptionRecord) arrives — a Zählpunkt can have several
+// requests in flight at once (e.g. a large historical range split into weekly chunks), so
+// the caller must check each candidate's own period rather than assuming the latest one is
+// the match. The eeg_id scope matters for Mehrfachteilnahme: the same Zählpunkt can have open
+// data requests in two EEGs, and an unscoped match could complete the wrong one.
+func (r *EDAProcessRepository) ListSentReqPTByZaehlpunkt(ctx context.Context, eegID uuid.UUID, zaehlpunkt string) ([]domain.EDAProcess, error) {
 	q := `SELECT ` + edaProcessCols + `
 	      FROM eda_processes
 	      WHERE eeg_id = $1
 	        AND zaehlpunkt = $2
 	        AND process_type = 'CR_REQ_PT'
 	        AND status = 'sent'
-	      ORDER BY initiated_at DESC
-	      LIMIT 1`
-	var p domain.EDAProcess
-	if err := scanEDAProcess(r.db.QueryRow(ctx, q, eegID, zaehlpunkt), &p); err != nil {
-		return nil, err
+	      ORDER BY initiated_at DESC`
+	rows, err := r.db.Query(ctx, q, eegID, zaehlpunkt)
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
 	}
-	return &p, nil
+	defer rows.Close()
+	var ps []domain.EDAProcess
+	for rows.Next() {
+		var p domain.EDAProcess
+		if err := scanEDAProcess(rows, &p); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		ps = append(ps, p)
+	}
+	return ps, rows.Err()
 }
 
 // ListZaehlpunkteWithInFlightCRReqPT returns the set of Zählpunkte in this EEG

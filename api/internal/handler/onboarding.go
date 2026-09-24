@@ -75,6 +75,11 @@ type publicEEGInfo struct {
 	OnboardingContractText string               `json:"onboarding_contract_text"`
 	ReferralOptions        []string             `json:"referral_options"`
 	Documents              []publicDocumentItem `json:"documents"`
+	// GemeinschaftTyp and EdaNetzbetreiberID let the onboarding form validate a
+	// Zählpunkt's Netzbetreiber client-side (see netzbetreiber.ValidateZaehlpunkt)
+	// — neither value is sensitive (the Netzbetreiber ID is a public EC-Nummer).
+	GemeinschaftTyp    string `json:"gemeinschaft_typ"`
+	EdaNetzbetreiberID string `json:"eda_netzbetreiber_id"`
 }
 
 // GetPublicEEGInfo handles GET /api/v1/public/eegs/{eegID}/info
@@ -122,6 +127,8 @@ func (h *OnboardingHandler) GetPublicEEGInfo(w http.ResponseWriter, r *http.Requ
 		BillingPeriod:          eeg.BillingPeriod,
 		OnboardingContractText: eeg.OnboardingContractText,
 		ReferralOptions:        eeg.ReferralOptions,
+		GemeinschaftTyp:        eeg.GemeinschaftTyp,
+		EdaNetzbetreiberID:     eeg.EdaNetzbetreiberID,
 		Documents:              pubDocs,
 	})
 }
@@ -309,13 +316,18 @@ func (h *OnboardingHandler) SubmitOnboarding(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// Check: meter points already registered in this EEG
+	// Check: meter points already registered in this EEG, and that they plausibly
+	// belong to this EEG's/GEA's (or, for BEG, any known) Netzbetreiber.
 	for _, mp := range req.MeterPoints {
 		if strings.TrimSpace(mp.Zaehlpunkt) == "" {
 			continue
 		}
 		if exists, err := h.meterPointRepo.ExistsByZaehlpunktInEEG(r.Context(), eegID, mp.Zaehlpunkt); err == nil && exists {
 			jsonError(w, "Der Zählpunkt "+mp.Zaehlpunkt+" ist bereits in dieser Energiegemeinschaft registriert.", http.StatusConflict)
+			return
+		}
+		if err := netzbetreiber.ValidateZaehlpunkt(mp.Zaehlpunkt, eeg.GemeinschaftTyp, eeg.EdaNetzbetreiberID); err != nil {
+			jsonError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 	}
@@ -652,6 +664,18 @@ func (h *OnboardingHandler) UpdateOnboardingStatus(w http.ResponseWriter, r *htt
 			slog.Error("failed to get EEG", "error", err)
 			jsonError(w, "EEG not found", http.StatusNotFound)
 			return
+		}
+
+		// Re-validate Zählpunkt-Netzbetreiber plausibility here too, in case the
+		// request's meter points were edited after submission.
+		for _, mp := range req.MeterPoints {
+			if strings.TrimSpace(mp.Zaehlpunkt) == "" {
+				continue
+			}
+			if err := netzbetreiber.ValidateZaehlpunkt(mp.Zaehlpunkt, eeg.GemeinschaftTyp, eeg.EdaNetzbetreiberID); err != nil {
+				jsonError(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 		}
 
 		// Begin transaction
@@ -1774,6 +1798,10 @@ func (h *OnboardingHandler) CreateManualOnboarding(w http.ResponseWriter, r *htt
 		}
 		if exists, err := h.meterPointRepo.ExistsByZaehlpunktInEEG(r.Context(), eegID, mp.Zaehlpunkt); err == nil && exists {
 			jsonError(w, "Der Zählpunkt "+mp.Zaehlpunkt+" ist bereits in dieser Energiegemeinschaft registriert.", http.StatusConflict)
+			return
+		}
+		if err := netzbetreiber.ValidateZaehlpunkt(mp.Zaehlpunkt, eeg.GemeinschaftTyp, eeg.EdaNetzbetreiberID); err != nil {
+			jsonError(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 	}

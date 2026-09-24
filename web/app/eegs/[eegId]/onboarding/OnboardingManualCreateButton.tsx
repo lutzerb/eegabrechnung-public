@@ -5,9 +5,19 @@ import OnboardingManualCreateModal from "./OnboardingManualCreateModal";
 
 interface Props {
   eegId: string;
+  gemeinschaftTyp: string;
+  edaNetzbetreiberId: string;
+  knownNetzbetreiberPrefixes: string[];
+  netzbetreiberOverrides: Record<string, string>;
 }
 
-export default function OnboardingManualCreateButton({ eegId }: Props) {
+export default function OnboardingManualCreateButton({
+  eegId,
+  gemeinschaftTyp,
+  edaNetzbetreiberId,
+  knownNetzbetreiberPrefixes,
+  netzbetreiberOverrides,
+}: Props) {
   const [open, setOpen] = useState(false);
   const [successEmail, setSuccessEmail] = useState<string | null>(null);
 
@@ -42,6 +52,10 @@ export default function OnboardingManualCreateButton({ eegId }: Props) {
       {open && (
         <OnboardingManualCreateModal
           eegId={eegId}
+          gemeinschaftTyp={gemeinschaftTyp}
+          edaNetzbetreiberId={edaNetzbetreiberId}
+          knownNetzbetreiberPrefixes={knownNetzbetreiberPrefixes}
+          netzbetreiberOverrides={netzbetreiberOverrides}
           onClose={() => setOpen(false)}
           onSuccess={handleSuccess}
         />

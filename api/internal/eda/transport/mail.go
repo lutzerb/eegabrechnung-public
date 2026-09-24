@@ -20,6 +20,7 @@ import (
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
 	"github.com/google/uuid"
+	"github.com/lutzerb/eegabrechnung/internal/eda/edaversion"
 	"github.com/lutzerb/eegabrechnung/internal/eda/types"
 	edaxml "github.com/lutzerb/eegabrechnung/internal/eda/xml"
 	"github.com/lutzerb/eegabrechnung/internal/mailutil"
@@ -66,16 +67,42 @@ func NewMailTransport(cfg MailConfig, log *slog.Logger) (*MailTransport, error) 
 // smtpTimeout is the total timeout for a single SMTP send operation.
 const smtpTimeout = 30 * time.Second
 
-// edanetProzessID maps internal EDA process codes to the Prozess-Id string
-// required in the edanet.at email Subject header:
+// edanetProzessIDHistory maps internal EDA process codes to the Prozess-Id
+// string required in the edanet.at email Subject header:
 // [<Prozess-Id> MessageId=<MessageId>]
 // See: https://www.ebutilities.at/ for the full process list.
-var edanetProzessID = map[string]string{
-	"EC_PRTFACT_CHG": "EC_PRTFACT_CHANGE_01.00",
-	"EC_REQ_ONL":     "EC_REQ_ONL_02.30",
-	"CR_REQ_PT":      "CR_REQ_PT_04.10",
-	"EC_PODLIST":     "EC_PODLIST_01.00",
-	"CM_REV_SP":      "CM_REV_SP_01.00",
+//
+// Each process has a history of values because edanet republishes the
+// "Marktprozesse" interface list periodically with new Prozess-Id versions,
+// effective from a fixed date — see api/internal/eda/edaversion. To add a
+// future update, append a new edaversion.Entry (do not replace the old one).
+var edanetProzessIDHistory = map[string][]edaversion.Entry[string]{
+	"EC_PRTFACT_CHG": {
+		{Value: "EC_PRTFACT_CHANGE_01.00"},
+		{From: edaversion.Cutover2026_10_05, Value: "EC_PRTFACT_CHANGE_01.10"},
+	},
+	"EC_REQ_ONL": {
+		{Value: "EC_REQ_ONL_02.30"},
+		{From: edaversion.Cutover2026_10_05, Value: "EC_REQ_ONL_02.40"},
+	},
+	"CR_REQ_PT": {
+		{Value: "CR_REQ_PT_04.10"},
+		{From: edaversion.Cutover2026_10_05, Value: "CR_REQ_PT_04.30"},
+	},
+	"EC_PODLIST": {
+		{Value: "EC_PODLIST_01.00"},
+		{From: edaversion.Cutover2026_10_05, Value: "EC_PODLIST_02.10"},
+	},
+	"CM_REV_SP": {
+		{Value: "CM_REV_SP_01.00"},
+		{From: edaversion.Cutover2026_10_05, Value: "CM_REV_SP_01.30"},
+	},
+}
+
+// resolveProzessID returns the Prozess-Id subject value for process that is
+// effective at now.
+func resolveProzessID(process string, now time.Time) string {
+	return edaversion.Resolve(edanetProzessIDHistory[process], now)
 }
 
 // edanetAddress appends @edanet.at to a bare Marktpartner-ID.
@@ -93,7 +120,7 @@ func edanetAddress(id string) string {
 //   - Subject: [<Prozess-Id> MessageId=<MessageId>]
 //   - Body: XML payload as attachment
 func (t *MailTransport) Send(ctx context.Context, msg *types.Message) error {
-	prozessID := edanetProzessID[msg.Process]
+	prozessID := resolveProzessID(msg.Process, time.Now())
 	if prozessID == "" {
 		prozessID = msg.Process
 	}

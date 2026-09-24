@@ -175,6 +175,7 @@ func main() {
 	r.With(loginLimiter.Middleware).Post("/api/v1/auth/login", authHandler.Login)
 
 	// Public onboarding (no auth required)
+	r.Get("/api/v1/public/netzbetreiber-prefixes", handler.ListNetzbetreiberPrefixes)
 	r.Get("/api/v1/public/eegs/{eegID}/info", onboardingHandler.GetPublicEEGInfo)
 	r.With(onboardingLimiter.Middleware).Post("/api/v1/public/eegs/{eegID}/onboarding", onboardingHandler.SubmitOnboarding)
 	r.Get("/api/v1/public/onboarding/status/{token}", onboardingHandler.GetOnboardingStatus)

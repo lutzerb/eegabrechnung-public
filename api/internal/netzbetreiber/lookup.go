@@ -3,6 +3,7 @@
 package netzbetreiber
 
 import (
+	"fmt"
 	"sort"
 
 	"github.com/lutzerb/eegabrechnung/internal/domain"
@@ -317,4 +318,63 @@ func ActiveFromMeterPoints(mps []domain.MeterPoint) []Info {
 	}
 	sort.Slice(result, func(i, j int) bool { return result[i].Name < result[j].Name })
 	return result
+}
+
+// KnownPrefixes returns all Marktpartner-ID prefixes with a registry entry,
+// sorted. Exposed to the frontend (via a public endpoint) so client-side
+// validation can mirror ResolveRoutingID without a round trip per keystroke.
+func KnownPrefixes() []string {
+	prefixes := make([]string, 0, len(registry))
+	for k := range registry {
+		prefixes = append(prefixes, k)
+	}
+	sort.Strings(prefixes)
+	return prefixes
+}
+
+// Overrides returns a copy of the prefixOverrides map, for the same
+// frontend-mirroring purpose as KnownPrefixes.
+func Overrides() map[string]string {
+	out := make(map[string]string, len(prefixOverrides))
+	for k, v := range prefixOverrides {
+		out[k] = v
+	}
+	return out
+}
+
+// ValidateZaehlpunkt checks whether a Zählpunkt is plausible for a community
+// of the given type/Netzbetreiber configuration, to catch obviously wrong
+// meter points (e.g. a member entering their gas Zählpunkt instead of an
+// electricity one) before they get registered.
+//
+// For EEG/GEA, the Zählpunkt must resolve (via ResolveRoutingID, which also
+// honors prefixOverrides) to the configured edaNetzbetreiberID — the same
+// check handler/eda.go already performs for outbound EDA actions, just
+// applied earlier at data-entry time. For BEG, there is no single configured
+// Netzbetreiber (a BEG may span several), so it's enough that the Zählpunkt
+// resolves to ANY known Austrian electricity grid operator.
+//
+// Returns nil when the check cannot be performed (edaNetzbetreiberID not yet
+// configured on a non-BEG community) — this is advisory validation, not a
+// replacement for an actual EDA confirmation.
+func ValidateZaehlpunkt(zaehlpunkt, gemeinschaftTyp, edaNetzbetreiberID string) error {
+	resolved, ok := ResolveRoutingID(zaehlpunkt)
+
+	if gemeinschaftTyp == "BEG" {
+		if !ok {
+			return fmt.Errorf("Zählpunkt %s konnte keinem bekannten Strom-Netzbetreiber zugeordnet werden — bitte prüfen, ob es sich tatsächlich um einen Strom-Zählpunkt handelt (kein Gas-/Wasserzähler)", zaehlpunkt)
+		}
+		return nil
+	}
+
+	if edaNetzbetreiberID == "" {
+		return nil // (noch) nicht konfiguriert — keine Prüfung möglich
+	}
+	if !ok {
+		return fmt.Errorf("Zählpunkt %s konnte keinem bekannten Netzbetreiber zugeordnet werden — bitte prüfen, ob es sich tatsächlich um einen Strom-Zählpunkt handelt (kein Gas-/Wasserzähler)", zaehlpunkt)
+	}
+	if resolved != edaNetzbetreiberID {
+		return fmt.Errorf("Zählpunkt %s passt nicht zum für diese Energiegemeinschaft konfigurierten Netzbetreiber %s (aufgelöste Netzbetreiber-ID: %s)", zaehlpunkt, edaNetzbetreiberID, resolved)
+	}
+	return nil
 }

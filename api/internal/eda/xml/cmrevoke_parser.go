@@ -22,6 +22,24 @@ type CMRevokeDoc struct {
 	Reason         string // cp:Reason — free-text reason from the Netzbetreiber
 }
 
+// ReasonText returns a human-readable description of why the Netzbetreiber revoked consent,
+// per the ebutilities.at CMRevoke fixed ReasonKey values (1-3), falling back to the free-text
+// Reason field for ReasonKey 0 ("other reason, see Reason") or an unrecognized key.
+func (d *CMRevokeDoc) ReasonText() string {
+	switch d.ReasonKey {
+	case 1:
+		return "Kunde ist nicht mehr Vertragspartner"
+	case 2:
+		return "Geforderte Granularität ist nicht mehr verfügbar"
+	case 3:
+		return "Neuer FSP (Flexibility Service Provider)"
+	}
+	if d.Reason != "" {
+		return d.Reason
+	}
+	return "(kein Grund angegeben)"
+}
+
 // IsCMRevoke returns true if xmlStr looks like a CMRevoke document.
 func IsCMRevoke(xmlStr string) bool {
 	return strings.Contains(xmlStr, "cmrevoke") ||

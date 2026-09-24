@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { validateUIDNummer } from "@/lib/validation";
+import { validateUIDNummer, validateZaehlpunkt, NetzbetreiberContext } from "@/lib/validation";
 
 interface MeterPoint {
   zaehlpunkt: string;
@@ -13,6 +13,10 @@ interface MeterPoint {
 
 interface Props {
   eegId: string;
+  gemeinschaftTyp: string;
+  edaNetzbetreiberId: string;
+  knownNetzbetreiberPrefixes: string[];
+  netzbetreiberOverrides: Record<string, string>;
   onClose: () => void;
   onSuccess: (memberEmail: string) => void;
 }
@@ -36,10 +40,41 @@ const BUSINESS_ROLES = [
 
 const GENERATION_TYPES = ["PV", "Windkraft", "Wasserkraft", "Biomasse", "Sonstige"];
 
-export default function OnboardingManualCreateModal({ eegId, onClose, onSuccess }: Props) {
+export default function OnboardingManualCreateModal({
+  eegId,
+  gemeinschaftTyp,
+  edaNetzbetreiberId,
+  knownNetzbetreiberPrefixes,
+  netzbetreiberOverrides,
+  onClose,
+  onSuccess,
+}: Props) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [zaehlpunktErrors, setZaehlpunktErrors] = useState<Record<number, string>>({});
+
+  const netzbetreiberContext: NetzbetreiberContext | undefined =
+    gemeinschaftTyp && knownNetzbetreiberPrefixes.length > 0
+      ? {
+          gemeinschaftTyp,
+          edaNetzbetreiberId,
+          knownPrefixes: knownNetzbetreiberPrefixes,
+          overrides: netzbetreiberOverrides,
+        }
+      : undefined;
+
+  function checkZaehlpunkt(idx: number, value: string) {
+    const err = value.trim() ? validateZaehlpunkt(value, netzbetreiberContext) : null;
+    setZaehlpunktErrors((prev) => {
+      if (!err) {
+        if (!(idx in prev)) return prev;
+        const { [idx]: _removed, ...rest } = prev;
+        return rest;
+      }
+      return { ...prev, [idx]: err };
+    });
+  }
 
   const [name1, setName1] = useState("");
   const [name2, setName2] = useState("");
@@ -66,6 +101,8 @@ export default function OnboardingManualCreateModal({ eegId, onClose, onSuccess 
 
   function removeMeterPoint(idx: number) {
     setMeterPoints((prev) => prev.filter((_, i) => i !== idx));
+    // Indices shift after removal — simplest to drop stale errors and let blur/submit re-populate.
+    setZaehlpunktErrors({});
   }
 
   function updateMeterPoint(idx: number, field: keyof MeterPoint, value: string) {
@@ -79,12 +116,27 @@ export default function OnboardingManualCreateModal({ eegId, onClose, onSuccess 
         return updated;
       })
     );
+    if (field === "zaehlpunkt" && idx in zaehlpunktErrors) {
+      checkZaehlpunkt(idx, value);
+    }
   }
 
   async function handleCreate() {
     if (uidNummer.trim()) {
       const uidErr = validateUIDNummer(uidNummer);
       if (uidErr) { setError(uidErr); return; }
+    }
+
+    const newZaehlpunktErrors: Record<number, string> = {};
+    meterPoints.forEach((mp, i) => {
+      if (!mp.zaehlpunkt.trim()) return;
+      const err = validateZaehlpunkt(mp.zaehlpunkt, netzbetreiberContext);
+      if (err) newZaehlpunktErrors[i] = err;
+    });
+    if (Object.keys(newZaehlpunktErrors).length > 0) {
+      setZaehlpunktErrors(newZaehlpunktErrors);
+      setError("Bitte die markierten Zählpunkte korrigieren.");
+      return;
     }
 
     setError(null);
@@ -333,9 +385,10 @@ export default function OnboardingManualCreateModal({ eegId, onClose, onSuccess 
                     <input
                       type="text"
                       value={mp.zaehlpunkt}
-                      onChange={(e) => updateMeterPoint(idx, "zaehlpunkt", e.target.value)}
+                      onChange={(e) => updateMeterPoint(idx, "zaehlpunkt", e.target.value.replace(/\s+/g, "").toUpperCase())}
+                      onBlur={(e) => checkZaehlpunkt(idx, e.target.value)}
                       placeholder="AT0030000000000000000000000XXXXX"
-                      className="flex-1 px-3 py-1.5 border border-slate-300 rounded-lg text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className={`flex-1 px-3 py-1.5 border rounded-lg text-sm font-mono focus:outline-none focus:ring-2 ${zaehlpunktErrors[idx] ? "border-red-400 focus:ring-red-400" : "border-slate-300 focus:ring-blue-500"}`}
                     />
                     <select
                       value={mp.direction}
@@ -356,6 +409,9 @@ export default function OnboardingManualCreateModal({ eegId, onClose, onSuccess 
                       </button>
                     )}
                   </div>
+                  {zaehlpunktErrors[idx] && (
+                    <p className="text-xs text-red-600">{zaehlpunktErrors[idx]}</p>
+                  )}
                   {mp.direction === "GENERATION" && (
                     <div>
                       <label className="block text-xs text-slate-500 mb-1">Erzeugungsart</label>

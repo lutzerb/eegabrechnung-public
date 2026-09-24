@@ -9,6 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
+	"github.com/lutzerb/eegabrechnung/internal/netzbetreiber"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
 )
 
@@ -92,6 +93,10 @@ func (h *MeterPointHandler) CreateMeterPoint(w http.ResponseWriter, r *http.Requ
 	}
 	if req.Energierichtung == "" {
 		jsonError(w, "energierichtung is required", http.StatusBadRequest)
+		return
+	}
+	if err := netzbetreiber.ValidateZaehlpunkt(req.Zaehlpunkt, eeg.GemeinschaftTyp, eeg.EdaNetzbetreiberID); err != nil {
+		jsonError(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 	if req.Verteilungsmodell == "" {

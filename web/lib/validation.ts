@@ -58,13 +58,45 @@ export function validateBIC(raw: string): string | null {
 }
 
 /**
+ * Reference data + EEG config needed to check whether a Zählpunkt's derived
+ * Netzbetreiber is plausible for a given community — mirrors the backend's
+ * netzbetreiber.ValidateZaehlpunkt (api/internal/netzbetreiber/lookup.go),
+ * so the same check can run instantly client-side instead of only on submit.
+ * knownPrefixes/overrides come from GET /api/v1/public/netzbetreiber-prefixes.
+ */
+export interface NetzbetreiberContext {
+  gemeinschaftTyp: string;
+  edaNetzbetreiberId: string;
+  knownPrefixes: string[];
+  overrides: Record<string, string>;
+}
+
+/** Mirrors netzbetreiber.ResolveRoutingID (honors historical prefix overrides). */
+function resolveNetzbetreiberID(
+  zaehlpunkt: string,
+  nb: NetzbetreiberContext
+): { id: string; ok: boolean } {
+  const prefix = zaehlpunkt.slice(0, 8);
+  const override = nb.overrides[prefix];
+  if (override) return { id: override, ok: true };
+  if (nb.knownPrefixes.includes(prefix)) return { id: prefix, ok: true };
+  return { id: prefix, ok: false };
+}
+
+/**
  * Validates an Austrian Zählpunktnummer:
  *   - Exactly 33 characters
  *   - Uppercase alphanumeric only
  *   - Must start with "AT"
+ * When a NetzbetreiberContext is passed, additionally checks that the
+ * Zählpunkt's derived Netzbetreiber is plausible for the community — for
+ * EEG/GEA it must match the configured eda_netzbetreiber_id (skipped if
+ * that's not set yet); for BEG it just needs to resolve to any known
+ * Austrian electricity grid operator. Catches e.g. an accidentally entered
+ * gas Zählpunkt before submission.
  * Returns an error message string, or null if valid (or empty).
  */
-export function validateZaehlpunkt(raw: string): string | null {
+export function validateZaehlpunkt(raw: string, nb?: NetzbetreiberContext): string | null {
   const zp = raw.trim().toUpperCase();
   if (zp.length === 0) return null;
 
@@ -76,6 +108,22 @@ export function validateZaehlpunkt(raw: string): string | null {
   }
   if (zp.length !== 33) {
     return `Zählpunktnummer muss genau 33 Zeichen lang sein (aktuell: ${zp.length}).`;
+  }
+
+  if (nb) {
+    const resolved = resolveNetzbetreiberID(zp, nb);
+    if (nb.gemeinschaftTyp === "BEG") {
+      if (!resolved.ok) {
+        return "Zählpunkt konnte keinem bekannten Strom-Netzbetreiber zugeordnet werden — bitte prüfen, ob es sich tatsächlich um einen Strom-Zählpunkt handelt (kein Gas-/Wasserzähler).";
+      }
+    } else if (nb.edaNetzbetreiberId) {
+      if (!resolved.ok) {
+        return "Zählpunkt konnte keinem bekannten Netzbetreiber zugeordnet werden — bitte prüfen, ob es sich tatsächlich um einen Strom-Zählpunkt handelt (kein Gas-/Wasserzähler).";
+      }
+      if (resolved.id !== nb.edaNetzbetreiberId) {
+        return `Zählpunkt passt nicht zum für diese Energiegemeinschaft konfigurierten Netzbetreiber ${nb.edaNetzbetreiberId} (aufgelöste Netzbetreiber-ID: ${resolved.id}).`;
+      }
+    }
   }
   return null;
 }

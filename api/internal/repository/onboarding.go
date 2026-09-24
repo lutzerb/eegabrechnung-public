@@ -347,7 +347,12 @@ func scanOnboarding(row interface {
 }
 
 // FindNeedingReminder returns eda_sent requests where updated_at is older than
-// delay and no reminder has been sent yet. Skips demo EEGs.
+// delay and no reminder has been sent yet. Skips demo EEGs. Also skips requests
+// whose email already has an active member in the EEG — this happens when the
+// same person started onboarding more than once (e.g. a duplicate submission
+// that slipped past the creation-time guards) and one of the duplicates already
+// succeeded; the leftover eda_sent row would otherwise keep generating "still
+// pending" reminders for an already-onboarded person.
 func (r *OnboardingRepository) FindNeedingReminder(ctx context.Context, delay time.Duration) ([]domain.OnboardingRequest, error) {
 	q := `SELECT o.id, o.eeg_id, o.status, o.name1, o.name2, o.email, o.phone,
 	             o.strasse, o.plz, o.ort, o.iban, o.bic, o.member_type,
@@ -362,7 +367,14 @@ func (r *OnboardingRepository) FindNeedingReminder(ctx context.Context, delay ti
 	      WHERE o.status = 'eda_sent'
 	        AND o.updated_at < now() - $1::interval
 	        AND o.reminder_sent_at IS NULL
-	        AND e.is_demo = false`
+	        AND e.is_demo = false
+	        AND NOT EXISTS (
+	          SELECT 1 FROM members m
+	          WHERE m.eeg_id = o.eeg_id
+	            AND lower(m.email) = lower(o.email)
+	            AND m.status != 'INACTIVE'
+	            AND (o.converted_member_id IS NULL OR m.id != o.converted_member_id)
+	        )`
 
 	rows, err := r.db.Query(ctx, q, fmt.Sprintf("%.0f seconds", delay.Seconds()))
 	if err != nil {

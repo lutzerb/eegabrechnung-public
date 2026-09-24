@@ -226,7 +226,23 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
 
   const memberLabel = (m: Member) => [m.name1, m.name2].filter(Boolean).join(" ") || m.name || m.id;
   const memberMap = new Map(members.map(m => [m.id, memberLabel(m)]));
+  const zaehlpunktMemberMap = new Map(
+    members.flatMap((m) => m.meter_points.map((mp) => [mp.meter_id, memberLabel(m)] as const))
+  );
   const fmtDate = (d: string) => new Date(d).toLocaleDateString("de-AT");
+
+  const dataGapByMember = dataGap
+    ? Array.from(
+        dataGap.details
+          .reduce((acc, d) => {
+            const label = zaehlpunktMemberMap.get(d.zaehlpunkt) ?? "Unbekanntes Mitglied";
+            if (!acc.has(label)) acc.set(label, []);
+            acc.get(label)!.push(d);
+            return acc;
+          }, new Map<string, GapDetail[]>())
+          .entries()
+      ).sort(([a], [b]) => a.localeCompare(b, "de-AT"))
+    : [];
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 p-6">
@@ -350,11 +366,18 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
           <p className="text-sm text-red-700 mt-1">
             Folgende Zählpunkte haben Tage mit fehlenden L1/L2-Werten (weniger als 96 Intervalle):
           </p>
-          <div className="mt-3 space-y-3">
-            {dataGap.details.map((d) => (
-              <div key={d.zaehlpunkt}>
-                <p className="text-xs font-mono font-semibold text-red-800">{d.zaehlpunkt}</p>
-                <p className="text-xs text-red-700 mt-0.5">{formatMissingDays(d.missing_days)}</p>
+          <div className="mt-3 space-y-4">
+            {dataGapByMember.map(([label, details]) => (
+              <div key={label}>
+                <p className="text-xs font-semibold text-red-900">{label}</p>
+                <div className="mt-1 space-y-1.5 pl-2 border-l-2 border-red-200">
+                  {details.map((d) => (
+                    <div key={d.zaehlpunkt}>
+                      <p className="text-xs font-mono font-semibold text-red-800">{d.zaehlpunkt}</p>
+                      <p className="text-xs text-red-700 mt-0.5">{formatMissingDays(d.missing_days)}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             ))}
           </div>

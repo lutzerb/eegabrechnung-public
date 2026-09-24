@@ -23,6 +23,8 @@ export default async function OnboardingPage({ params, searchParams }: Props) {
   let contractText = "";
   let documents: PublicDocument[] = [];
   let referralOptions: string[] = [];
+  let gemeinschaftTyp = "";
+  let edaNetzbetreiberId = "";
 
   try {
     const res = await fetch(
@@ -36,11 +38,26 @@ export default async function OnboardingPage({ params, searchParams }: Props) {
       contractText = data.onboarding_contract_text || "";
       documents = data.documents || [];
       referralOptions = data.referral_options || [];
+      gemeinschaftTyp = data.gemeinschaft_typ || "";
+      edaNetzbetreiberId = data.eda_netzbetreiber_id || "";
     } else {
       eegFound = false;
     }
   } catch {
     // network error — still render form with default name
+  }
+
+  let knownNetzbetreiberPrefixes: string[] = [];
+  let netzbetreiberOverrides: Record<string, string> = {};
+  try {
+    const nbRes = await fetch(`${API}/api/v1/public/netzbetreiber-prefixes`, { cache: "force-cache", next: { revalidate: 3600 } });
+    if (nbRes.ok) {
+      const nbData = await nbRes.json();
+      knownNetzbetreiberPrefixes = nbData.known_prefixes || [];
+      netzbetreiberOverrides = nbData.overrides || {};
+    }
+  } catch {
+    // Reference data unavailable — form falls back to format-only Zählpunkt validation.
   }
 
   if (!eegFound) {
@@ -144,6 +161,10 @@ export default async function OnboardingPage({ params, searchParams }: Props) {
           verifiedEmail={verifiedEmail}
           verifiedName1={verifiedName1}
           verifiedName2={verifiedName2}
+          gemeinschaftTyp={gemeinschaftTyp}
+          edaNetzbetreiberId={edaNetzbetreiberId}
+          knownNetzbetreiberPrefixes={knownNetzbetreiberPrefixes}
+          netzbetreiberOverrides={netzbetreiberOverrides}
         />
         <p className="text-center text-xs text-slate-400 mt-6">
           Ihre Daten werden verschlüsselt übertragen und gemäß DSGVO

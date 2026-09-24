@@ -131,6 +131,19 @@ export default async function OnboardingAdminPage({ params, searchParams }: Prop
     // ignore
   }
 
+  let knownNetzbetreiberPrefixes: string[] = [];
+  let netzbetreiberOverrides: Record<string, string> = {};
+  try {
+    const nbRes = await fetch(`${API}/api/v1/public/netzbetreiber-prefixes`, { cache: "force-cache", next: { revalidate: 3600 } });
+    if (nbRes.ok) {
+      const nbData = await nbRes.json();
+      knownNetzbetreiberPrefixes = nbData.known_prefixes || [];
+      netzbetreiberOverrides = nbData.overrides || {};
+    }
+  } catch {
+    // Reference data unavailable — manual-create modal falls back to format-only Zählpunkt validation.
+  }
+
   const filtered =
     statusFilter === "alle"
       ? requests
@@ -179,7 +192,13 @@ export default async function OnboardingAdminPage({ params, searchParams }: Prop
               ) : null
             )}
           </div>
-          <OnboardingManualCreateButton eegId={eegId} />
+          <OnboardingManualCreateButton
+            eegId={eegId}
+            gemeinschaftTyp={eeg?.gemeinschaft_typ || ""}
+            edaNetzbetreiberId={eeg?.eda_netzbetreiber_id || ""}
+            knownNetzbetreiberPrefixes={knownNetzbetreiberPrefixes}
+            netzbetreiberOverrides={netzbetreiberOverrides}
+          />
         </div>
       </div>
 
