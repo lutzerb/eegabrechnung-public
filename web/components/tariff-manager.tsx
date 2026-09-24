@@ -52,15 +52,49 @@ const GRANULARITY_LABELS: Record<string, string> = {
   annual: "Jährlich", monthly: "Monatlich", daily: "Täglich", quarter_hour: "15-Minuten",
 };
 
-function pad2(n: number) { return String(n).padStart(2, "0"); }
+// Billing periods are computed Vienna-local (viennaLoc in billing.go), so tariff
+// entry boundaries must be too — a literal UTC calendar boundary (e.g.
+// "2026-08-01T00:00:00Z") is 1-2 hours (DST) off from true Vienna midnight,
+// which mis-prices the first hour(s) of every month/year with the previous
+// entry's price.
+function viennaOffsetMinutes(utcGuess: Date): number {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Vienna",
+    hourCycle: "h23",
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+  const parts = Object.fromEntries(dtf.formatToParts(utcGuess).map((p) => [p.type, p.value]));
+  const asUTC = Date.UTC(
+    Number(parts.year), Number(parts.month) - 1, Number(parts.day),
+    Number(parts.hour), Number(parts.minute), Number(parts.second)
+  );
+  return (asUTC - utcGuess.getTime()) / 60000;
+}
+
+// UTC ISO instant corresponding to Vienna-local midnight on the given calendar date.
+function viennaMidnightISO(year: number, month: number, day = 1): string {
+  const utcGuess = new Date(Date.UTC(year, month - 1, day, 0, 0, 0));
+  const offsetMin = viennaOffsetMinutes(utcGuess);
+  return new Date(utcGuess.getTime() - offsetMin * 60000).toISOString();
+}
+
+// {year, month} of the Vienna-local calendar date a stored UTC instant falls on.
+function viennaYearMonth(iso: string): { year: number; month: number } {
+  const dtf = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Europe/Vienna", year: "numeric", month: "2-digit",
+  });
+  const parts = Object.fromEntries(dtf.formatToParts(new Date(iso)).map((p) => [p.type, p.value]));
+  return { year: Number(parts.year), month: Number(parts.month) };
+}
 
 // Build the 12 monthly entries for a given year
 function buildMonthlyEntries(year: number, prices: Array<{ energy_price: number; producer_price: number }>): TariffEntry[] {
   return Array.from({ length: 12 }, (_, m) => ({
-    valid_from: `${year}-${pad2(m + 1)}-01T00:00:00Z`,
+    valid_from: viennaMidnightISO(year, m + 1),
     valid_until: m === 11
-      ? `${year + 1}-01-01T00:00:00Z`
-      : `${year}-${pad2(m + 2)}-01T00:00:00Z`,
+      ? viennaMidnightISO(year + 1, 1)
+      : viennaMidnightISO(year, m + 2),
     energy_price: prices[m]?.energy_price ?? 0,
     producer_price: prices[m]?.producer_price ?? 0,
   }));
@@ -71,8 +105,8 @@ function buildAnnualEntries(startYear: number, years: number, prices: Array<{ en
   return Array.from({ length: years }, (_, i) => {
     const y = startYear + i;
     return {
-      valid_from: `${y}-01-01T00:00:00Z`,
-      valid_until: `${y + 1}-01-01T00:00:00Z`,
+      valid_from: viennaMidnightISO(y, 1),
+      valid_until: viennaMidnightISO(y + 1, 1),
       energy_price: prices[i]?.energy_price ?? 0,
       producer_price: prices[i]?.producer_price ?? 0,
     };
@@ -92,7 +126,7 @@ function MonthlyEditor({ schedule, eegEnergyPrice, eegProducerPrice, onSave, sav
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(() => {
     const entries = schedule.entries ?? [];
-    if (entries.length > 0) return parseInt(entries[0].valid_from.substring(0, 4));
+    if (entries.length > 0) return viennaYearMonth(entries[0].valid_from).year;
     return currentYear;
   });
   // prices[month] = {energy_price, producer_price}
@@ -104,8 +138,10 @@ function MonthlyEditor({ schedule, eegEnergyPrice, eegProducerPrice, onSave, sav
   useEffect(() => {
     const entries = schedule.entries ?? [];
     const newPrices = Array.from({ length: 12 }, (_, m) => {
-      const fromStr = `${year}-${pad2(m + 1)}-01T00:00:00Z`;
-      const e = entries.find((e) => e.valid_from === fromStr);
+      const e = entries.find((e) => {
+        const ym = viennaYearMonth(e.valid_from);
+        return ym.year === year && ym.month === m + 1;
+      });
       return e ? { energy_price: e.energy_price, producer_price: e.producer_price }
                : { energy_price: eegEnergyPrice, producer_price: eegProducerPrice };
     });
@@ -267,7 +303,7 @@ function AnnualEditor({ schedule, eegEnergyPrice, eegProducerPrice, onSave, savi
     const entries = schedule.entries ?? [];
     const newPrices = Array.from({ length: NUM_YEARS }, (_, i) => {
       const y = START_YEAR + i;
-      const e = entries.find((e) => e.valid_from === `${y}-01-01T00:00:00Z`);
+      const e = entries.find((e) => viennaYearMonth(e.valid_from).year === y);
       return e ? { energy_price: e.energy_price, producer_price: e.producer_price }
                : { energy_price: eegEnergyPrice, producer_price: eegProducerPrice };
     });
