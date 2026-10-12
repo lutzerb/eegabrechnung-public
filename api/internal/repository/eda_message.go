@@ -264,6 +264,42 @@ func (r *EDAMessageRepository) ListCRMsgPayloadsByZaehlpunkt(ctx context.Context
 	return result, rows.Err()
 }
 
+// ECPListPayload is a stored SENDEN_ECP (EC_PODLIST / Zählpunktliste response) message's
+// raw XML, used to build a per-Zählpunkt "latest NB-reported state" map for the
+// Teilnahmefaktor-/Zählpunktdaten-Abgleich feature.
+type ECPListPayload struct {
+	ID          uuid.UUID
+	XMLPayload  string
+	CreatedAt   time.Time
+	FromAddress string // sending Netzbetreiber's EDA Marktpartner-ID — a BEG gets one SENDEN_ECP per Netzbetreiber
+}
+
+// ListECPListPayloadsByEEG returns every stored SENDEN_ECP message's XML for an EEG,
+// oldest first, so the caller can fold them into a map[Zählpunkt]→entry where the most
+// recently received message wins per Zählpunkt (handles BEG's multiple NB-scoped requests
+// and repeated EC_PODLIST runs over time, without matching against eda_processes/conversation IDs).
+func (r *EDAMessageRepository) ListECPListPayloadsByEEG(ctx context.Context, eegID uuid.UUID) ([]ECPListPayload, error) {
+	rows, err := r.db.Query(ctx,
+		`SELECT id, xml_payload, created_at, from_address FROM eda_messages
+		 WHERE eeg_id = $1 AND message_type = 'SENDEN_ECP'
+		 ORDER BY created_at ASC`,
+		eegID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list ECP list payloads by eeg: %w", err)
+	}
+	defer rows.Close()
+	var result []ECPListPayload
+	for rows.Next() {
+		var m ECPListPayload
+		if err := rows.Scan(&m.ID, &m.XMLPayload, &m.CreatedAt, &m.FromAddress); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		result = append(result, m)
+	}
+	return result, rows.Err()
+}
+
 // List returns EDA messages ordered by created_at DESC (all EEGs, for backward compat).
 func (r *EDAMessageRepository) List(ctx context.Context, limit int) ([]domain.EDAMessage, error) {
 	rows, err := r.db.Query(ctx,

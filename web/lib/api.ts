@@ -23,12 +23,15 @@ export interface EEG {
   invoice_number_prefix: string;
   invoice_number_digits: number;
   invoice_number_start: number;
+  kundenkonto_start?: number; // per-EEG floor/suggestion for the freely-editable member Kundenkonto field; no cross-EEG sequence
   invoice_pre_text: string;
   invoice_post_text: string;
   invoice_footer_text: string;
   invoice_footer_mode?: string; // "individuell" design only: inline (default, once after content) | page (fixed on every page)
   invoice_payment_notice_mode: string; // sepa_lastschrift | ueberweisung | custom | none
   invoice_payment_notice_text: string; // used when invoice_payment_notice_mode === "custom"; placeholders: {betrag} {iban} {eeg_iban} {eeg_bic} {datum}
+  invoice_email_subject: string; // custom Rechnungsversand-Betreff-Template; "" = Standardtext
+  invoice_email_body: string; // custom Rechnungsversand-Body-Template; "" = Standardtext
   fee_billing_mode: string; // per_month | per_invoice
   logo_path: string;
   generate_credit_notes: boolean;
@@ -109,6 +112,17 @@ export interface EEG {
   invoice_chart_label_resteinspeisung?: string; // percentage chart
   invoice_chart_label_bezug?: string; // absolute chart
   invoice_chart_label_einspeisung?: string; // absolute chart
+  // Web reports page chart colors (hex) — independent of the invoice_chart_color_* fields above
+  report_chart_color_ausgetauscht?: string;
+  report_chart_color_restbedarf?: string;
+  report_chart_color_einspeisung_eeg?: string;
+  report_chart_color_resteinspeisung?: string;
+  report_chart_color_billed_einspeisung?: string;
+  report_chart_color_billed_bezug?: string;
+  report_chart_color_einnahmen?: string;
+  report_chart_color_gutschriften?: string;
+  report_chart_color_member_einspeisung?: string;
+  report_chart_color_member_bezug?: string;
   // Zusatzzähler feature toggle — manually-read submeters (e.g. Wärmepumpe), default off
   extra_meters_enabled?: boolean;
   created_at?: string;
@@ -185,12 +199,15 @@ export interface UpdateEEGRequest {
   invoice_number_prefix?: string;
   invoice_number_digits?: number;
   invoice_number_start?: number;
+  kundenkonto_start?: number;
   invoice_pre_text?: string;
   invoice_post_text?: string;
   invoice_footer_text?: string;
   invoice_footer_mode?: string;
   invoice_payment_notice_mode?: string;
   invoice_payment_notice_text?: string;
+  invoice_email_subject?: string;
+  invoice_email_body?: string;
   fee_billing_mode?: string;
   generate_credit_notes?: boolean;
   credit_note_number_prefix?: string;
@@ -276,6 +293,16 @@ export interface UpdateEEGRequest {
   invoice_chart_label_resteinspeisung?: string;
   invoice_chart_label_bezug?: string;
   invoice_chart_label_einspeisung?: string;
+  report_chart_color_ausgetauscht?: string;
+  report_chart_color_restbedarf?: string;
+  report_chart_color_einspeisung_eeg?: string;
+  report_chart_color_resteinspeisung?: string;
+  report_chart_color_billed_einspeisung?: string;
+  report_chart_color_billed_bezug?: string;
+  report_chart_color_einnahmen?: string;
+  report_chart_color_gutschriften?: string;
+  report_chart_color_member_einspeisung?: string;
+  report_chart_color_member_bezug?: string;
   extra_meters_enabled?: boolean;
 }
 
@@ -292,6 +319,9 @@ export interface MeterPoint {
   anmeldung_status?: string; // latest EC_REQ_ONL process status
   abmeldung_status?: string; // latest CM_REV_SP process status
   gap_alert_sent_at?: string; // ISO datetime when gap alert was sent; set = no recent readings
+  strasse?: string; // optional Standort-Adresse
+  plz?: string;
+  ort?: string;
 }
 
 export interface MeterPointGap {
@@ -311,6 +341,8 @@ export interface Member {
   email?: string;
   member_number?: string;
   mitglieds_nr?: string;
+  // Freely editable customer account number, independent of mitglieds_nr; "" = not assigned yet
+  kundenkonto?: string;
   iban?: string;
   strasse?: string;
   plz?: string;
@@ -326,6 +358,19 @@ export interface Member {
   beitritts_datum?: string | null;
   austritts_datum?: string | null;
   meter_points: MeterPoint[];
+  // Explicitly assigned EEG-wide tariff plan (absent = Standardtarif)
+  tariff_schedule_id?: string | null;
+  // Tariff plan that is valid right now (Individualtarif > assigned > Standardtarif)
+  effective_tariff?: EffectiveTariff | null;
+  // Number of Zusatzzähler (manually-read submeters, any status) the member has
+  extra_meters_count?: number;
+}
+
+export interface EffectiveTariff {
+  schedule_id?: string;
+  name: string;
+  // "none" = no plan applies, flat EEG prices
+  source: "individual" | "assigned" | "default" | "none";
 }
 
 export async function searchMembers(
@@ -653,6 +698,8 @@ export async function importCamt054(
 
 export interface CreateMemberRequest {
   mitglieds_nr?: string;
+  // Freely editable customer account number, independent of mitglieds_nr; "" = not assigned yet
+  kundenkonto?: string;
   name1: string;
   name2?: string;
   email?: string;
@@ -673,6 +720,8 @@ export interface CreateMemberRequest {
   // ISO date strings YYYY-MM-DD (optional)
   beitritts_datum?: string;
   austritts_datum?: string;
+  // Assigned EEG-wide tariff plan; null/omitted = Standardtarif
+  tariff_schedule_id?: string | null;
 }
 
 export async function createMember(
@@ -716,6 +765,26 @@ export async function deleteMember(
   });
 }
 
+// Kundenkonto (per-member customer account number)
+
+export async function getNextKundenkonto(
+  token: string,
+  eegId: string
+): Promise<{ kundenkonto: string }> {
+  return apiFetch(`/eegs/${eegId}/members/next-kundenkonto`, token);
+}
+
+export async function bulkAssignKundenkonto(
+  token: string,
+  eegId: string,
+  memberIds?: string[]
+): Promise<{ assigned: Member[]; assigned_count: number }> {
+  return apiFetch(`/eegs/${eegId}/members/bulk-kundenkonto`, token, {
+    method: "POST",
+    body: JSON.stringify(memberIds?.length ? { member_ids: memberIds } : {}),
+  });
+}
+
 // Meter Points
 
 export interface MeterPointFull {
@@ -732,6 +801,9 @@ export interface MeterPointFull {
   consent_id?: string;
   generation_type?: string; // PV | Windkraft | Wasserkraft
   notes?: string;
+  strasse?: string;
+  plz?: string;
+  ort?: string;
 }
 
 export interface MeterPointRegistrationPeriod {
@@ -792,6 +864,58 @@ export interface FehlendeDatenPreviewResponse {
   total_ranges: number;
 }
 
+// Teilnahmefaktor-/Zählpunktdaten-Abgleich (EC_PODLIST / Zählpunktliste) ───────
+// field: "participation_factor" | "energy_direction" | "consent_id" | "generation_type"
+//        | "registriert_seit" | "abgemeldet_am"
+export interface PodlistFieldDiff {
+  field: string;
+  label: string;
+  our_value: string;
+  nb_value: string;
+  applicable: boolean; // true = übernehmbar per POST .../apply; false = nur zur Anzeige
+}
+
+export interface PodlistReconcileRow {
+  meter_point_id: string;
+  zaehlpunkt: string;
+  member_name: string;
+  diffs: PodlistFieldDiff[];
+  effective_from: string; // YYYY-MM-DD
+  source_message_id: string;
+}
+
+export interface PodlistUnknownZaehlpunkt {
+  zaehlpunkt: string;
+  reported_factor: number;
+  source_message_id: string;
+}
+
+export interface PodlistNoNBData {
+  meter_point_id: string;
+  zaehlpunkt: string;
+  member_name: string;
+}
+
+export interface PodlistNBFreshness {
+  netzbetreiber_id: string;
+  netzbetreiber_name: string;
+  last_received_at: string | null;
+}
+
+export interface PodlistReconcileResponse {
+  mismatches: PodlistReconcileRow[];
+  unknown_zaehlpunkte: PodlistUnknownZaehlpunkt[];
+  no_nb_data: PodlistNoNBData[];
+  has_any_data: boolean;
+  podlist_freshness: PodlistNBFreshness[];
+}
+
+export interface PodlistApplyResultItem {
+  meter_point_id: string;
+  success: boolean;
+  error?: string;
+}
+
 export interface CreateMeterPointRequest {
   zaehlpunkt: string;
   energierichtung: string; // "CONSUMPTION" | "GENERATION"
@@ -802,6 +926,9 @@ export interface CreateMeterPointRequest {
   abgemeldet_am?: string;   // YYYY-MM-DD or "clear" to unset
   generation_type?: string;
   notes?: string;
+  strasse?: string; // optional Standort-Adresse; on update undefined = unchanged, "" = clear
+  plz?: string;
+  ort?: string;
 }
 
 export async function createMeterPoint(
@@ -1267,10 +1394,14 @@ export interface TariffSchedule {
   name: string;
   granularity: "annual" | "monthly" | "daily" | "quarter_hour";
   is_active: boolean;
+  // EEG-wide Standardtarif (exactly one per EEG, always active)
+  is_default?: boolean;
+  // Number of members explicitly assigned to this EEG-wide plan
+  assigned_member_count?: number;
   entry_count?: number;
   entries?: TariffEntry[];
   created_at: string;
-  // Individualtarif overrides — null/undefined means "use EEG default"
+  // Fee overrides (Individualtarif or non-default EEG plan) — null/undefined means "use EEG default"
   free_kwh_override?: number | null;
   discount_pct_override?: number | null;
   meter_fee_eur_override?: number | null;
@@ -1347,6 +1478,9 @@ export async function deactivateTariff(token: string, eegId: string, scheduleId:
 export interface OnboardingMeterPoint {
   zaehlpunkt: string;
   direction: string;
+  strasse?: string;
+  plz?: string;
+  ort?: string;
 }
 
 export interface OnboardingRequest {

@@ -9,6 +9,7 @@ import { BackupRestoreSection } from "@/components/backup-restore-section";
 import { DeleteEEGSection } from "@/components/delete-eeg-section";
 import LogoUpload from "./LogoUpload";
 import InvoiceDesignPreview from "./InvoiceDesignPreview";
+import InvoiceEmailTextFields from "./InvoiceEmailTextFields";
 import Link from "next/link";
 import { revalidatePath } from "next/cache";
 
@@ -21,16 +22,32 @@ const TABS = [
   { key: "allgemein", label: "Allgemein" },
   { key: "rechnungen", label: "Rechnungen" },
   { key: "rechnungsdesign", label: "Rechnungsdesign" },
+  { key: "email", label: "Rechnungs-E-Mail" },
   { key: "sepa", label: "SEPA" },
   { key: "eda", label: "EDA" },
   { key: "onboarding", label: "Onboarding" },
   { key: "abrechnung", label: "Auto-Abrechnung" },
   { key: "luecken", label: "Lücken-Alarm" },
   { key: "portal", label: "Mitgliederportal" },
+  { key: "auswertungen", label: "Auswertungen" },
   { key: "system", label: "System" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
+
+function ColorField({ name, defaultValue, label }: { name: string; defaultValue: string; label: string }) {
+  return (
+    <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200">
+      <input
+        type="color"
+        name={name}
+        defaultValue={defaultValue}
+        className="h-9 w-14 rounded border border-slate-300 cursor-pointer bg-white"
+      />
+      <span className="text-sm text-slate-700">{label}</span>
+    </div>
+  );
+}
 
 function ShowZeroFeeCheckbox({ name, checked, label }: { name: string; checked: boolean; label: string }) {
   return (
@@ -102,12 +119,15 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
       invoice_number_prefix: (formData.get("invoice_number_prefix") as string) || "INV",
       invoice_number_digits: parseInt(formData.get("invoice_number_digits") as string) || 5,
       invoice_number_start: parseInt(formData.get("invoice_number_start") as string) || 1,
+      kundenkonto_start: parseInt(formData.get("kundenkonto_start") as string) || 0,
       invoice_pre_text: (formData.get("invoice_pre_text") as string) || "",
       invoice_post_text: (formData.get("invoice_post_text") as string) || "",
       invoice_footer_text: (formData.get("invoice_footer_text") as string) || "",
       invoice_footer_mode: (formData.get("invoice_footer_mode") as string) || "inline",
       invoice_payment_notice_mode: (formData.get("invoice_payment_notice_mode") as string) || "sepa_lastschrift",
       invoice_payment_notice_text: (formData.get("invoice_payment_notice_text") as string) || "",
+      invoice_email_subject: (formData.get("invoice_email_subject") as string) || "",
+      invoice_email_body: (formData.get("invoice_email_body") as string) || "",
       fee_billing_mode: (formData.get("fee_billing_mode") as string) || "per_month",
       generate_credit_notes: formData.get("generate_credit_notes") === "on",
       credit_note_number_prefix: (formData.get("credit_note_number_prefix") as string) || "GS",
@@ -195,6 +215,17 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
       invoice_chart_label_bezug: (formData.get("invoice_chart_label_bezug") as string) || "",
       invoice_chart_label_einspeisung: (formData.get("invoice_chart_label_einspeisung") as string) || "",
       extra_meters_enabled: formData.get("extra_meters_enabled") === "on",
+      // Web reports page chart colors
+      report_chart_color_ausgetauscht: (formData.get("report_chart_color_ausgetauscht") as string) || "#10b981",
+      report_chart_color_restbedarf: (formData.get("report_chart_color_restbedarf") as string) || "#fbbf24",
+      report_chart_color_einspeisung_eeg: (formData.get("report_chart_color_einspeisung_eeg") as string) || "#6366f1",
+      report_chart_color_resteinspeisung: (formData.get("report_chart_color_resteinspeisung") as string) || "#c4b5fd",
+      report_chart_color_billed_einspeisung: (formData.get("report_chart_color_billed_einspeisung") as string) || "#10b981",
+      report_chart_color_billed_bezug: (formData.get("report_chart_color_billed_bezug") as string) || "#3b82f6",
+      report_chart_color_einnahmen: (formData.get("report_chart_color_einnahmen") as string) || "#3b82f6",
+      report_chart_color_gutschriften: (formData.get("report_chart_color_gutschriften") as string) || "#f59e0b",
+      report_chart_color_member_einspeisung: (formData.get("report_chart_color_member_einspeisung") as string) || "#6366f1",
+      report_chart_color_member_bezug: (formData.get("report_chart_color_member_bezug") as string) || "#10b981",
     };
 
     let saveError: string | null = null;
@@ -313,6 +344,7 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
             <input type="hidden" name="invoice_number_prefix" value={eeg.invoice_number_prefix || "INV"} />
             <input type="hidden" name="invoice_number_digits" value={String(eeg.invoice_number_digits || 5)} />
             <input type="hidden" name="invoice_number_start" value={String(eeg.invoice_number_start || 1)} />
+            <input type="hidden" name="kundenkonto_start" value={String((eeg as any).kundenkonto_start || 0)} />
             <input type="hidden" name="invoice_payment_notice_mode" value={eeg.invoice_payment_notice_mode || "sepa_lastschrift"} />
             <input type="hidden" name="invoice_payment_notice_text" value={(eeg as any).invoice_payment_notice_text || ""} />
             <input type="hidden" name="generate_credit_notes" value={eeg.generate_credit_notes ? "on" : "off"} />
@@ -344,6 +376,12 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
             <input type="hidden" name="invoice_show_zero_fee_servicegebuehr_bezug" value={(eeg as any).invoice_show_zero_fee_servicegebuehr_bezug ? "on" : ""} />
             <input type="hidden" name="invoice_show_zero_fee_servicegebuehr_einspeisung" value={(eeg as any).invoice_show_zero_fee_servicegebuehr_einspeisung ? "on" : ""} />
             <input type="hidden" name="extra_meters_enabled" value={(eeg as any).extra_meters_enabled ? "on" : ""} />
+          </>
+        )}
+        {activeTab !== "email" && (
+          <>
+            <input type="hidden" name="invoice_email_subject" value={(eeg as any).invoice_email_subject || ""} />
+            <input type="hidden" name="invoice_email_body" value={(eeg as any).invoice_email_body || ""} />
           </>
         )}
         {activeTab !== "sepa" && (
@@ -385,6 +423,20 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
           <>
             <input type="hidden" name="portal_show_full_energy" value={(eeg as any).portal_show_full_energy !== false ? "on" : ""} />
             <input type="hidden" name="portal_show_community_stats" value={(eeg as any).portal_show_community_stats === true ? "on" : ""} />
+          </>
+        )}
+        {activeTab !== "auswertungen" && (
+          <>
+            <input type="hidden" name="report_chart_color_ausgetauscht" value={(eeg as any).report_chart_color_ausgetauscht || "#10b981"} />
+            <input type="hidden" name="report_chart_color_restbedarf" value={(eeg as any).report_chart_color_restbedarf || "#fbbf24"} />
+            <input type="hidden" name="report_chart_color_einspeisung_eeg" value={(eeg as any).report_chart_color_einspeisung_eeg || "#6366f1"} />
+            <input type="hidden" name="report_chart_color_resteinspeisung" value={(eeg as any).report_chart_color_resteinspeisung || "#c4b5fd"} />
+            <input type="hidden" name="report_chart_color_billed_einspeisung" value={(eeg as any).report_chart_color_billed_einspeisung || "#10b981"} />
+            <input type="hidden" name="report_chart_color_billed_bezug" value={(eeg as any).report_chart_color_billed_bezug || "#3b82f6"} />
+            <input type="hidden" name="report_chart_color_einnahmen" value={(eeg as any).report_chart_color_einnahmen || "#3b82f6"} />
+            <input type="hidden" name="report_chart_color_gutschriften" value={(eeg as any).report_chart_color_gutschriften || "#f59e0b"} />
+            <input type="hidden" name="report_chart_color_member_einspeisung" value={(eeg as any).report_chart_color_member_einspeisung || "#6366f1"} />
+            <input type="hidden" name="report_chart_color_member_bezug" value={(eeg as any).report_chart_color_member_bezug || "#10b981"} />
           </>
         )}
         {activeTab !== "rechnungsdesign" && (
@@ -754,6 +806,19 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
             </div>
 
             <div className="bg-white rounded-xl border border-slate-200 p-6">
+              <h2 className="text-base font-semibold text-slate-900 mb-4">Kundenkonto</h2>
+              <div>
+                <label className={labelClass}>Kundenkonto-Startnummer</label>
+                <input type="number" name="kundenkonto_start" min="0" defaultValue={(eeg as any).kundenkonto_start || 0} className={inputClass} />
+                <p className="text-xs text-slate-400 mt-1">
+                  Erste vorgeschlagene Kundenkonto-Nummer dieser EEG (0 = einfache Zählung). Gilt nur für diese
+                  Energiegemeinschaft — bei mehreren EEGs selbst unterschiedliche Startwerte vergeben, um
+                  Überlappungen zu vermeiden.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-slate-200 p-6">
               <h2 className="text-base font-semibold text-slate-900 mb-1">Rechnungstexte</h2>
               <p className="text-xs text-slate-500">
                 Text vor/nach Positionen und Fußzeile werden im Tab{" "}
@@ -962,6 +1027,14 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
             initialChartLabelResteinspeisung={(eeg as any).invoice_chart_label_resteinspeisung || ""}
             initialChartLabelBezug={(eeg as any).invoice_chart_label_bezug || ""}
             initialChartLabelEinspeisung={(eeg as any).invoice_chart_label_einspeisung || ""}
+          />
+        )}
+
+        {/* ── TAB: RECHNUNGS-E-MAIL ──────────────────────────────── */}
+        {activeTab === "email" && (
+          <InvoiceEmailTextFields
+            initialSubject={(eeg as any).invoice_email_subject || ""}
+            initialBody={(eeg as any).invoice_email_body || ""}
           />
         )}
 
@@ -1348,6 +1421,89 @@ export default async function EEGSettingsPage({ params, searchParams }: Props) {
                     einem Vergleichsdiagramm über alle Mitglieder hinweg. Standardmäßig deaktiviert, da diese
                     Daten aggregierte Werte anderer Mitglieder offenlegen.
                   </p>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ── TAB: AUSWERTUNGEN ──────────────────────────────────── */}
+        {activeTab === "auswertungen" && (
+          <>
+            <div className="bg-white rounded-xl border border-slate-200 p-6 space-y-6">
+              <div>
+                <h2 className="text-base font-semibold text-slate-900 mb-1">Diagrammfarben</h2>
+                <p className="text-sm text-slate-500">
+                  Farben für die Diagramme auf der Auswertungen-Seite. Wirkt sich nicht auf Rechnungs-PDFs aus
+                  (siehe Tab „Rechnungsdesign&quot;).
+                </p>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 mb-2">Energiefluss (Hauptdiagramm)</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <ColorField
+                    name="report_chart_color_ausgetauscht"
+                    defaultValue={(eeg as any).report_chart_color_ausgetauscht || "#10b981"}
+                    label="Ausgetauscht (EEG-Anteil)"
+                  />
+                  <ColorField
+                    name="report_chart_color_restbedarf"
+                    defaultValue={(eeg as any).report_chart_color_restbedarf || "#fbbf24"}
+                    label="Restbedarf (aus dem Netz)"
+                  />
+                  <ColorField
+                    name="report_chart_color_einspeisung_eeg"
+                    defaultValue={(eeg as any).report_chart_color_einspeisung_eeg || "#6366f1"}
+                    label="Einspeisung EEG"
+                  />
+                  <ColorField
+                    name="report_chart_color_resteinspeisung"
+                    defaultValue={(eeg as any).report_chart_color_resteinspeisung || "#c4b5fd"}
+                    label="Resteinspeisung"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 mb-2">Abgerechnet — Bezug/Einspeisung &amp; Finanzen</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <ColorField
+                    name="report_chart_color_billed_einspeisung"
+                    defaultValue={(eeg as any).report_chart_color_billed_einspeisung || "#10b981"}
+                    label="Einspeisung"
+                  />
+                  <ColorField
+                    name="report_chart_color_billed_bezug"
+                    defaultValue={(eeg as any).report_chart_color_billed_bezug || "#3b82f6"}
+                    label="Bezug"
+                  />
+                  <ColorField
+                    name="report_chart_color_einnahmen"
+                    defaultValue={(eeg as any).report_chart_color_einnahmen || "#3b82f6"}
+                    label="Einnahmen"
+                  />
+                  <ColorField
+                    name="report_chart_color_gutschriften"
+                    defaultValue={(eeg as any).report_chart_color_gutschriften || "#f59e0b"}
+                    label="Gutschriften"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <h3 className="text-sm font-semibold text-slate-700 mb-2">Mitglieder — Energiemengen</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <ColorField
+                    name="report_chart_color_member_einspeisung"
+                    defaultValue={(eeg as any).report_chart_color_member_einspeisung || "#6366f1"}
+                    label="Einspeisung"
+                  />
+                  <ColorField
+                    name="report_chart_color_member_bezug"
+                    defaultValue={(eeg as any).report_chart_color_member_bezug || "#10b981"}
+                    label="Bezug"
+                  />
                 </div>
               </div>
             </div>

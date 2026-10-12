@@ -9,6 +9,9 @@ interface MeterPoint {
   direction: string;
   generation_type?: string;
   participation_factor?: number;
+  strasse?: string;
+  plz?: string;
+  ort?: string;
 }
 
 interface Props {
@@ -427,6 +430,34 @@ export default function OnboardingManualCreateModal({
                       </select>
                     </div>
                   )}
+                  <details open={!!(mp.strasse || mp.plz || mp.ort)}>
+                    <summary className="text-xs text-slate-500 cursor-pointer select-none">Standort (optional)</summary>
+                    <div className="mt-2 space-y-2">
+                      <input
+                        type="text"
+                        value={mp.strasse || ""}
+                        onChange={(e) => updateMeterPoint(idx, "strasse", e.target.value)}
+                        placeholder="Straße und Hausnummer"
+                        className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <div className="grid grid-cols-3 gap-2">
+                        <input
+                          type="text"
+                          value={mp.plz || ""}
+                          onChange={(e) => updateMeterPoint(idx, "plz", e.target.value)}
+                          placeholder="PLZ"
+                          className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <input
+                          type="text"
+                          value={mp.ort || ""}
+                          onChange={(e) => updateMeterPoint(idx, "ort", e.target.value)}
+                          placeholder="Ort"
+                          className="col-span-2 px-3 py-1.5 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                  </details>
                 </div>
               ))}
             </div>

@@ -79,6 +79,9 @@ func (h *SearchHandler) Search(w http.ResponseWriter, r *http.Request) {
 				"direction":   mp.Energierichtung,
 				"member_id":   mp.MemberID,
 				"member_name": mp.MemberName,
+				"strasse":     mp.Strasse,
+				"plz":         mp.Plz,
+				"ort":         mp.Ort,
 			})
 		}
 	}

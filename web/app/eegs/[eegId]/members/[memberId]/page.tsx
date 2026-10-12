@@ -1,7 +1,8 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getEEG, getMember, listInvoices, listMemberTariffs, getMemberSepaMandateHistory, listExtraMeters } from "@/lib/api";
+import { getEEG, getMember, getTariff, listInvoices, listMemberTariffs, getMemberSepaMandateHistory, listExtraMeters } from "@/lib/api";
 import { formatIBAN } from "@/lib/validation";
+import { formatAddress } from "@/lib/address";
 import Link from "next/link";
 import { MeterPointStatusBadge } from "@/components/meter-point-status-badge";
 import AustrittDialog from "./AustrittDialog";
@@ -93,6 +94,18 @@ export default async function MemberDetailPage({ params }: Props) {
     // non-fatal
   }
 
+  // Assigned EEG-wide plan (for the fee-override overview), when it is the one in effect
+  let assignedPlan: Awaited<ReturnType<typeof getTariff>> | null = null;
+  const effectiveTariff = member?.effective_tariff ?? null;
+  if (effectiveTariff?.source === "assigned" && effectiveTariff.schedule_id) {
+    try {
+      assignedPlan = await getTariff(session.accessToken!, eegId, effectiveTariff.schedule_id);
+    } catch {
+      // non-fatal
+    }
+  }
+  const overridePlan = activeIndividualtarif ?? assignedPlan;
+
   // Archived SEPA mandate history (past IBANs), for audit purposes
   let mandateHistory: Awaited<ReturnType<typeof getMemberSepaMandateHistory>> = [];
   try {
@@ -151,6 +164,9 @@ export default async function MemberDetailPage({ params }: Props) {
           {member.mitglieds_nr && (
             <p className="text-sm text-slate-500 mt-1 font-mono">Nr. {member.mitglieds_nr}</p>
           )}
+          {member.kundenkonto && (
+            <p className="text-sm text-slate-500 mt-0.5 font-mono">Kundenkonto {member.kundenkonto}</p>
+          )}
         </div>
         <div className="flex gap-2 flex-wrap">
           <Link
@@ -187,6 +203,10 @@ export default async function MemberDetailPage({ params }: Props) {
       <div className="bg-white rounded-xl border border-slate-200 p-6">
         <h2 className="text-base font-semibold text-slate-900 mb-4">Stammdaten</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-4">
+          <div>
+            <p className="text-xs font-medium text-slate-500 mb-0.5">Kundenkonto</p>
+            <p className="text-sm font-mono text-slate-900">{member.kundenkonto || "—"}</p>
+          </div>
           <div>
             <p className="text-xs font-medium text-slate-500 mb-0.5">E-Mail</p>
             <p className="text-sm text-slate-900">{member.email || "—"}</p>
@@ -256,23 +276,44 @@ export default async function MemberDetailPage({ params }: Props) {
 
       {/* Tarifplan */}
       <div className="bg-white rounded-xl border border-slate-200 p-6">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
           <h2 className="text-base font-semibold text-slate-900">Tarifplan</h2>
-          <Link
-            href={`/eegs/${eegId}/members/${memberId}/tariff`}
-            className="px-3 py-1.5 text-xs font-medium text-white bg-amber-700 rounded-lg hover:bg-amber-800 transition-colors"
-          >
-            Individualtarif verwalten
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link
+              href={`/eegs/${eegId}/members/${memberId}/edit`}
+              className="px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-lg hover:bg-blue-100 transition-colors"
+            >
+              Tarifplan zuweisen
+            </Link>
+            <Link
+              href={`/eegs/${eegId}/members/${memberId}/tariff`}
+              className="px-3 py-1.5 text-xs font-medium text-white bg-amber-700 rounded-lg hover:bg-amber-800 transition-colors"
+            >
+              Individualtarif verwalten
+            </Link>
+          </div>
         </div>
-        {activeIndividualtarif ? (
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-sm font-medium text-slate-900">{activeIndividualtarif.name}</span>
-              <span className="text-xs px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded font-medium">
-                Individualtarif
+        <div className="mb-3">
+          <p className="text-xs text-slate-500 mb-1">Gültiger Tarifplan</p>
+          {effectiveTariff && effectiveTariff.source !== "none" ? (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-medium text-slate-900">{effectiveTariff.name}</span>
+              <span className={`text-xs px-1.5 py-0.5 rounded border font-medium ${
+                effectiveTariff.source === "individual" ? "bg-amber-50 text-amber-700 border-amber-200"
+                  : effectiveTariff.source === "assigned" ? "bg-blue-50 text-blue-700 border-blue-200"
+                  : "bg-slate-100 text-slate-600 border-slate-200"
+              }`}>
+                {effectiveTariff.source === "individual" ? "Individualtarif"
+                  : effectiveTariff.source === "assigned" ? "zugewiesen" : "Standardtarif"}
               </span>
             </div>
+          ) : (
+            <p className="text-sm text-slate-400">Kein Tarifplan aktiv — es gelten die flachen EEG-Preise.</p>
+          )}
+        </div>
+        {overridePlan && (
+          <div>
+            <p className="text-xs text-slate-500 mb-2">Gebühren-Abweichungen vom EEG-Standard</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
               {([
                 ["free_kwh_override", "Freikontingent", "kWh"],
@@ -283,7 +324,7 @@ export default async function MemberDetailPage({ params }: Props) {
                 ["servicegebuehr_bezug_ct_kwh_override", "Servicegebühr Bezug", "ct/kWh"],
                 ["servicegebuehr_einspeisung_ct_kwh_override", "Servicegebühr Einspeisung", "ct/kWh"],
               ] as const).map(([key, label, unit]) => {
-                const val = activeIndividualtarif![key];
+                const val = overridePlan[key];
                 return (
                   <div key={key}>
                     <p className="text-slate-500">{label}</p>
@@ -297,8 +338,6 @@ export default async function MemberDetailPage({ params }: Props) {
               })}
             </div>
           </div>
-        ) : (
-          <p className="text-sm text-slate-400">Kein Individualtarif aktiv — verwendet EEG-Standard.</p>
         )}
       </div>
 
@@ -370,6 +409,9 @@ export default async function MemberDetailPage({ params }: Props) {
                           </span>
                         )}
                       </span>
+                      {formatAddress(mp) && (
+                        <span className="block mt-0.5 font-sans text-xs text-slate-500">{formatAddress(mp)}</span>
+                      )}
                     </td>
                     <td className="px-6 py-3">
                       <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${

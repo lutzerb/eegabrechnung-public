@@ -153,24 +153,42 @@ function AnmeldungOnlineForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [existingAnmeldung, setExistingAnmeldung] = useState<{
+    error: string;
+    existing_process_id: string;
+    existing_status: string;
+    existing_initiated_at: string;
+  } | null>(null);
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.FormEvent, forceOverride = false) {
     e.preventDefault();
     setLoading(true);
     setError(null);
     setSuccess(false);
+    setExistingAnmeldung(null);
     try {
       const body: Record<string, unknown> = {
         zaehlpunkt,
         valid_from: validFrom || undefined,
         energy_direction: energyDirection,
         participation_factor: parseFloat(factor),
+        force: forceOverride,
       };
       const res = await fetch(`/api/eegs/${eegId}/eda/anmeldung-online`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
+      if (res.status === 409) {
+        const data = await res.json().catch(() => ({}));
+        setExistingAnmeldung({
+          error: data.error || "Für diesen Zählpunkt läuft bereits eine Anmeldung.",
+          existing_process_id: data.existing_process_id ?? "",
+          existing_status: data.existing_status ?? "",
+          existing_initiated_at: data.existing_initiated_at ?? "",
+        });
+        return;
+      }
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || `Fehler ${res.status}`);
@@ -208,6 +226,34 @@ function AnmeldungOnlineForm({
       {error && (
         <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-800 text-sm">
           {error}
+        </div>
+      )}
+
+      {existingAnmeldung && (
+        <div className="p-4 bg-amber-50 border border-amber-200 rounded-lg">
+          <p className="font-medium text-amber-800">Anmeldung läuft bereits</p>
+          <p className="text-sm text-amber-700 mt-1">{existingAnmeldung.error}</p>
+          {existingAnmeldung.existing_status && (
+            <p className="text-xs text-amber-600 mt-1">
+              Bestehender Prozess: Status &quot;{existingAnmeldung.existing_status}&quot;
+              {existingAnmeldung.existing_initiated_at &&
+                `, gestartet am ${new Date(existingAnmeldung.existing_initiated_at).toLocaleString("de-AT")}`}
+            </p>
+          )}
+          <p className="text-xs text-amber-600 mt-1">
+            Das kann z.B. passieren, wenn edanet die ursprüngliche Anmeldung durch eine Wartung verschluckt hat. Nur erneut senden, wenn sicher ist, dass die vorherige Anmeldung nicht mehr ankommt.
+          </p>
+          <button
+            type="button"
+            onClick={(e) => {
+              setExistingAnmeldung(null);
+              submit(e as unknown as React.FormEvent, true);
+            }}
+            disabled={loading}
+            className="mt-3 px-4 py-1.5 text-sm font-medium text-white bg-amber-600 rounded hover:bg-amber-700 disabled:opacity-50 transition-colors"
+          >
+            Trotzdem erneut anmelden
+          </button>
         </div>
       )}
 

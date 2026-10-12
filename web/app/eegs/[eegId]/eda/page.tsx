@@ -5,6 +5,7 @@ import Link from "next/link";
 import { EDAActionForms, PollNowButton } from "@/components/eda-action-forms";
 import { EDAProcessesTable } from "@/components/eda-processes-table";
 import { EDAMessagesTable } from "@/components/eda-messages-table";
+import { PodlistReconcileSection } from "@/components/podlist-reconcile-section";
 
 interface Props {
   params: Promise<{ eegId: string }>;
@@ -16,6 +17,7 @@ const TABS = [
   { key: "prozesse",   label: "Prozesse" },
   { key: "nachrichten", label: "Nachrichten" },
   { key: "aktionen",   label: "Aktionen" },
+  { key: "abgleich",   label: "Zählpunktdaten-Abgleich" },
   { key: "fehler",     label: "Fehler" },
 ] as const;
 
@@ -396,6 +398,13 @@ export default async function EDAPage({ params, searchParams }: Props) {
       {/* ── TAB: AKTIONEN ────────────────────────────────────── */}
       {activeTab === "aktionen" && (
         <EDAActionForms eegId={eegId} edaConfigured={edaConfigured} members={members} />
+      )}
+
+      {/* ── TAB: ABGLEICH ────────────────────────────────────── */}
+      {activeTab === "abgleich" && (
+        <div className="max-w-3xl">
+          <PodlistReconcileSection eegId={eegId} edaConfigured={edaConfigured} />
+        </div>
       )}
 
       {/* ── TAB: FEHLER ──────────────────────────────────────── */}

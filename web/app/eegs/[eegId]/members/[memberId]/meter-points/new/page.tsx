@@ -96,6 +96,9 @@ export default async function NewMeterPointPage({ params, searchParams }: Props)
     const registriert_seit = formData.get("registriert_seit") as string;
     const status = formData.get("status") as string;
     const generationType = formData.get("generation_type") as string;
+    const strasse = ((formData.get("strasse") as string) || "").trim();
+    const plz = ((formData.get("plz") as string) || "").trim();
+    const ort = ((formData.get("ort") as string) || "").trim();
 
     let saveError: string | null = null;
     try {
@@ -107,6 +110,9 @@ export default async function NewMeterPointPage({ params, searchParams }: Props)
         status: status || undefined,
         registriert_seit: registriert_seit || undefined,
         generation_type: generationType || undefined,
+        strasse: strasse || undefined,
+        plz: plz || undefined,
+        ort: ort || undefined,
       });
     } catch (err: unknown) {
       saveError = (err as { message?: string }).message || "Erstellen fehlgeschlagen.";
@@ -252,6 +258,27 @@ export default async function NewMeterPointPage({ params, searchParams }: Props)
             <div>
               <label className={labelClass}>Registriert seit</label>
               <input type="date" name="registriert_seit" className={inputClass} />
+            </div>
+          </div>
+
+          <div className="border-t border-slate-100 pt-4 space-y-4">
+            <div>
+              <p className="text-sm font-medium text-slate-700">Standort (optional)</p>
+              <p className="text-xs text-slate-400 mt-0.5">Nur zur Information, z. B. wenn ein Mitglied Zählpunkte an verschiedenen Orten hat.</p>
+            </div>
+            <div>
+              <label className={labelClass}>Straße</label>
+              <input type="text" name="strasse" placeholder="Hauptstraße 1" className={inputClass} />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className={labelClass}>PLZ</label>
+                <input type="text" name="plz" placeholder="1010" className={inputClass} />
+              </div>
+              <div className="col-span-2">
+                <label className={labelClass}>Ort</label>
+                <input type="text" name="ort" placeholder="Wien" className={inputClass} />
+              </div>
             </div>
           </div>
         </div>

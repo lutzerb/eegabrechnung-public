@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"time"
@@ -9,12 +10,20 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lutzerb/eegabrechnung/internal/auth"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
 	edaxml "github.com/lutzerb/eegabrechnung/internal/eda/xml"
 	"github.com/lutzerb/eegabrechnung/internal/invoice"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
 )
+
+// isUniqueViolation reports whether err is a Postgres unique-constraint violation
+// (SQLSTATE 23505), e.g. from members_eeg_kundenkonto_uidx.
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
 
 type MemberHandler struct {
 	memberRepo     *repository.MemberRepository
@@ -45,6 +54,9 @@ func NewMemberHandler(
 
 type memberRequest struct {
 	MitgliedsNr  string   `json:"mitglieds_nr"`
+	// Kundenkonto: freely editable customer account number, independent of
+	// MitgliedsNr. Empty = not (yet) assigned. Unique per EEG.
+	Kundenkonto  string   `json:"kundenkonto"`
 	Name1        string   `json:"name1"`
 	Name2        string   `json:"name2"`
 	Email        string   `json:"email"`
@@ -66,6 +78,53 @@ type memberRequest struct {
 	// BeitrittsDatum / AustrittsDatum: YYYY-MM-DD date strings
 	BeitrittsDatum string `json:"beitritts_datum"`
 	AustrittsDatum string `json:"austritts_datum"`
+	// TariffScheduleID: EEG-wide tariff plan assigned to the member. Omitted = unchanged
+	// (Update) / Standardtarif (Create); null or "" = back to the Standardtarif.
+	TariffScheduleID optionalUUID `json:"tariff_schedule_id"`
+}
+
+// optionalUUID distinguishes an omitted JSON field (Set=false) from an explicit null/"" (Set=true, Value=nil).
+type optionalUUID struct {
+	Set   bool
+	Value *uuid.UUID
+}
+
+func (o *optionalUUID) UnmarshalJSON(b []byte) error {
+	o.Set = true
+	o.Value = nil
+	if string(b) == "null" {
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	if s == "" {
+		return nil
+	}
+	id, err := uuid.Parse(s)
+	if err != nil {
+		return err
+	}
+	o.Value = &id
+	return nil
+}
+
+// validateTariffAssignment ensures an assigned plan is an active EEG-wide plan of this EEG.
+func (h *MemberHandler) validateTariffAssignment(w http.ResponseWriter, r *http.Request, eegID uuid.UUID, id *uuid.UUID) bool {
+	if id == nil {
+		return true
+	}
+	ok, err := h.memberRepo.IsAssignableTariff(r.Context(), eegID, *id)
+	if err != nil {
+		jsonError(w, "failed to validate tariff plan", http.StatusInternalServerError)
+		return false
+	}
+	if !ok {
+		jsonError(w, "tariff_schedule_id must be an active tariff plan of this EEG", http.StatusBadRequest)
+		return false
+	}
+	return true
 }
 
 // parseDateField parses an optional YYYY-MM-DD date string into *time.Time.
@@ -139,6 +198,10 @@ func (h *MemberHandler) CreateMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !h.validateTariffAssignment(w, r, eegID, req.TariffScheduleID.Value) {
+		return
+	}
+
 	status := req.Status
 	if status == "" {
 		status = "ACTIVE"
@@ -146,6 +209,7 @@ func (h *MemberHandler) CreateMember(w http.ResponseWriter, r *http.Request) {
 	m := &domain.Member{
 		EegID:          eegID,
 		MitgliedsNr:    req.MitgliedsNr,
+		Kundenkonto:    cleanText(req.Kundenkonto),
 		Name1:          cleanText(req.Name1),
 		Name2:          cleanText(req.Name2),
 		Email:          cleanText(req.Email),
@@ -160,8 +224,13 @@ func (h *MemberHandler) CreateMember(w http.ResponseWriter, r *http.Request) {
 		Status:         status,
 		BeitrittsDatum: beitrittsDatum,
 		AustrittsDatum: austrittsDatum,
+		TariffScheduleID: req.TariffScheduleID.Value,
 	}
 	if err := h.memberRepo.Create(ctx, m); err != nil {
+		if isUniqueViolation(err) {
+			jsonError(w, "Kundenkonto bereits in dieser Energiegemeinschaft vergeben", http.StatusConflict)
+			return
+		}
 		jsonError(w, "failed to create member", http.StatusInternalServerError)
 		return
 	}
@@ -216,7 +285,13 @@ func (h *MemberHandler) GetMember(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		factors = map[uuid.UUID]float64{}
 	}
-	jsonOK(w, toMemberWithMPs(*m, mps, factors, edaStatus))
+	mw := toMemberWithMPs(*m, mps, factors, edaStatus)
+	if effTariffs, err := h.memberRepo.EffectiveTariffs(r.Context(), eeg.ID); err == nil {
+		if et, ok := effTariffs[m.ID]; ok {
+			mw.EffectiveTariff = &et
+		}
+	}
+	jsonOK(w, mw)
 }
 
 // UpdateMember godoc
@@ -259,6 +334,12 @@ func (h *MemberHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if req.TariffScheduleID.Set {
+		if !h.validateTariffAssignment(w, r, eeg.ID, req.TariffScheduleID.Value) {
+			return
+		}
+	}
+
 	// IBAN changed by an admin (not via the member's own portal confirmation): archive the
 	// old mandate for audit purposes, and clear the signature so the mandate PDF shows
 	// "not yet confirmed" until the member re-confirms via the self-service portal.
@@ -285,6 +366,9 @@ func (h *MemberHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 	if req.MitgliedsNr != "" {
 		existing.MitgliedsNr = req.MitgliedsNr
 	}
+	if req.Kundenkonto != "" {
+		existing.Kundenkonto = cleanText(req.Kundenkonto)
+	}
 	existing.UidNummer = req.UidNummer
 	// UseVat and VatPct: always taken from request (nil = reset to inherit)
 	existing.UseVat = req.UseVat
@@ -306,8 +390,15 @@ func (h *MemberHandler) UpdateMember(w http.ResponseWriter, r *http.Request) {
 	}
 	existing.BeitrittsDatum = beitrittsDatum
 	existing.AustrittsDatum = austrittsDatum
+	if req.TariffScheduleID.Set {
+		existing.TariffScheduleID = req.TariffScheduleID.Value
+	}
 
 	if err := h.memberRepo.Update(r.Context(), existing); err != nil {
+		if isUniqueViolation(err) {
+			jsonError(w, "Kundenkonto bereits in dieser Energiegemeinschaft vergeben", http.StatusConflict)
+			return
+		}
 		jsonError(w, "failed to update member", http.StatusInternalServerError)
 		return
 	}
@@ -620,4 +711,62 @@ func (h *MemberHandler) GetSepaMandatHistory(w http.ResponseWriter, r *http.Requ
 		entries = []domain.SepaMandateHistoryEntry{}
 	}
 	jsonOK(w, entries)
+}
+
+// NextKundenkontoSuggestion godoc
+//
+//	@Summary		Suggest next Kundenkonto value
+//	@Description	Returns one more than the highest existing numeric Kundenkonto in this EEG, floored at the EEG's kundenkonto_start. Purely advisory (used to prefill the create-member form) — not reserved, not locked.
+//	@Tags			Mitglieder
+//	@Produce		json
+//	@Param			eegID	path	string	true	"EEG UUID"
+//	@Success		200	{object}	map[string]string
+//	@Security		BearerAuth
+//	@Router			/eegs/{eegID}/members/next-kundenkonto [get]
+func (h *MemberHandler) NextKundenkontoSuggestion(w http.ResponseWriter, r *http.Request) {
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
+		return
+	}
+	suggestion, err := h.memberRepo.NextKundenkontoSuggestion(r.Context(), eeg.ID)
+	if err != nil {
+		jsonError(w, "failed to compute suggestion", http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, map[string]string{"kundenkonto": suggestion})
+}
+
+// bulkKundenkontoRequest optionally restricts BulkAssignKundenkonto to a subset of
+// members. Omitted/empty = all members of the EEG that don't have one yet.
+type bulkKundenkontoRequest struct {
+	MemberIDs []uuid.UUID `json:"member_ids"`
+}
+
+// BulkAssignKundenkonto godoc
+//
+//	@Summary		Bulk-assign Kundenkonto numbers
+//	@Description	Assigns sequential Kundenkonto numbers to every member of this EEG without one yet (or, if member_ids is given, that subset), starting after the current max and floored at kundenkonto_start. Admin only. This endpoint is single-EEG-scoped; to cover several EEGs, call it once per EEG.
+//	@Tags			Mitglieder
+//	@Accept			json
+//	@Produce		json
+//	@Param			eegID	path	string					true	"EEG UUID"
+//	@Param			body	body	bulkKundenkontoRequest	false	"Optional member_ids subset"
+//	@Success		200	{object}	map[string]interface{}
+//	@Security		BearerAuth
+//	@Router			/eegs/{eegID}/members/bulk-kundenkonto [post]
+func (h *MemberHandler) BulkAssignKundenkonto(w http.ResponseWriter, r *http.Request) {
+	_, eeg, ok := requireAdminEEGAccess(w, r, h.eegRepo)
+	if !ok {
+		return
+	}
+	var req bulkKundenkontoRequest
+	if r.Body != nil {
+		_ = json.NewDecoder(r.Body).Decode(&req) // empty/missing body is fine — means "all"
+	}
+	assigned, err := h.memberRepo.BulkAssignKundenkonto(r.Context(), eeg.ID, req.MemberIDs)
+	if err != nil {
+		jsonError(w, "failed to assign Kundenkonten", http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, map[string]any{"assigned": assigned, "assigned_count": len(assigned)})
 }

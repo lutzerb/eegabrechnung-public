@@ -263,6 +263,58 @@ func (h *ExtraMeterHandler) CreateReading(w http.ResponseWriter, r *http.Request
 	jsonOK(w, rd)
 }
 
+// UpdateReading handles PUT /eegs/{eegID}/members/{memberID}/extra-meters/{id}/readings/{readingID}
+func (h *ExtraMeterHandler) UpdateReading(w http.ResponseWriter, r *http.Request) {
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
+		return
+	}
+	memberID, err := uuid.Parse(chi.URLParam(r, "memberID"))
+	if err != nil {
+		jsonError(w, "invalid member ID", http.StatusBadRequest)
+		return
+	}
+	extraMeterID, err := uuid.Parse(chi.URLParam(r, "id"))
+	if err != nil {
+		jsonError(w, "invalid extra meter ID", http.StatusBadRequest)
+		return
+	}
+	if _, ok := h.verifyExtraMeter(w, r, eeg.ID, memberID, extraMeterID); !ok {
+		return
+	}
+	readingID, err := uuid.Parse(chi.URLParam(r, "readingID"))
+	if err != nil {
+		jsonError(w, "invalid reading ID", http.StatusBadRequest)
+		return
+	}
+	var req struct {
+		ReadingDate  string  `json:"reading_date"`
+		CounterValue float64 `json:"counter_value"`
+		Notes        string  `json:"notes"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	date, err := time.Parse("2006-01-02", req.ReadingDate)
+	if err != nil {
+		jsonError(w, "invalid reading_date format (expected YYYY-MM-DD)", http.StatusBadRequest)
+		return
+	}
+	rd := &domain.ExtraMeterReading{
+		ID:           readingID,
+		ExtraMeterID: extraMeterID,
+		ReadingDate:  date,
+		CounterValue: req.CounterValue,
+		Notes:        req.Notes,
+	}
+	if err := h.extraMeterRepo.UpdateReading(r.Context(), rd); err != nil {
+		jsonError(w, "failed to update reading: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, rd)
+}
+
 // DeleteReading handles DELETE /eegs/{eegID}/members/{memberID}/extra-meters/{id}/readings/{readingID}
 func (h *ExtraMeterHandler) DeleteReading(w http.ResponseWriter, r *http.Request) {
 	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)

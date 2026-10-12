@@ -69,26 +69,27 @@ func ParseECMPList(xmlPayload string) (*ECMPListResult, error) {
 	}
 
 	for _, mpd := range doc.ProcessDir.MPListData {
+		td := currentTimeData(mpd.TimeDatas)
 		entry := ECMPListEntry{
 			MeteringPoint:   mpd.MeteringPoint,
 			ConsentID:       mpd.ConsentID,
-			EnergyDirection: mpd.TimeData.EnergyDirection,
-			ECPartFact:      mpd.TimeData.ECPartFact,
-			PlantCategory:   mpd.TimeData.PlantCategory,
-			ECShare:         mpd.TimeData.ECShare,
+			EnergyDirection: td.EnergyDirection,
+			ECPartFact:      td.ECPartFact,
+			PlantCategory:   td.PlantCategory,
+			ECShare:         td.ECShare,
 		}
-		if mpd.TimeData.DateFrom != "" {
-			if t, err := parseCRDateTime(mpd.TimeData.DateFrom); err == nil {
+		if td.DateFrom != "" {
+			if t, err := parseCRDateTime(td.DateFrom); err == nil {
 				entry.DateFrom = t.UTC()
 			}
 		}
-		if mpd.TimeData.DateTo != "" && mpd.TimeData.DateTo != "9999-12-31" {
-			if t, err := parseCRDateTime(mpd.TimeData.DateTo); err == nil {
+		if td.DateTo != "" && td.DateTo != "9999-12-31" {
+			if t, err := parseCRDateTime(td.DateTo); err == nil {
 				entry.DateTo = t.UTC()
 			}
 		}
-		if mpd.TimeData.DateActivate != "" {
-			if t, err := parseCRDateTime(mpd.TimeData.DateActivate); err == nil {
+		if td.DateActivate != "" {
+			if t, err := parseCRDateTime(td.DateActivate); err == nil {
 				entry.DateActivate = t.UTC()
 			}
 		}
@@ -96,6 +97,35 @@ func ParseECMPList(xmlPayload string) (*ECMPListResult, error) {
 	}
 
 	return res, nil
+}
+
+// currentTimeData picks the MPTimeData period that is currently valid for a
+// MeteringPoint. A real ECMPList entry can list several MPTimeData periods for
+// the same Zählpunkt — its participation factor (or energy direction/plant
+// category) can change over time, e.g. a short-term reduction that reverts
+// later. The schema lists these chronologically, but we don't rely on that
+// implicitly (Go's encoding/xml would otherwise silently take whichever one
+// happens to be last in document order for a non-slice field): prefer the
+// open-ended period (DateTo == "" or the "9999-12-31" sentinel, i.e. "valid
+// until further notice"); if none is open-ended (the Zählpunkt currently has
+// no active period at all), fall back to the most recent one by DateFrom —
+// ISO date strings ("YYYY-MM-DD") sort correctly as plain strings.
+func currentTimeData(periods []xmlECMPListTimeData) xmlECMPListTimeData {
+	if len(periods) == 0 {
+		return xmlECMPListTimeData{}
+	}
+	best := periods[0]
+	bestOpen := best.DateTo == "" || best.DateTo == "9999-12-31"
+	for _, p := range periods[1:] {
+		open := p.DateTo == "" || p.DateTo == "9999-12-31"
+		switch {
+		case open && !bestOpen:
+			best, bestOpen = p, true
+		case open == bestOpen && p.DateFrom > best.DateFrom:
+			best = p
+		}
+	}
+	return best
 }
 
 // ── XML unmarshal structs (local-name matching) ─────────────────────────
@@ -132,9 +162,9 @@ type xmlECMPListProcessDir struct {
 }
 
 type xmlECMPListMPData struct {
-	MeteringPoint string             `xml:"MeteringPoint"`
-	ConsentID     string             `xml:"ConsentId"`
-	TimeData      xmlECMPListTimeData `xml:"MPTimeData"`
+	MeteringPoint string                `xml:"MeteringPoint"`
+	ConsentID     string                `xml:"ConsentId"`
+	TimeDatas     []xmlECMPListTimeData `xml:"MPTimeData"`
 }
 
 type xmlECMPListTimeData struct {

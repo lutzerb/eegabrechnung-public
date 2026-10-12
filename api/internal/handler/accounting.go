@@ -143,8 +143,21 @@ func (h *AccountingHandler) Export(w http.ResponseWriter, r *http.Request) {
 }
 
 // memberDebitorAccount computes the debitor account number for a member.
-// Uses numeric part of MitgliedsNr added to the prefix (e.g. "0042" + 10000 = 10042).
-func memberDebitorAccount(prefix int, mitgliedsNr string) int {
+// If the member has an explicit Kundenkonto (migration 123), that numeric value is
+// used directly — it's exactly the "customer account number" DATEV expects here,
+// and lets an operator control exports from the Kundenkonten admin page without
+// touching the EEG's Debitorenbasis. Otherwise falls back to the legacy scheme:
+// numeric part of MitgliedsNr added to the prefix (e.g. "0042" + 10000 = 10042).
+func memberDebitorAccount(prefix int, m *domain.Member) int {
+	if m != nil {
+		if n, err := strconv.Atoi(strings.TrimSpace(m.Kundenkonto)); err == nil {
+			return n
+		}
+	}
+	mitgliedsNr := ""
+	if m != nil {
+		mitgliedsNr = m.MitgliedsNr
+	}
 	re := regexp.MustCompile(`[0-9]+`)
 	numStr := re.FindString(mitgliedsNr)
 	if numStr != "" {
@@ -333,10 +346,7 @@ func generateDatevExport(eeg *domain.EEG, rows []accountingRow, from, to time.Ti
 		}
 
 		// Konto / Gegenkonto
-		debitor := memberDebitorAccount(debPrefix, "")
-		if m != nil {
-			debitor = memberDebitorAccount(debPrefix, m.MitgliedsNr)
-		}
+		debitor := memberDebitorAccount(debPrefix, m)
 
 		var konto, gegenkonto int
 		if inv.DocumentType == "credit_note" {

@@ -101,7 +101,7 @@ func main() {
 	billingSvc := billing.NewService(pool, eegRepo, memberRepo, readingRepo, invoiceRepo, billingRunRepo, tariffRepo, emailLogRepo, meterPointRepo, extraMeterRepo, referralBonusRepo, billingCfg)
 
 	// Handlers
-	eegHandler := handler.NewEEGHandler(eegRepo, memberRepo, meterPointRepo, participationRepo)
+	eegHandler := handler.NewEEGHandler(eegRepo, memberRepo, meterPointRepo, participationRepo, extraMeterRepo)
 	importHandler := handler.NewImportHandler(eegRepo, memberRepo, meterPointRepo, readingRepo)
 	billingHandler := handler.NewBillingHandler(billingSvc, invoiceRepo, billingRunRepo, memberRepo, eegRepo, emailLogRepo, referralBonusRepo)
 	memberHandler := handler.NewMemberHandler(memberRepo, meterPointRepo, eegRepo, edaProcessRepo, jobRepo, participationRepo)
@@ -112,10 +112,10 @@ func main() {
 	sepaHandler := handler.NewSEPAHandler(eegRepo, memberRepo, invoiceRepo)
 	reportHandler := handler.NewReportHandler(reportRepo, eegRepo)
 	userHandler := handler.NewUserHandler(userRepo, eegRepo)
-	tariffHandler := handler.NewTariffHandler(tariffRepo, eegRepo)
+	tariffHandler := handler.NewTariffHandler(tariffRepo, eegRepo, memberRepo)
 	extraMeterHandler := handler.NewExtraMeterHandler(extraMeterRepo, memberRepo, eegRepo)
 	edaWorkerURL := getEnv("EDA_WORKER_URL", "http://eda-worker:8081")
-	edaHandler := handler.NewEDAHandler(eegRepo, meterPointRepo, edaProcessRepo, jobRepo, edaErrorRepo, workerStatusRepo, readingRepo, edaWorkerURL)
+	edaHandler := handler.NewEDAHandler(eegRepo, meterPointRepo, edaProcessRepo, jobRepo, edaErrorRepo, workerStatusRepo, readingRepo, edaMessageRepo, participationRepo, memberRepo, edaWorkerURL)
 	forecastURL := getEnv("FORECAST_SERVICE_URL", "http://forecast-service:8200")
 	forecastHandler := handler.NewForecastHandler(eegRepo, forecastURL)
 	participationHandler := handler.NewParticipationHandler(participationRepo, eegRepo)
@@ -193,6 +193,8 @@ func main() {
 	r.With(portalLimiter.Middleware).Post("/api/v1/public/portal/login-password", portalHandler.LoginPassword)
 	r.With(portalLimiter.Middleware).Post("/api/v1/public/portal/set-password", portalHandler.SetPassword)
 	r.Get("/api/v1/public/portal/me", portalHandler.GetMe)
+	r.Get("/api/v1/public/portal/eegs", portalHandler.ListMyEEGs)
+	r.With(portalLimiter.Middleware).Post("/api/v1/public/portal/switch-eeg", portalHandler.SwitchEEG)
 	r.Get("/api/v1/public/portal/energy", portalHandler.GetEnergy)
 	r.Get("/api/v1/public/portal/community-energy", portalHandler.GetCommunityEnergy)
 	r.Get("/api/v1/public/portal/invoices", portalHandler.GetInvoices)
@@ -258,6 +260,8 @@ func main() {
 		r.Post("/eegs/{eegID}/members/{memberID}/austritt", memberHandler.Austritt)
 		r.Get("/eegs/{eegID}/members/{memberID}/sepa-mandat", memberHandler.DownloadSepaMandat)
 		r.Get("/eegs/{eegID}/members/{memberID}/sepa-mandat/history", memberHandler.GetSepaMandatHistory)
+		r.Get("/eegs/{eegID}/members/next-kundenkonto", memberHandler.NextKundenkontoSuggestion)
+		r.Post("/eegs/{eegID}/members/bulk-kundenkonto", memberHandler.BulkAssignKundenkonto)
 
 		// Meter point CRUD
 		r.Post("/eegs/{eegID}/members/{memberID}/meter-points", meterPointHandler.CreateMeterPoint)
@@ -283,6 +287,8 @@ func main() {
 		r.Get("/eegs/{eegID}/eda/zaehlerstandsgang/fehlende-daten", edaHandler.FehlendeDatenPreview)
 		r.Post("/eegs/{eegID}/eda/widerruf", edaHandler.WiderrufEEG)
 		r.Post("/eegs/{eegID}/eda/podlist", edaHandler.PODList)
+		r.Get("/eegs/{eegID}/eda/podlist/reconcile", edaHandler.PODListReconcile)
+		r.Post("/eegs/{eegID}/eda/podlist/apply", edaHandler.PODListApply)
 		r.Get("/eegs/{eegID}/eda/errors", edaHandler.ListErrors)
 		r.Post("/eegs/{eegID}/eda/poll-now", edaHandler.PollNow)
 		r.Get("/eda/worker-status", edaHandler.GetWorkerStatus)
@@ -319,6 +325,7 @@ func main() {
 		r.Put("/eegs/{eegID}/tariffs/{scheduleID}/entries", tariffHandler.SetEntries)
 		r.Post("/eegs/{eegID}/tariffs/{scheduleID}/activate", tariffHandler.ActivateSchedule)
 		r.Delete("/eegs/{eegID}/tariffs/{scheduleID}/activate", tariffHandler.DeactivateSchedule)
+		r.Post("/eegs/{eegID}/tariffs/{scheduleID}/default", tariffHandler.SetDefaultSchedule)
 
 		// Tariff schedules (member-specific Individualtarife) — same handlers, memberID scopes them
 		r.Get("/eegs/{eegID}/members/{memberID}/tariffs", tariffHandler.ListSchedules)
@@ -337,6 +344,7 @@ func main() {
 		r.Delete("/eegs/{eegID}/members/{memberID}/extra-meters/{id}", extraMeterHandler.DeleteExtraMeter)
 		r.Get("/eegs/{eegID}/members/{memberID}/extra-meters/{id}/readings", extraMeterHandler.ListReadings)
 		r.Post("/eegs/{eegID}/members/{memberID}/extra-meters/{id}/readings", extraMeterHandler.CreateReading)
+		r.Put("/eegs/{eegID}/members/{memberID}/extra-meters/{id}/readings/{readingID}", extraMeterHandler.UpdateReading)
 		r.Delete("/eegs/{eegID}/members/{memberID}/extra-meters/{id}/readings/{readingID}", extraMeterHandler.DeleteReading)
 
 		// Onboarding (approve triggers full member creation + EDA)

@@ -1,10 +1,13 @@
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { getEEG, listMembers, deleteMember, deleteMeterPoint, type Member } from "@/lib/api";
+import { getEEG, listMembers, deleteMember, type Member } from "@/lib/api";
 import Link from "next/link";
 import { ConfirmDeleteButton } from "./ConfirmDeleteButton";
 import { MeterPointStatusBadge } from "@/components/meter-point-status-badge";
+import { MeterPointAddressToggle } from "@/components/mp-address-toggle";
+import { formatAddress } from "@/lib/address";
+import { EffectiveTariffCell } from "@/components/effective-tariff";
 
 interface Props {
   params: Promise<{ eegId: string }>;
@@ -68,22 +71,6 @@ export default async function MembersPage({ params, searchParams }: Props) {
       const apiError = err as { message?: string };
       redirect(
         `/eegs/${eegId}/members?error=${encodeURIComponent(apiError.message || "Löschen fehlgeschlagen.")}`
-      );
-    }
-  }
-
-  async function deleteMeterPointAction(formData: FormData) {
-    "use server";
-    const session = await auth();
-    if (!session) return;
-    const meterPointId = formData.get("meterPointId") as string;
-    try {
-      await deleteMeterPoint(session.accessToken!, eegId, meterPointId);
-      revalidatePath(`/eegs/${eegId}/members`);
-    } catch (err: unknown) {
-      const apiError = err as { message?: string };
-      redirect(
-        `/eegs/${eegId}/members?error=${encodeURIComponent(apiError.message || "Zählpunkt löschen fehlgeschlagen.")}`
       );
     }
   }
@@ -184,6 +171,7 @@ export default async function MembersPage({ params, searchParams }: Props) {
             className="px-3 py-2 border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
         </div>
+        <MeterPointAddressToggle />
         <button
           type="submit"
           className="px-4 py-2 text-sm font-medium bg-slate-100 text-slate-700 rounded-lg hover:bg-slate-200 transition-colors"
@@ -218,17 +206,18 @@ export default async function MembersPage({ params, searchParams }: Props) {
           )}
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+        <div id="members-table" data-show-address="false" className="group bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[600px]">
+          <table className="w-full text-sm table-fixed min-w-[900px]">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
-                <th className="text-left px-6 py-3.5 font-medium text-slate-600">Mitglied</th>
-                <th className="text-left px-3 py-3.5 font-medium text-slate-600 w-14">Nr.</th>
-                <th className="text-left px-3 py-3.5 font-medium text-slate-600 w-20">Status</th>
-                <th className="text-left px-6 py-3.5 font-medium text-slate-600">E-Mail</th>
-                <th className="text-left px-6 py-3.5 font-medium text-slate-600">Zählpunkte</th>
-                <th className="text-right px-6 py-3.5 font-medium text-slate-600">Aktionen</th>
+                <th className="text-left px-3 py-3.5 font-medium text-slate-600 w-[13%]">Mitglied</th>
+                <th className="text-left px-1.5 py-3.5 font-medium text-slate-600 w-[56px]">Nr.</th>
+                <th className="text-left px-1.5 py-3.5 font-medium text-slate-600 w-[92px]">Status</th>
+                <th className="text-left px-3 py-3.5 font-medium text-slate-600 w-[13%]">E-Mail</th>
+                <th className="text-left px-3 py-3.5 font-medium text-slate-600 w-[10%]">Tarifplan</th>
+                <th className="text-left px-3 py-3.5 font-medium text-slate-600 w-[39%]">Zählpunkte</th>
+                <th className="text-right px-3 py-3.5 font-medium text-slate-600 w-[13%]">Aktionen</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -237,7 +226,7 @@ export default async function MembersPage({ params, searchParams }: Props) {
                 const statusMeta = STATUS_LABELS[st] || { label: st, color: "bg-slate-100 text-slate-600" };
                 return (
                   <tr key={member.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4">
+                    <td className="px-3 py-4 truncate">
                       <Link
                         href={`/eegs/${eegId}/members/${member.id}`}
                         className="font-medium text-slate-900 hover:text-blue-700 transition-colors"
@@ -245,26 +234,38 @@ export default async function MembersPage({ params, searchParams }: Props) {
                         {member.name}
                       </Link>
                     </td>
-                    <td className="px-3 py-4 text-slate-600 font-mono text-xs">
-                      {member.member_number || member.mitglieds_nr || "—"}
+                    <td className="px-1.5 py-4 text-slate-600 font-mono text-xs truncate">
+                      <div className="truncate">{member.member_number || member.mitglieds_nr || "—"}</div>
+                      {member.kundenkonto && (
+                        <div
+                          className="truncate text-slate-400 text-[10px]"
+                          title={`Kundenkonto ${member.kundenkonto}`}
+                        >
+                          KK {member.kundenkonto}
+                        </div>
+                      )}
                     </td>
-                    <td className="px-3 py-4">
-                      <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${statusMeta.color}`}>
+                    <td className="px-1.5 py-4">
+                      <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${statusMeta.color}`}>
                         {statusMeta.label}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-slate-600">
+                    <td className="px-3 py-4 text-slate-600 truncate" title={member.email}>
                       {member.email || "—"}
                     </td>
-                    <td className="px-6 py-4">
-                      {member.meter_points && member.meter_points.length > 0 ? (
-                        <div className="space-y-1.5">
-                          {member.meter_points.map((mp) => (
-                            <div key={mp.id} className="flex items-center gap-2">
-                              <span className="inline-flex items-center justify-center w-[5.5rem] flex-shrink-0 px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
+                    <td className="px-3 py-4 truncate">
+                      <EffectiveTariffCell tariff={member.effective_tariff} />
+                    </td>
+                    <td className="px-3 py-4">
+                      <div className="space-y-1.5">
+                        {member.meter_points && member.meter_points.length > 0 ? (
+                          member.meter_points.map((mp) => (
+                            <div key={mp.id}>
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="inline-flex items-center justify-center w-[5.5rem] flex-shrink-0 px-1.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-600">
                                 {mp.direction === "CONSUMPTION" ? "Bezug" : "Einspeisung"}
                               </span>
-                              <div className="w-[7rem] flex-shrink-0">
+                              <div className="w-[5.5rem] flex-shrink-0">
                                 <MeterPointStatusBadge
                                   registriertSeit={mp.registriert_seit}
                                   abgemeldetAm={mp.abgemeldet_am}
@@ -273,52 +274,61 @@ export default async function MembersPage({ params, searchParams }: Props) {
                                   fullWidth
                                 />
                               </div>
-                              <span className="font-mono text-xs text-slate-500 flex-1 min-w-0 truncate" title={mp.meter_id}>
+                              <Link
+                                href={`/eegs/${eegId}/members/${member.id}/meter-points/${mp.id}/edit`}
+                                title="Zählpunkt bearbeiten"
+                                className="font-mono text-xs text-slate-500 hover:text-blue-700 hover:underline transition-colors"
+                              >
                                 {mp.meter_id}
-                              </span>
+                              </Link>
                               {mp.participation_factor !== undefined && mp.participation_factor !== 100 && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-orange-50 text-orange-700 flex-shrink-0" title="Teilnahmefaktor">
+                                <span className="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-orange-50 text-orange-700 flex-shrink-0" title="Teilnahmefaktor">
                                   {mp.participation_factor}%
                                 </span>
                               )}
                               {mp.direction === "GENERATION" && mp.generation_type && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-50 text-yellow-700 flex-shrink-0">
+                                <span className="inline-flex items-center px-1 py-0.5 rounded text-xs font-medium bg-yellow-50 text-yellow-700 flex-shrink-0">
                                   {mp.generation_type}
                                 </span>
                               )}
-                              <div className="flex items-center gap-1 flex-shrink-0">
-                                <Link
-                                  href={`/eegs/${eegId}/members/${member.id}/meter-points/${mp.id}/edit`}
-                                  className="px-2 py-0.5 text-xs text-blue-700 hover:bg-blue-50 rounded transition-colors"
-                                >
-                                  Bearbeiten
-                                </Link>
-                                <ConfirmDeleteButton
-                                  action={deleteMeterPointAction}
-                                  hiddenName="meterPointId"
-                                  hiddenValue={mp.id}
-                                  confirmMessage={`Zählpunkt "${mp.meter_id}" wirklich löschen?`}
-                                  className="px-2 py-0.5 text-xs text-red-600 hover:bg-red-50 rounded transition-colors"
-                                />
-                              </div>
                             </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <span className="text-slate-400 text-xs">Keine Zählpunkte</span>
-                      )}
+                            <div className="hidden group-data-[show-address=true]:block text-xs text-slate-500 mt-0.5 pl-[5.5rem] ml-2">
+                              {formatAddress(mp) || <span className="text-slate-300">keine Adresse</span>}
+                            </div>
+                            </div>
+                          ))
+                        ) : (
+                          <span className="text-slate-400 text-xs">Keine Zählpunkte</span>
+                        )}
+                        {eeg?.extra_meters_enabled && (
+                          <div>
+                            <Link
+                              href={`/eegs/${eegId}/members/${member.id}/extra-meters`}
+                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+                                (member.extra_meters_count || 0) > 0
+                                  ? "bg-amber-50 text-amber-700 hover:bg-amber-100"
+                                  : "text-slate-400 hover:bg-slate-100"
+                              }`}
+                            >
+                              {(member.extra_meters_count || 0) > 0
+                                ? `${member.extra_meters_count} Zusatzzähler`
+                                : "+ Zusatzzähler"}
+                            </Link>
+                          </div>
+                        )}
+                      </div>
                     </td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
+                    <td className="px-3 py-4 text-right">
+                      <div className="flex flex-wrap items-center justify-end gap-1">
                         <Link
                           href={`/eegs/${eegId}/members/${member.id}/meter-points/new`}
-                          className="px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 transition-colors"
+                          className="px-2 py-1 text-xs font-medium text-slate-700 bg-slate-100 rounded-md hover:bg-slate-200 transition-colors whitespace-nowrap"
                         >
                           + Zählpunkt
                         </Link>
                         <Link
                           href={`/eegs/${eegId}/members/${member.id}/edit`}
-                          className="px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors"
+                          className="px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 rounded-md hover:bg-blue-100 transition-colors whitespace-nowrap"
                         >
                           Bearbeiten
                         </Link>
@@ -327,7 +337,7 @@ export default async function MembersPage({ params, searchParams }: Props) {
                           hiddenName="memberId"
                           hiddenValue={member.id}
                           confirmMessage={`Mitglied "${member.name}" wirklich löschen? Diese Aktion kann nicht rückgängig gemacht werden.`}
-                          className="px-3 py-1.5 text-xs font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100 transition-colors"
+                          className="px-2 py-1 text-xs font-medium text-red-700 bg-red-50 rounded-md hover:bg-red-100 transition-colors whitespace-nowrap"
                         />
                       </div>
                     </td>

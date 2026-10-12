@@ -122,22 +122,33 @@ func (r *ParticipationRepository) Delete(ctx context.Context, id uuid.UUID) erro
 	return err
 }
 
-// UpsertCurrentFactor sets the open-ended participation factor for a meter point in an EEG.
+// UpsertFactor sets the open-ended participation factor for a meter point in an EEG.
 // If an open-ended record (valid_until IS NULL) exists, it is updated in place.
-// Otherwise a new record is inserted with share_type GC and valid_from today.
-func (r *ParticipationRepository) UpsertCurrentFactor(ctx context.Context, eegID, meterPointID uuid.UUID, factor float64) error {
+// Otherwise a new record is inserted. Callers decide the semantics of shareType/validFrom:
+//   - EC_PRTFACT_CHG confirmation (worker.go): shareType="GC", validFrom=time.Now() — a
+//     newly-submitted change becoming effective now.
+//   - EC_PODLIST reconciliation: shareType = the NB's reported ECType, validFrom = the NB's
+//     own DateFrom/DateActivate — catching up to a state that has already existed since that
+//     (possibly past) date.
+func (r *ParticipationRepository) UpsertFactor(ctx context.Context, eegID, meterPointID uuid.UUID, factor float64, shareType string, validFrom time.Time, notes string) error {
 	q := `
 		WITH upd AS (
 			UPDATE eeg_meter_participations
-			SET participation_factor = $3, valid_from = CURRENT_DATE
+			SET participation_factor = $3, share_type = $4, valid_from = $5, notes = $6
 			WHERE eeg_id = $1 AND meter_point_id = $2 AND valid_until IS NULL
 			RETURNING id
 		)
 		INSERT INTO eeg_meter_participations (eeg_id, meter_point_id, participation_factor, share_type, valid_from, valid_until, notes)
-		SELECT $1, $2, $3, 'GC', CURRENT_DATE, NULL, ''
+		SELECT $1, $2, $3, $4, $5, NULL, $6
 		WHERE NOT EXISTS (SELECT 1 FROM upd)`
-	_, err := r.db.Exec(ctx, q, eegID, meterPointID, factor)
+	_, err := r.db.Exec(ctx, q, eegID, meterPointID, factor, shareType, validFrom, notes)
 	return err
+}
+
+// UpsertReconciledFactor is a thin wrapper around UpsertFactor for the EC_PODLIST
+// ("Zählpunktliste") reconciliation feature, fixing the provenance note in one place.
+func (r *ParticipationRepository) UpsertReconciledFactor(ctx context.Context, eegID, meterPointID uuid.UUID, factor float64, shareType string, validFrom time.Time) error {
+	return r.UpsertFactor(ctx, eegID, meterPointID, factor, shareType, validFrom, "EDA EC_PODLIST Abgleich")
 }
 
 // GetCurrentFactorsByEEG returns a map of meter_point_id → current participation_factor

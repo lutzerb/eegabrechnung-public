@@ -44,8 +44,9 @@ const eegCols = `e.id, organization_id, gemeinschaft_id, gemeinschaft_typ, netzb
 	meter_fee_eur, free_kwh, discount_pct, participation_fee_eur, zaehlpunkts_gebuehr_eur,
 	servicegebuehr_bezug_ct_kwh, servicegebuehr_einspeisung_ct_kwh,
 	billing_period,
-	invoice_number_prefix, invoice_number_digits, invoice_number_start,
+	invoice_number_prefix, invoice_number_digits, invoice_number_start, kundenkonto_start,
 	invoice_pre_text, invoice_post_text, invoice_footer_text, invoice_footer_mode, invoice_payment_notice_mode, invoice_payment_notice_text, fee_billing_mode,
+	invoice_email_subject, invoice_email_body,
 	logo_path,
 	generate_credit_notes, credit_note_number_prefix, credit_note_number_digits,
 	iban, bic, sepa_creditor_id,
@@ -78,6 +79,11 @@ const eegCols = `e.id, organization_id, gemeinschaft_id, gemeinschaft_typ, netzb
 	eda_smtp_host, eda_smtp_user, eda_smtp_password_enc, eda_smtp_from,
 	smtp_host, smtp_user, smtp_password_enc, smtp_from,
 	referral_bonus_eur,
+	report_chart_color_ausgetauscht, report_chart_color_restbedarf,
+	report_chart_color_einspeisung_eeg, report_chart_color_resteinspeisung,
+	report_chart_color_billed_einspeisung, report_chart_color_billed_bezug,
+	report_chart_color_einnahmen, report_chart_color_gutschriften,
+	report_chart_color_member_einspeisung, report_chart_color_member_bezug,
 	e.created_at,
 	organizations.portal_base_url`
 
@@ -95,8 +101,9 @@ func (r *EEGRepository) scanEEG(row interface{ Scan(...any) error }, e *domain.E
 		&e.MeterFeeEur, &e.FreeKwh, &e.DiscountPct, &e.ParticipationFeeEur, &e.ZaehlpunktsGebuehrEur,
 		&e.ServicegebuehrBezugCtKwh, &e.ServicegebuehrEinspeisungCtKwh,
 		&e.BillingPeriod,
-		&e.InvoiceNumberPrefix, &e.InvoiceNumberDigits, &e.InvoiceNumberStart,
+		&e.InvoiceNumberPrefix, &e.InvoiceNumberDigits, &e.InvoiceNumberStart, &e.KundenkontoStart,
 		&e.InvoicePreText, &e.InvoicePostText, &e.InvoiceFooterText, &e.InvoiceFooterMode, &e.InvoicePaymentNoticeMode, &e.InvoicePaymentNoticeText, &e.FeeBillingMode,
+		&e.InvoiceEmailSubject, &e.InvoiceEmailBody,
 		&e.LogoPath,
 		&e.GenerateCreditNotes, &e.CreditNoteNumberPrefix, &e.CreditNoteNumberDigits,
 		&e.IBAN, &e.BIC, &e.SepaCreditorID,
@@ -129,6 +136,11 @@ func (r *EEGRepository) scanEEG(row interface{ Scan(...any) error }, e *domain.E
 		&edaSmtpHost, &edaSmtpUser, &edaSmtpPwEnc, &edaSmtpFrom,
 		&smtpHost, &smtpUser, &smtpPwEnc, &smtpFrom,
 		&e.ReferralBonusEur,
+		&e.ReportChartColorAusgetauscht, &e.ReportChartColorRestbedarf,
+		&e.ReportChartColorEinspeisungEeg, &e.ReportChartColorResteinspeisung,
+		&e.ReportChartColorBilledEinspeisung, &e.ReportChartColorBilledBezug,
+		&e.ReportChartColorEinnahmen, &e.ReportChartColorGutschriften,
+		&e.ReportChartColorMemberEinspeisung, &e.ReportChartColorMemberBezug,
 		&e.CreatedAt,
 		&e.PortalBaseURL,
 	)
@@ -319,7 +331,20 @@ func (r *EEGRepository) Update(ctx context.Context, eeg *domain.EEG) error {
 	        invoice_show_zero_fee_servicegebuehr_einspeisung=$104,
 	        referral_bonus_eur=$105,
 	        invoice_footer_mode=$106,
-	        portal_show_community_stats=$107
+	        portal_show_community_stats=$107,
+	        invoice_email_subject=$108,
+	        invoice_email_body=$109,
+	        report_chart_color_ausgetauscht=$110,
+	        report_chart_color_restbedarf=$111,
+	        report_chart_color_einspeisung_eeg=$112,
+	        report_chart_color_resteinspeisung=$113,
+	        report_chart_color_billed_einspeisung=$114,
+	        report_chart_color_billed_bezug=$115,
+	        report_chart_color_einnahmen=$116,
+	        report_chart_color_gutschriften=$117,
+	        report_chart_color_member_einspeisung=$118,
+	        report_chart_color_member_bezug=$119,
+	        kundenkonto_start=$120
 	      WHERE id=$50 AND organization_id=$51`
 	// Note: logo_path and auto_billing_last_run_at are not updated via this method.
 	days := eeg.SepaPreNotificationDays
@@ -402,6 +427,19 @@ func (r *EEGRepository) Update(ctx context.Context, eeg *domain.EEG) error {
 		eeg.ReferralBonusEur,
 		eeg.InvoiceFooterMode,
 		eeg.PortalShowCommunityStats,
+		eeg.InvoiceEmailSubject,
+		eeg.InvoiceEmailBody,
+		eeg.ReportChartColorAusgetauscht,
+		eeg.ReportChartColorRestbedarf,
+		eeg.ReportChartColorEinspeisungEeg,
+		eeg.ReportChartColorResteinspeisung,
+		eeg.ReportChartColorBilledEinspeisung,
+		eeg.ReportChartColorBilledBezug,
+		eeg.ReportChartColorEinnahmen,
+		eeg.ReportChartColorGutschriften,
+		eeg.ReportChartColorMemberEinspeisung,
+		eeg.ReportChartColorMemberBezug,
+		eeg.KundenkontoStart,
 	)
 	return err
 }

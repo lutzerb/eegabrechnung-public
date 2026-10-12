@@ -58,6 +58,7 @@
 | 050 | `sepa_return_at`, `sepa_return_reason`, `sepa_return_note` auf `invoices` |
 | 051 | `gap_alert_enabled`, `gap_alert_threshold_days` auf `eegs`; `gap_alert_sent_at` auf `meter_points` |
 | 052/053 | `notes` (TEXT, NOT NULL DEFAULT '') auf `meter_points` |
+| 120 | `strasse`, `plz`, `ort` (TEXT, NOT NULL DEFAULT '') auf `meter_points` — optionale Standort-Adresse |
 | 054 | Umbenennung EC_EINZEL_ANM → EC_REQ_ONL in `eda_processes` und ausstehenden Jobs |
 | 055 | `consent_id` (TEXT, DEFAULT '') auf `meter_points` (ConsentId vom NB aus ZUSTIMMUNG_ECON) |
 | 056 | `ea_konten`, `ea_buchungen`, `ea_belege`, `ea_uva_perioden`; `ea_steuernummer`/`ea_finanzamt`/`ea_uva_periodentyp` auf `eegs` |

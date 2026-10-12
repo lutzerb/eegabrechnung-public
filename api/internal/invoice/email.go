@@ -22,10 +22,16 @@ type SMTPConfig struct {
 }
 
 // InvoiceSubject returns the email subject line for an invoice or credit note.
-func InvoiceSubject(inv *domain.Invoice, eeg *domain.EEG) string {
+// If eeg.InvoiceEmailSubject is set, it is used as a {{placeholder}} template
+// instead of the default text (see applyInvoicePlaceholders).
+func InvoiceSubject(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member) string {
 	docLabel := "Rechnung"
 	if inv.DocumentType == "credit_note" {
 		docLabel = "Gutschrift"
+	}
+	if eeg.InvoiceEmailSubject != "" {
+		periodRange := inv.PeriodStart.Format("02.01.2006") + " – " + inv.PeriodEnd.Format("02.01.2006")
+		return applyInvoicePlaceholders(eeg.InvoiceEmailSubject, inv, eeg, member, periodRange, inv.DocumentType == "credit_note", "")
 	}
 	return fmt.Sprintf("Ihre %s – %s – %s", docLabel, eeg.DisplayNameOrName(),
 		inv.PeriodStart.Format("02.01.2006")+" – "+inv.PeriodEnd.Format("02.01.2006"))
@@ -40,7 +46,7 @@ func BuildInvoiceMessage(from, toEmail string, inv *domain.Invoice, eeg *domain.
 	if isCredit {
 		docLabel = "Gutschrift"
 	}
-	subject := InvoiceSubject(inv, eeg)
+	subject := InvoiceSubject(inv, eeg, member)
 	periodRange := inv.PeriodStart.Format("02.01.2006") + " – " + inv.PeriodEnd.Format("02.01.2006")
 	attachmentName := fmt.Sprintf("%s_%s.pdf", docLabel, shortID(inv.ID.String()))
 	body := buildPlainBody(inv, eeg, member, periodRange, isCredit, webBaseURL)
@@ -55,10 +61,137 @@ func SendInvoice(ctx context.Context, logger EmailLogger, cfg SMTPConfig, member
 	}
 	memID := member.ID
 	invID := inv.ID
-	return SendLogged(ctx, logger, cfg, eeg.ID, "invoice", member.Email, InvoiceSubject(inv, eeg), &memID, &invID, msgBytes)
+	return SendLogged(ctx, logger, cfg, eeg.ID, "invoice", member.Email, InvoiceSubject(inv, eeg, member), &memID, &invID, msgBytes)
 }
 
+// applyInvoicePlaceholders replaces {{placeholder}} tokens in a custom invoice
+// email subject/body template (eeg.InvoiceEmailSubject / eeg.InvoiceEmailBody)
+// with invoice-specific values. Supported: {{name}}, {{vorname}}, {{nachname}},
+// {{mitglieds_nr}}, {{eeg_name}}, {{dokumenttyp}}, {{rechnungsnummer}},
+// {{zeitraum}}, {{zeitraum_von}}, {{zeitraum_bis}}, {{betrag}}, {{bezug_kwh}},
+// {{einspeisung_kwh}}, {{zahlungshinweis}}, {{portal_link}}.
+// {{bezug_zeile}}/{{einspeisung_zeile}} are the whole-line counterparts (label +
+// value + unit + trailing newline, already baked in) that resolve to "" — the
+// entire line, not just the number — when the respective kWh amount is 0;
+// placed directly adjacent to the next line (no template-side line break
+// needed), they reproduce the old hardcoded body's line-hiding behavior exactly.
+// {{gesamtbetrag_zeile}} is likewise a whole-line placeholder (see gesamtbetragLine).
+func applyInvoicePlaceholders(s string, inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, periodRange string, isCredit bool, webBaseURL string) string {
+	docLabel := "Rechnung"
+	if isCredit {
+		docLabel = "Gutschrift"
+	}
+	var name, vorname, nachname, mitgliedsNr string
+	if member != nil {
+		vorname = member.Name1
+		nachname = member.Name2
+		name = strings.TrimSpace(member.Name1 + " " + member.Name2)
+		mitgliedsNr = member.MitgliedsNr
+	}
+	rechnungsnummer := ""
+	if inv.InvoiceNumber != nil {
+		prefix := eeg.InvoiceNumberPrefix
+		digits := eeg.InvoiceNumberDigits
+		if isCredit {
+			prefix = eeg.CreditNoteNumberPrefix
+			digits = eeg.CreditNoteNumberDigits
+		}
+		if digits == 0 {
+			digits = 5
+		}
+		rechnungsnummer = fmt.Sprintf("%s%0*d", prefix, digits, *inv.InvoiceNumber)
+	}
+	bezugKwh := ""
+	bezugZeile := ""
+	if inv.ConsumptionKwh > 0 {
+		bezugKwh = formatKwh(inv.ConsumptionKwh)
+		bezugZeile = fmt.Sprintf("Bezug:                %s kWh\n", bezugKwh)
+	}
+	einspeisungKwh := ""
+	einspeisungZeile := ""
+	if inv.GenerationKwh > 0 {
+		einspeisungKwh = formatKwh(inv.GenerationKwh)
+		einspeisungZeile = fmt.Sprintf("Einspeisung:          %s kWh\n", einspeisungKwh)
+	}
+	portalLink := ""
+	if webBaseURL != "" {
+		portalLink = webBaseURL + "/portal"
+	}
+	return strings.NewReplacer(
+		"{{name}}", name,
+		"{{vorname}}", vorname,
+		"{{nachname}}", nachname,
+		"{{mitglieds_nr}}", mitgliedsNr,
+		"{{eeg_name}}", eeg.DisplayNameOrName(),
+		"{{dokumenttyp}}", docLabel,
+		"{{rechnungsnummer}}", rechnungsnummer,
+		"{{zeitraum}}", periodRange,
+		"{{zeitraum_von}}", inv.PeriodStart.Format("02.01.2006"),
+		"{{zeitraum_bis}}", inv.PeriodEnd.Format("02.01.2006"),
+		"{{betrag}}", formatAmount(inv.TotalAmount),
+		"{{bezug_kwh}}", bezugKwh,
+		"{{einspeisung_kwh}}", einspeisungKwh,
+		"{{bezug_zeile}}", bezugZeile,
+		"{{einspeisung_zeile}}", einspeisungZeile,
+		"{{gesamtbetrag_zeile}}", gesamtbetragLine(inv, member, isCredit),
+		"{{zahlungshinweis}}", paymentNoticeText(inv, eeg, isCredit),
+		"{{portal_link}}", portalLink,
+	).Replace(s)
+}
+
+// paymentNoticeText returns the payment-notice sentence used by the default
+// invoice email body (SEPA-Lastschrift / Überweisung / Gutschrift-Rücküberweisung),
+// or "" when no notice applies. Also exposed as the {{zahlungshinweis}} placeholder.
+func paymentNoticeText(inv *domain.Invoice, eeg *domain.EEG, isCredit bool) string {
+	if isCredit {
+		amount := inv.TotalAmount
+		if amount < 0 {
+			amount = -amount
+		}
+		return fmt.Sprintf("Der Betrag von %s wird auf Ihr hinterlegtes Konto überwiesen.", formatAmount(amount))
+	}
+	if inv.TotalAmount < 0 {
+		return fmt.Sprintf("Der Betrag von %s wird auf Ihr hinterlegtes Konto überwiesen.", formatAmount(-inv.TotalAmount))
+	}
+	if inv.TotalAmount > 0 && eeg.InvoicePaymentNoticeMode != "none" {
+		if eeg.InvoicePaymentNoticeMode == "ueberweisung" {
+			return fmt.Sprintf("Bitte überweisen Sie den Betrag von %s auf folgendes Konto: IBAN: %s", formatAmount(inv.TotalAmount), eeg.IBAN)
+		}
+		return fmt.Sprintf("Der Betrag von %s wird mittels SEPA-Lastschrift von Ihrem Konto eingezogen.", formatAmount(inv.TotalAmount))
+	}
+	return ""
+}
+
+// gesamtbetragLine returns the "Gesamtbetrag" line (label + formatted amount +
+// trailing newline) for the invoice email body, labelling the payment direction
+// the same way as the PDF's Saldo line (pdf.go/pdf_theme.go GeneratePDF): "EEG
+// zahlt an Sie" when the EEG owes the member money, "Zahlungsbetrag" otherwise.
+// Exposed as the {{gesamtbetrag_zeile}} placeholder.
+func gesamtbetragLine(inv *domain.Invoice, member *domain.Member, isCredit bool) string {
+	saldo := inv.TotalAmount
+	if GenerationReverseCharge(member) {
+		saldo += inv.GenerationVatAmount
+	}
+	if isCredit || saldo < 0 {
+		amt := saldo
+		if amt < 0 {
+			amt = -amt
+		}
+		return fmt.Sprintf("Gesamtbetrag (EEG zahlt an Sie): %s\n", formatAmount(amt))
+	}
+	return fmt.Sprintf("Gesamtbetrag (Zahlungsbetrag): %s\n", formatAmount(saldo))
+}
+
+// buildPlainBody returns the plain-text invoice email body. If eeg.InvoiceEmailBody
+// is set, it is used as a {{placeholder}} template instead of the default text.
 func buildPlainBody(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, periodRange string, isCredit bool, webBaseURL string) string {
+	if eeg.InvoiceEmailBody != "" {
+		return applyInvoicePlaceholders(eeg.InvoiceEmailBody, inv, eeg, member, periodRange, isCredit, webBaseURL)
+	}
+	return buildDefaultPlainBody(inv, eeg, member, periodRange, isCredit, webBaseURL)
+}
+
+func buildDefaultPlainBody(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, periodRange string, isCredit bool, webBaseURL string) string {
 	fullName := strings.TrimSpace(member.Name1 + " " + member.Name2)
 	docLabel := "Rechnung"
 	if isCredit {
@@ -90,22 +223,10 @@ func buildPlainBody(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member,
 	if inv.GenerationKwh > 0 {
 		sb.WriteString(fmt.Sprintf("Einspeisung:          %s kWh\n", formatKwh(inv.GenerationKwh)))
 	}
-	sb.WriteString(fmt.Sprintf("Gesamtbetrag:         %s\n\n", formatAmount(inv.TotalAmount)))
+	sb.WriteString(gesamtbetragLine(inv, member, isCredit) + "\n")
 
-	if isCredit {
-		amount := inv.TotalAmount
-		if amount < 0 {
-			amount = -amount
-		}
-		sb.WriteString(fmt.Sprintf("Der Betrag von %s wird auf Ihr hinterlegtes Konto überwiesen.\n\n", formatAmount(amount)))
-	} else if inv.TotalAmount < 0 {
-		sb.WriteString(fmt.Sprintf("Der Betrag von %s wird auf Ihr hinterlegtes Konto überwiesen.\n\n", formatAmount(-inv.TotalAmount)))
-	} else if inv.TotalAmount > 0 && eeg.InvoicePaymentNoticeMode != "none" {
-		if eeg.InvoicePaymentNoticeMode == "ueberweisung" {
-			sb.WriteString(fmt.Sprintf("Bitte überweisen Sie den Betrag von %s auf folgendes Konto: IBAN: %s\n\n", formatAmount(inv.TotalAmount), eeg.IBAN))
-		} else {
-			sb.WriteString(fmt.Sprintf("Der Betrag von %s wird mittels SEPA-Lastschrift von Ihrem Konto eingezogen.\n\n", formatAmount(inv.TotalAmount)))
-		}
+	if notice := paymentNoticeText(inv, eeg, isCredit); notice != "" {
+		sb.WriteString(notice + "\n\n")
 	}
 
 	sb.WriteString("Die Details entnehmen Sie bitte dem beigefügten PDF.\n\n")

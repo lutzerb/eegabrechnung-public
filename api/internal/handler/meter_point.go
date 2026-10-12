@@ -45,6 +45,9 @@ type meterPointRequest struct {
 	AbgemeldetAm        string  `json:"abgemeldet_am"` // manually settable for non-EDA EEGs; "" = keep existing, "clear" = set to NULL
 	GenerationType      string  `json:"generation_type"` // PV | Windkraft | Wasserkraft
 	Notes               string  `json:"notes"`
+	Strasse             *string `json:"strasse"` // optional Standort-Adresse; nil = unchanged on update, "" = clear
+	Plz                 *string `json:"plz"`
+	Ort                 *string `json:"ort"`
 }
 
 // CreateMeterPoint godoc
@@ -117,6 +120,15 @@ func (h *MeterPointHandler) CreateMeterPoint(w http.ResponseWriter, r *http.Requ
 	}
 	if req.GenerationType != "" {
 		mp.GenerationType = &req.GenerationType
+	}
+	if req.Strasse != nil {
+		mp.Strasse = cleanText(*req.Strasse)
+	}
+	if req.Plz != nil {
+		mp.Plz = cleanText(*req.Plz)
+	}
+	if req.Ort != nil {
+		mp.Ort = cleanText(*req.Ort)
 	}
 	if req.RegistriertSeit != "" {
 		t, err := time.Parse("2006-01-02", req.RegistriertSeit)
@@ -225,6 +237,15 @@ func (h *MeterPointHandler) UpdateMeterPoint(w http.ResponseWriter, r *http.Requ
 		existing.GenerationType = nil
 	}
 	existing.Notes = req.Notes
+	if req.Strasse != nil {
+		existing.Strasse = cleanText(*req.Strasse)
+	}
+	if req.Plz != nil {
+		existing.Plz = cleanText(*req.Plz)
+	}
+	if req.Ort != nil {
+		existing.Ort = cleanText(*req.Ort)
+	}
 	previousAbgemeldetAm := existing.AbgemeldetAm
 	if req.AbgemeldetAm == "clear" {
 		existing.AbgemeldetAm = nil

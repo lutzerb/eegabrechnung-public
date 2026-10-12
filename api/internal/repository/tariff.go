@@ -24,46 +24,46 @@ func NewTariffRepository(db *pgxpool.Pool) *TariffRepository {
 const scheduleCols = `ts.id, ts.eeg_id, ts.member_id, ts.name, ts.granularity, ts.is_active, ts.created_at,
 	ts.free_kwh_override, ts.discount_pct_override, ts.meter_fee_eur_override,
 	ts.participation_fee_eur_override, ts.zaehlpunkts_gebuehr_eur_override,
-	ts.servicegebuehr_bezug_ct_kwh_override, ts.servicegebuehr_einspeisung_ct_kwh_override`
+	ts.servicegebuehr_bezug_ct_kwh_override, ts.servicegebuehr_einspeisung_ct_kwh_override, ts.is_default`
 
 func scanSchedule(row pgx.Row, s *domain.TariffSchedule) error {
 	return row.Scan(&s.ID, &s.EegID, &s.MemberID, &s.Name, &s.Granularity, &s.IsActive, &s.CreatedAt,
 		&s.FreeKwhOverride, &s.DiscountPctOverride, &s.MeterFeeEurOverride,
 		&s.ParticipationFeeEurOverride, &s.ZaehlpunktsGebuehrOverride,
-		&s.ServicegebuehrBezugCtKwhOverride, &s.ServicegebuehrEinspeisungCtKwhOverride)
+		&s.ServicegebuehrBezugCtKwhOverride, &s.ServicegebuehrEinspeisungCtKwhOverride, &s.IsDefault)
 }
 
 // ListByEeg returns the EEG-wide (non-member-specific) tariff schedules.
 func (r *TariffRepository) ListByEeg(ctx context.Context, eegID uuid.UUID) ([]domain.TariffSchedule, error) {
-	q := `SELECT ` + scheduleCols + `, COUNT(te.id) AS entry_count
+	q := `SELECT ` + scheduleCols + `, COUNT(te.id) AS entry_count, (SELECT COUNT(*) FROM members m WHERE m.tariff_schedule_id = ts.id) AS assigned_member_count
 	      FROM tariff_schedules ts
 	      LEFT JOIN tariff_entries te ON te.schedule_id = ts.id
 	      WHERE ts.eeg_id = $1 AND ts.member_id IS NULL
 	      GROUP BY ts.id
-	      ORDER BY ts.is_active DESC, ts.created_at DESC`
+	      ORDER BY ts.is_default DESC, ts.is_active DESC, ts.created_at DESC`
 	return r.listSchedules(ctx, q, eegID)
 }
 
 // ListAllByEeg returns every schedule for the EEG — default and member-specific alike.
 // Used by backup export, which needs a complete snapshot regardless of scope.
 func (r *TariffRepository) ListAllByEeg(ctx context.Context, eegID uuid.UUID) ([]domain.TariffSchedule, error) {
-	q := `SELECT ` + scheduleCols + `, COUNT(te.id) AS entry_count
+	q := `SELECT ` + scheduleCols + `, COUNT(te.id) AS entry_count, (SELECT COUNT(*) FROM members m WHERE m.tariff_schedule_id = ts.id) AS assigned_member_count
 	      FROM tariff_schedules ts
 	      LEFT JOIN tariff_entries te ON te.schedule_id = ts.id
 	      WHERE ts.eeg_id = $1
 	      GROUP BY ts.id
-	      ORDER BY ts.is_active DESC, ts.created_at DESC`
+	      ORDER BY ts.is_default DESC, ts.is_active DESC, ts.created_at DESC`
 	return r.listSchedules(ctx, q, eegID)
 }
 
 // ListByMember returns the tariff schedules (Individualtarife) specific to one member.
 func (r *TariffRepository) ListByMember(ctx context.Context, eegID, memberID uuid.UUID) ([]domain.TariffSchedule, error) {
-	q := `SELECT ` + scheduleCols + `, COUNT(te.id) AS entry_count
+	q := `SELECT ` + scheduleCols + `, COUNT(te.id) AS entry_count, (SELECT COUNT(*) FROM members m WHERE m.tariff_schedule_id = ts.id) AS assigned_member_count
 	      FROM tariff_schedules ts
 	      LEFT JOIN tariff_entries te ON te.schedule_id = ts.id
 	      WHERE ts.eeg_id = $1 AND ts.member_id = $2
 	      GROUP BY ts.id
-	      ORDER BY ts.is_active DESC, ts.created_at DESC`
+	      ORDER BY ts.is_default DESC, ts.is_active DESC, ts.created_at DESC`
 	return r.listSchedules(ctx, q, eegID, memberID)
 }
 
@@ -79,7 +79,8 @@ func (r *TariffRepository) listSchedules(ctx context.Context, q string, args ...
 		if err := rows.Scan(&s.ID, &s.EegID, &s.MemberID, &s.Name, &s.Granularity, &s.IsActive, &s.CreatedAt,
 			&s.FreeKwhOverride, &s.DiscountPctOverride, &s.MeterFeeEurOverride,
 			&s.ParticipationFeeEurOverride, &s.ZaehlpunktsGebuehrOverride,
-			&s.ServicegebuehrBezugCtKwhOverride, &s.ServicegebuehrEinspeisungCtKwhOverride, &s.EntryCount); err != nil {
+			&s.ServicegebuehrBezugCtKwhOverride, &s.ServicegebuehrEinspeisungCtKwhOverride, &s.IsDefault,
+			&s.EntryCount, &s.AssignedMemberCount); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		result = append(result, s)
@@ -153,20 +154,56 @@ func (r *TariffRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-// Activate sets one schedule as active, deactivating all other schedules in the same scope
-// (the EEG-wide default scope when memberID is nil, or that member's own scope otherwise).
+// Activate marks a schedule as active. For a member-specific Individualtarif (memberID != nil)
+// all other schedules of that member are deactivated first (one active per member). EEG-wide
+// plans may be active in parallel, so nothing else is touched there.
 func (r *TariffRepository) Activate(ctx context.Context, scheduleID, eegID uuid.UUID, memberID *uuid.UUID) error {
 	tx, err := r.db.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	if _, err := tx.Exec(ctx,
-		`UPDATE tariff_schedules SET is_active = false WHERE eeg_id = $1 AND member_id IS NOT DISTINCT FROM $2`,
-		eegID, memberID); err != nil {
-		return err
+	if memberID != nil {
+		if _, err := tx.Exec(ctx,
+			`UPDATE tariff_schedules SET is_active = false WHERE eeg_id = $1 AND member_id = $2`,
+			eegID, *memberID); err != nil {
+			return err
+		}
 	}
 	if _, err := tx.Exec(ctx, `UPDATE tariff_schedules SET is_active = true WHERE id = $1`, scheduleID); err != nil {
+		return err
+	}
+	if memberID == nil {
+		// An EEG without a Standardtarif adopts the first plan that gets activated.
+		if _, err := tx.Exec(ctx,
+			`UPDATE tariff_schedules SET is_default = true
+			 WHERE id = $1 AND NOT EXISTS (
+			   SELECT 1 FROM tariff_schedules WHERE eeg_id = $2 AND member_id IS NULL AND is_default)`,
+			scheduleID, eegID); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
+}
+
+// SetDefault makes an EEG-wide schedule the Standardtarif (and active), clearing the flag on all others.
+func (r *TariffRepository) SetDefault(ctx context.Context, scheduleID, eegID uuid.UUID) error {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx,
+		`UPDATE tariff_schedules SET is_default = false WHERE eeg_id = $1 AND member_id IS NULL AND is_default`,
+		eegID); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx,
+		`UPDATE tariff_schedules SET is_default = true, is_active = true,
+		   free_kwh_override = NULL, discount_pct_override = NULL, meter_fee_eur_override = NULL,
+		   participation_fee_eur_override = NULL, zaehlpunkts_gebuehr_eur_override = NULL,
+		   servicegebuehr_bezug_ct_kwh_override = NULL, servicegebuehr_einspeisung_ct_kwh_override = NULL
+		 WHERE id = $1`, scheduleID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -175,6 +212,13 @@ func (r *TariffRepository) Activate(ctx context.Context, scheduleID, eegID uuid.
 func (r *TariffRepository) Deactivate(ctx context.Context, scheduleID uuid.UUID) error {
 	_, err := r.db.Exec(ctx, `UPDATE tariff_schedules SET is_active = false WHERE id = $1`, scheduleID)
 	return err
+}
+
+// CountAssignedMembers returns how many members are explicitly assigned to an EEG-wide schedule.
+func (r *TariffRepository) CountAssignedMembers(ctx context.Context, scheduleID uuid.UUID) (int, error) {
+	var n int
+	err := r.db.QueryRow(ctx, `SELECT COUNT(*) FROM members WHERE tariff_schedule_id = $1`, scheduleID).Scan(&n)
+	return n, err
 }
 
 // ReplaceEntries replaces all entries for a schedule atomically.
@@ -198,10 +242,11 @@ func (r *TariffRepository) ReplaceEntries(ctx context.Context, scheduleID uuid.U
 	return tx.Commit(ctx)
 }
 
-// GetAllActiveForEEG returns the active EEG-wide default schedule and a map of active
-// member-specific schedules (Individualtarife), each with entries overlapping the billing period.
-// Single query — avoids N+1 lookups per member during billing.
-func (r *TariffRepository) GetAllActiveForEEG(ctx context.Context, eegID uuid.UUID, periodStart, periodEnd time.Time) (*domain.TariffSchedule, map[uuid.UUID]*domain.TariffSchedule, error) {
+// LoadBillingTariffs returns every active schedule of the EEG (the Standardtarif, all other
+// active EEG-wide plans and the active member Individualtarife) with the entries overlapping the
+// billing period, plus the member → plan assignments. Single set of queries — avoids N+1 lookups
+// per member during billing.
+func (r *TariffRepository) LoadBillingTariffs(ctx context.Context, eegID uuid.UUID, periodStart, periodEnd time.Time) (*domain.BillingTariffs, error) {
 	q := `SELECT ` + scheduleCols + `,
 	             te.id, te.schedule_id, te.valid_from, te.valid_until, te.energy_price, te.producer_price, te.created_at
 	      FROM tariff_schedules ts
@@ -211,7 +256,7 @@ func (r *TariffRepository) GetAllActiveForEEG(ctx context.Context, eegID uuid.UU
 	      ORDER BY ts.id, te.valid_from`
 	rows, err := r.db.Query(ctx, q, eegID, periodStart, periodEnd)
 	if err != nil {
-		return nil, nil, fmt.Errorf("query: %w", err)
+		return nil, fmt.Errorf("query: %w", err)
 	}
 	defer rows.Close()
 
@@ -226,9 +271,9 @@ func (r *TariffRepository) GetAllActiveForEEG(ctx context.Context, eegID uuid.UU
 		if err := rows.Scan(&s.ID, &s.EegID, &s.MemberID, &s.Name, &s.Granularity, &s.IsActive, &s.CreatedAt,
 			&s.FreeKwhOverride, &s.DiscountPctOverride, &s.MeterFeeEurOverride,
 			&s.ParticipationFeeEurOverride, &s.ZaehlpunktsGebuehrOverride,
-			&s.ServicegebuehrBezugCtKwhOverride, &s.ServicegebuehrEinspeisungCtKwhOverride,
+			&s.ServicegebuehrBezugCtKwhOverride, &s.ServicegebuehrEinspeisungCtKwhOverride, &s.IsDefault,
 			&entryID, &entryScheduleID, &validFrom, &validUntil, &energyPrice, &producerPrice, &entryCreatedAt); err != nil {
-			return nil, nil, fmt.Errorf("scan: %w", err)
+			return nil, fmt.Errorf("scan: %w", err)
 		}
 		existing, ok := schedules[s.ID]
 		if !ok {
@@ -243,19 +288,40 @@ func (r *TariffRepository) GetAllActiveForEEG(ctx context.Context, eegID uuid.UU
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	var defaultSchedule *domain.TariffSchedule
-	memberSchedules := make(map[uuid.UUID]*domain.TariffSchedule)
+	bt := &domain.BillingTariffs{
+		Shared:     make(map[uuid.UUID]*domain.TariffSchedule),
+		Individual: make(map[uuid.UUID]*domain.TariffSchedule),
+		Assignment: make(map[uuid.UUID]uuid.UUID),
+	}
 	for _, id := range order {
 		s := schedules[id]
 		s.EntryCount = len(s.Entries)
-		if s.MemberID == nil {
-			defaultSchedule = s
-		} else {
-			memberSchedules[*s.MemberID] = s
+		switch {
+		case s.MemberID != nil:
+			bt.Individual[*s.MemberID] = s
+		case s.IsDefault:
+			bt.Default = s
+			bt.Shared[s.ID] = s
+		default:
+			bt.Shared[s.ID] = s
 		}
 	}
-	return defaultSchedule, memberSchedules, nil
+
+	arows, err := r.db.Query(ctx,
+		`SELECT id, tariff_schedule_id FROM members WHERE eeg_id = $1 AND tariff_schedule_id IS NOT NULL`, eegID)
+	if err != nil {
+		return nil, fmt.Errorf("query assignments: %w", err)
+	}
+	defer arows.Close()
+	for arows.Next() {
+		var memberID, scheduleID uuid.UUID
+		if err := arows.Scan(&memberID, &scheduleID); err != nil {
+			return nil, fmt.Errorf("scan assignment: %w", err)
+		}
+		bt.Assignment[memberID] = scheduleID
+	}
+	return bt, arows.Err()
 }

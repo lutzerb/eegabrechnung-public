@@ -25,10 +25,11 @@ type EEGHandler struct {
 	memberRepo     *repository.MemberRepository
 	meterPointRepo *repository.MeterPointRepository
 	participRepo   *repository.ParticipationRepository
+	extraMeterRepo *repository.ExtraMeterRepository
 }
 
-func NewEEGHandler(eegRepo *repository.EEGRepository, memberRepo *repository.MemberRepository, meterPointRepo *repository.MeterPointRepository, participRepo *repository.ParticipationRepository) *EEGHandler {
-	return &EEGHandler{eegRepo: eegRepo, memberRepo: memberRepo, meterPointRepo: meterPointRepo, participRepo: participRepo}
+func NewEEGHandler(eegRepo *repository.EEGRepository, memberRepo *repository.MemberRepository, meterPointRepo *repository.MeterPointRepository, participRepo *repository.ParticipationRepository, extraMeterRepo *repository.ExtraMeterRepository) *EEGHandler {
+	return &EEGHandler{eegRepo: eegRepo, memberRepo: memberRepo, meterPointRepo: meterPointRepo, participRepo: participRepo, extraMeterRepo: extraMeterRepo}
 }
 
 func validInvoicePaymentNoticeMode(mode string) bool {
@@ -158,12 +159,15 @@ type eegRequest struct {
 	InvoiceNumberPrefix            string  `json:"invoice_number_prefix"`
 	InvoiceNumberDigits            int     `json:"invoice_number_digits"`
 	InvoiceNumberStart             int     `json:"invoice_number_start"`
+	KundenkontoStart               int     `json:"kundenkonto_start"`
 	InvoicePreText                 string  `json:"invoice_pre_text"`
 	InvoicePostText                string  `json:"invoice_post_text"`
 	InvoiceFooterText              string  `json:"invoice_footer_text"`
 	InvoiceFooterMode              string  `json:"invoice_footer_mode"`
 	InvoicePaymentNoticeMode       string  `json:"invoice_payment_notice_mode"`
 	InvoicePaymentNoticeText       string  `json:"invoice_payment_notice_text"`
+	InvoiceEmailSubject            string  `json:"invoice_email_subject"`
+	InvoiceEmailBody               string  `json:"invoice_email_body"`
 	FeeBillingMode                 string  `json:"fee_billing_mode"`
 	GenerateCreditNotes            bool    `json:"generate_credit_notes"`
 	CreditNoteNumberPrefix         string  `json:"credit_note_number_prefix"`
@@ -252,6 +256,17 @@ type eegRequest struct {
 	InvoiceChartLabelResteinspeisung             string  `json:"invoice_chart_label_resteinspeisung"`
 	InvoiceChartLabelBezug                       string  `json:"invoice_chart_label_bezug"`
 	InvoiceChartLabelEinspeisung                 string  `json:"invoice_chart_label_einspeisung"`
+	// Web reports page chart colors — see domain.EEG for field meaning
+	ReportChartColorAusgetauscht      string `json:"report_chart_color_ausgetauscht"`
+	ReportChartColorRestbedarf        string `json:"report_chart_color_restbedarf"`
+	ReportChartColorEinspeisungEeg    string `json:"report_chart_color_einspeisung_eeg"`
+	ReportChartColorResteinspeisung   string `json:"report_chart_color_resteinspeisung"`
+	ReportChartColorBilledEinspeisung string `json:"report_chart_color_billed_einspeisung"`
+	ReportChartColorBilledBezug       string `json:"report_chart_color_billed_bezug"`
+	ReportChartColorEinnahmen         string `json:"report_chart_color_einnahmen"`
+	ReportChartColorGutschriften      string `json:"report_chart_color_gutschriften"`
+	ReportChartColorMemberEinspeisung string `json:"report_chart_color_member_einspeisung"`
+	ReportChartColorMemberBezug       string `json:"report_chart_color_member_bezug"`
 	// Zusatzzähler feature toggle — see domain.EEG for field meaning
 	ExtraMetersEnabled bool `json:"extra_meters_enabled"`
 }
@@ -261,6 +276,7 @@ type memberWithMeterPoints struct {
 	ID             uuid.UUID         `json:"id"`
 	EegID          uuid.UUID         `json:"eeg_id"`
 	MitgliedsNr    string            `json:"mitglieds_nr"`
+	Kundenkonto    string            `json:"kundenkonto"`
 	Name           string            `json:"name"`
 	Name1          string            `json:"name1"`
 	Name2          string            `json:"name2"`
@@ -277,6 +293,14 @@ type memberWithMeterPoints struct {
 	BeitrittsDatum *time.Time        `json:"beitritts_datum,omitempty"`
 	AustrittsDatum *time.Time        `json:"austritts_datum,omitempty"`
 	MeterPoints    []meterPointShort `json:"meter_points"`
+	// TariffScheduleID is the explicitly assigned EEG-wide plan (nil = Standardtarif);
+	// EffectiveTariff is the plan that is valid right now (Individualtarif > assigned > default).
+	TariffScheduleID *uuid.UUID               `json:"tariff_schedule_id,omitempty"`
+	EffectiveTariff  *domain.EffectiveTariff `json:"effective_tariff,omitempty"`
+	// ExtraMetersCount is the number of Zusatzzähler (manually-read submeters, any
+	// status) the member has — used by the members overview to show a clickable
+	// indicator without a per-member follow-up request.
+	ExtraMetersCount int `json:"extra_meters_count"`
 }
 
 type meterPointShort struct {
@@ -290,6 +314,25 @@ type meterPointShort struct {
 	AbgemeldetAm        *time.Time `json:"abgemeldet_am,omitempty"`
 	AnmeldungStatus     *string    `json:"anmeldung_status,omitempty"` // latest EC_REQ_ONL status
 	AbmeldungStatus     *string    `json:"abmeldung_status,omitempty"` // latest CM_REV_SP status
+	Strasse             string     `json:"strasse"`
+	Plz                 string     `json:"plz"`
+	Ort                 string     `json:"ort"`
+}
+
+// currentFactor resolves a meter point's current Teilnahmefaktor using the same
+// precedence everywhere in the app: an active eeg_meter_participations row (set
+// manually or via a confirmed EC_PRTFACT_CHG/EC_PODLIST-Abgleich) takes priority,
+// then the factor submitted on the latest EC_REQ_ONL (Anmeldung), then the implicit
+// default of 100%. Shared by toMemberWithMPs and the EC_PODLIST reconciliation handler
+// so the two can never drift apart.
+func currentFactor(mpID uuid.UUID, factors map[uuid.UUID]float64, edaStatus map[uuid.UUID]repository.MeterPointEDAStatus) float64 {
+	if f, ok := factors[mpID]; ok {
+		return f
+	}
+	if s := edaStatus[mpID]; s.ParticipationFactor != nil {
+		return *s.ParticipationFactor
+	}
+	return 100.0
 }
 
 func toMemberWithMPs(m domain.Member, mps []domain.MeterPoint, factors map[uuid.UUID]float64, edaStatus map[uuid.UUID]repository.MeterPointEDAStatus) memberWithMeterPoints {
@@ -299,12 +342,7 @@ func toMemberWithMPs(m domain.Member, mps []domain.MeterPoint, factors map[uuid.
 	}
 	shorts := make([]meterPointShort, 0, len(mps))
 	for _, mp := range mps {
-		factor := 100.0
-		if f, ok := factors[mp.ID]; ok {
-			factor = f
-		} else if s := edaStatus[mp.ID]; s.ParticipationFactor != nil {
-			factor = *s.ParticipationFactor
-		}
+		factor := currentFactor(mp.ID, factors, edaStatus)
 		s := edaStatus[mp.ID]
 		shorts = append(shorts, meterPointShort{
 			ID:                  mp.ID,
@@ -317,12 +355,16 @@ func toMemberWithMPs(m domain.Member, mps []domain.MeterPoint, factors map[uuid.
 			AbgemeldetAm:        mp.AbgemeldetAm,
 			AnmeldungStatus:     s.AnmeldungStatus,
 			AbmeldungStatus:     s.AbmeldungStatus,
+			Strasse:             mp.Strasse,
+			Plz:                 mp.Plz,
+			Ort:                 mp.Ort,
 		})
 	}
 	return memberWithMeterPoints{
 		ID:             m.ID,
 		EegID:          m.EegID,
 		MitgliedsNr:    m.MitgliedsNr,
+		Kundenkonto:    m.Kundenkonto,
 		Name:           name,
 		Name1:          m.Name1,
 		Name2:          m.Name2,
@@ -339,6 +381,8 @@ func toMemberWithMPs(m domain.Member, mps []domain.MeterPoint, factors map[uuid.
 		BeitrittsDatum: m.BeitrittsDatum,
 		AustrittsDatum: m.AustrittsDatum,
 		MeterPoints:    shorts,
+
+		TariffScheduleID: m.TariffScheduleID,
 	}
 }
 
@@ -603,6 +647,18 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid invoice_chart_color_resteinspeisung", http.StatusBadRequest)
 		return
 	}
+	for _, c := range []string{
+		req.ReportChartColorAusgetauscht, req.ReportChartColorRestbedarf,
+		req.ReportChartColorEinspeisungEeg, req.ReportChartColorResteinspeisung,
+		req.ReportChartColorBilledEinspeisung, req.ReportChartColorBilledBezug,
+		req.ReportChartColorEinnahmen, req.ReportChartColorGutschriften,
+		req.ReportChartColorMemberEinspeisung, req.ReportChartColorMemberBezug,
+	} {
+		if !validInvoiceAccentColor(c) {
+			jsonError(w, "invalid report chart color", http.StatusBadRequest)
+			return
+		}
+	}
 
 	if req.Name != "" {
 		existing.Name = req.Name
@@ -637,9 +693,14 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 	if req.InvoiceNumberStart > 0 {
 		existing.InvoiceNumberStart = req.InvoiceNumberStart
 	}
+	if req.KundenkontoStart > 0 {
+		existing.KundenkontoStart = req.KundenkontoStart
+	}
 	existing.InvoicePreText = req.InvoicePreText
 	existing.InvoicePostText = req.InvoicePostText
 	existing.InvoiceFooterText = req.InvoiceFooterText
+	existing.InvoiceEmailSubject = req.InvoiceEmailSubject
+	existing.InvoiceEmailBody = req.InvoiceEmailBody
 	if req.InvoiceFooterMode != "" {
 		existing.InvoiceFooterMode = req.InvoiceFooterMode
 	}
@@ -860,6 +921,38 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 	existing.InvoiceChartLabelResteinspeisung = req.InvoiceChartLabelResteinspeisung
 	existing.InvoiceChartLabelBezug = req.InvoiceChartLabelBezug
 	existing.InvoiceChartLabelEinspeisung = req.InvoiceChartLabelEinspeisung
+
+	// Web reports page chart colors — "" keeps the existing (defaulted) value
+	if req.ReportChartColorAusgetauscht != "" {
+		existing.ReportChartColorAusgetauscht = req.ReportChartColorAusgetauscht
+	}
+	if req.ReportChartColorRestbedarf != "" {
+		existing.ReportChartColorRestbedarf = req.ReportChartColorRestbedarf
+	}
+	if req.ReportChartColorEinspeisungEeg != "" {
+		existing.ReportChartColorEinspeisungEeg = req.ReportChartColorEinspeisungEeg
+	}
+	if req.ReportChartColorResteinspeisung != "" {
+		existing.ReportChartColorResteinspeisung = req.ReportChartColorResteinspeisung
+	}
+	if req.ReportChartColorBilledEinspeisung != "" {
+		existing.ReportChartColorBilledEinspeisung = req.ReportChartColorBilledEinspeisung
+	}
+	if req.ReportChartColorBilledBezug != "" {
+		existing.ReportChartColorBilledBezug = req.ReportChartColorBilledBezug
+	}
+	if req.ReportChartColorEinnahmen != "" {
+		existing.ReportChartColorEinnahmen = req.ReportChartColorEinnahmen
+	}
+	if req.ReportChartColorGutschriften != "" {
+		existing.ReportChartColorGutschriften = req.ReportChartColorGutschriften
+	}
+	if req.ReportChartColorMemberEinspeisung != "" {
+		existing.ReportChartColorMemberEinspeisung = req.ReportChartColorMemberEinspeisung
+	}
+	if req.ReportChartColorMemberBezug != "" {
+		existing.ReportChartColorMemberBezug = req.ReportChartColorMemberBezug
+	}
 
 	if err := h.eegRepo.Update(r.Context(), existing); err != nil {
 		jsonError(w, "failed to update EEG", http.StatusInternalServerError)
@@ -1294,6 +1387,7 @@ func (h *EEGHandler) ExportStammdaten(w http.ResponseWriter, r *http.Request) {
 	headers2 := []string{
 		"Mitglieds-Nr", "Zählpunkt", "Energierichtung", "Verteilungsmodell",
 		"Zuteilung %", "Status", "Registriert seit",
+		"Zählpunkt-Straße", "Zählpunkt-PLZ", "Zählpunkt-Ort",
 	}
 	for i, h := range headers2 {
 		cell, _ := excelize.CoordinatesToCellName(i+1, 1)
@@ -1315,6 +1409,7 @@ func (h *EEGHandler) ExportStammdaten(w http.ResponseWriter, r *http.Request) {
 		vals := []any{
 			m.MitgliedsNr, mp.Zaehlpunkt, mp.Energierichtung, mp.Verteilungsmodell,
 			mp.ZugeteilteMenugePct, mp.Status, since,
+			mp.Strasse, mp.Plz, mp.Ort,
 		}
 		for col, v := range vals {
 			cell, _ := excelize.CoordinatesToCellName(col+1, rowNum)
@@ -1397,9 +1492,24 @@ func (h *EEGHandler) ListMembers(w http.ResponseWriter, r *http.Request) {
 		edaStatus = map[uuid.UUID]repository.MeterPointEDAStatus{}
 	}
 
+	effTariffs, err := h.memberRepo.EffectiveTariffs(r.Context(), id)
+	if err != nil {
+		effTariffs = map[uuid.UUID]domain.EffectiveTariff{} // non-fatal, column just stays empty
+	}
+
+	extraMeterCounts, err := h.extraMeterRepo.CountByEeg(r.Context(), id)
+	if err != nil {
+		extraMeterCounts = map[uuid.UUID]int{} // non-fatal, counts just stay 0
+	}
+
 	result := make([]memberWithMeterPoints, 0, len(members))
 	for _, m := range members {
-		result = append(result, toMemberWithMPs(m, mpsByMember[m.ID], factors, edaStatus))
+		mw := toMemberWithMPs(m, mpsByMember[m.ID], factors, edaStatus)
+		if et, ok := effTariffs[m.ID]; ok {
+			mw.EffectiveTariff = &et
+		}
+		mw.ExtraMetersCount = extraMeterCounts[m.ID]
+		result = append(result, mw)
 	}
 	jsonOK(w, result)
 }

@@ -243,6 +243,9 @@ func (h *ImportHandler) ImportStammdaten(w http.ResponseWriter, r *http.Request)
 			Verteilungsmodell:   row.Verteilungsmodell,
 			ZugeteilteMenugePct: row.ZugeteilteMenugePct,
 			Status:              row.Zaehlpunktstatus,
+			Strasse:             row.MPStrasse,
+			Plz:                 row.MPPlz,
+			Ort:                 row.MPOrt,
 		}
 		if row.Verteilungsmodell == "" {
 			mp.Verteilungsmodell = "DYNAMIC"

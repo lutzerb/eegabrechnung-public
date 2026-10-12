@@ -3,10 +3,11 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
+import { formatAddress } from "@/lib/address";
 
 interface SearchResult {
   members: Array<{ id: string; name: string; email: string; mitglieds_nr: string }>;
-  meter_points: Array<{ id: string; zaehlpunkt: string; direction: string; member_id: string; member_name: string }>;
+  meter_points: Array<{ id: string; zaehlpunkt: string; direction: string; member_id: string; member_name: string; strasse?: string; plz?: string; ort?: string }>;
   invoices: Array<{ id: string; invoice_number: number; total_amount: number; member_id: string; status: string }>;
 }
 
@@ -162,7 +163,7 @@ export function SearchOverlay({ eegId, onClose }: Props) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-mono text-slate-900 truncate">{mp.zaehlpunkt}</p>
-                      <p className="text-xs text-slate-400 truncate">{mp.member_name}</p>
+                      <p className="text-xs text-slate-400 truncate">{[mp.member_name, formatAddress(mp)].filter(Boolean).join(" · ")}</p>
                     </div>
                   </button>
                 ))}

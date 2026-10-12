@@ -246,7 +246,7 @@ func loadMonthlyKwh(ctx context.Context, db *pgxpool.Pool, memberID uuid.UUID, f
 	return result, rows.Err()
 }
 
-// loadTariffEntries loads the active tariff schedule's entries overlapping a period.
+// loadTariffEntries loads the Standardtarif's entries overlapping a period.
 // Returns an empty slice (not an error) when no active schedule exists.
 func loadTariffEntries(ctx context.Context, db *pgxpool.Pool, eegID uuid.UUID, periodStart, periodEnd time.Time) ([]domain.TariffEntry, error) {
 	q := `
@@ -254,7 +254,8 @@ func loadTariffEntries(ctx context.Context, db *pgxpool.Pool, eegID uuid.UUID, p
 		FROM tariff_schedules ts
 		JOIN tariff_entries te ON te.schedule_id = ts.id
 		WHERE ts.eeg_id = $1
-		  AND ts.is_active = true
+		  AND ts.member_id IS NULL
+		  AND ts.is_default = true
 		  AND te.valid_from  < $3
 		  AND te.valid_until > $2
 		ORDER BY te.valid_from`

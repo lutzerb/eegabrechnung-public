@@ -2,7 +2,8 @@
 
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getEEG, getMember, updateMember } from "@/lib/api";
+import { getEEG, getMember, updateMember, listTariffs, type TariffSchedule } from "@/lib/api";
+import { TariffPlanSelect } from "@/components/tariff-plan-select";
 import { ValidatedInput } from "@/components/validated-input";
 import Link from "next/link";
 import { eegDisplayName } from "@/lib/eeg-display-name";
@@ -21,12 +22,14 @@ export default async function EditMemberPage({ params, searchParams }: Props) {
 
   let eeg = null;
   let member = null;
+  let tariffPlans: TariffSchedule[] = [];
   let loadError: string | null = null;
 
   try {
-    [eeg, member] = await Promise.all([
+    [eeg, member, tariffPlans] = await Promise.all([
       getEEG(session.accessToken!, eegId),
       getMember(session.accessToken!, eegId, memberId),
+      listTariffs(session.accessToken!, eegId).catch(() => [] as TariffSchedule[]),
     ]);
   } catch (err: unknown) {
     const apiError = err as { message?: string };
@@ -72,6 +75,7 @@ export default async function EditMemberPage({ params, searchParams }: Props) {
     try {
       await updateMember(session.accessToken!, eegId, memberId, {
         mitglieds_nr,
+        kundenkonto: (formData.get("kundenkonto") as string) || undefined,
         name1,
         name2: (formData.get("name2") as string) || undefined,
         email: (formData.get("email") as string) || undefined,
@@ -86,6 +90,7 @@ export default async function EditMemberPage({ params, searchParams }: Props) {
         status: (formData.get("status") as string) || undefined,
         beitritts_datum: (formData.get("beitritts_datum") as string) || undefined,
         austritts_datum: (formData.get("austritts_datum") as string) || undefined,
+        tariff_schedule_id: (formData.get("tariff_schedule_id") as string) || null,
       });
     } catch (err: unknown) {
       saveError = (err as { message?: string }).message || "Speichern fehlgeschlagen.";
@@ -184,6 +189,19 @@ export default async function EditMemberPage({ params, searchParams }: Props) {
               defaultValue={defaultMitgliedsNr}
               className={inputClass}
             />
+          </div>
+
+          <div>
+            <label className={labelClass}>Kundenkonto</label>
+            <input
+              type="text"
+              name="kundenkonto"
+              defaultValue={member.kundenkonto || ""}
+              className={inputClass}
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Muss innerhalb der Energiegemeinschaft eindeutig sein
+            </p>
           </div>
 
           <div>
@@ -329,6 +347,14 @@ export default async function EditMemberPage({ params, searchParams }: Props) {
                 className={inputClass}
               />
             </div>
+          </div>
+
+          <div>
+            <label className={labelClass}>Tarifplan</label>
+            <TariffPlanSelect plans={tariffPlans} value={member.tariff_schedule_id} className={`${inputClass} bg-white`} />
+            <p className="text-xs text-slate-500 mt-1">
+              Ohne Auswahl gilt der Standardtarif. Ein aktiver Individualtarif hat Vorrang vor dem zugewiesenen Plan.
+            </p>
           </div>
         </div>
 

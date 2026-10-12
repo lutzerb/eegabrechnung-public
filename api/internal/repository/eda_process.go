@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
 )
@@ -265,22 +266,33 @@ func (r *EDAProcessRepository) HasPendingFactorChangeToday(ctx context.Context, 
 	return count > 0, err
 }
 
-// HasActiveAnmeldung returns true if there is already an EC_REQ_ONL process for
-// this Zählpunkt that is pending, sent, first_confirmed, or confirmed — i.e. not
-// yet known to have failed. Used to block a second Anmeldung while one is still
-// in flight or already succeeded, since the Netzbetreiber rejects duplicates and
-// deleting/recreating the meter point in between would otherwise be the only way
-// a user could "retry", which orphans the original process's eventual confirmation.
-func (r *EDAProcessRepository) HasActiveAnmeldung(ctx context.Context, eegID uuid.UUID, zaehlpunkt string) (bool, error) {
-	var count int
-	err := r.db.QueryRow(ctx, `
-		SELECT COUNT(*) FROM eda_processes
-		WHERE eeg_id = $1
-		  AND zaehlpunkt = $2
-		  AND process_type = 'EC_REQ_ONL'
-		  AND status NOT IN ('rejected', 'error')
-	`, eegID, zaehlpunkt).Scan(&count)
-	return count > 0, err
+// GetActiveAnmeldung returns the most recent EC_REQ_ONL process for this
+// Zählpunkt that is pending, sent, first_confirmed, or confirmed — i.e. not yet
+// known to have failed — or nil if there is none. Used to warn before starting
+// a second Anmeldung while one is still in flight or already succeeded, since
+// the Netzbetreiber rejects true duplicates anyway and deleting/recreating the
+// meter point in between would otherwise be the only way a user could "retry",
+// which orphans the original process's eventual confirmation. A stuck process
+// (e.g. lost during an edanet maintenance window) can be overridden explicitly
+// with force=true once the user has seen and confirmed this.
+func (r *EDAProcessRepository) GetActiveAnmeldung(ctx context.Context, eegID uuid.UUID, zaehlpunkt string) (*domain.EDAProcess, error) {
+	q := `SELECT ` + edaProcessCols + `
+	      FROM eda_processes
+	      WHERE eeg_id = $1
+	        AND zaehlpunkt = $2
+	        AND process_type = 'EC_REQ_ONL'
+	        AND status NOT IN ('rejected', 'error')
+	      ORDER BY initiated_at DESC
+	      LIMIT 1`
+	var p domain.EDAProcess
+	err := scanEDAProcess(r.db.QueryRow(ctx, q, eegID, zaehlpunkt), &p)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("scan: %w", err)
+	}
+	return &p, nil
 }
 
 // HasActiveProcess returns true if there is an in-flight (pending/sent/

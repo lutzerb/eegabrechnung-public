@@ -61,6 +61,12 @@ export default async function ParticipationsPage({ params }: Props) {
           Seit April 2024 (EAG) kann ein Zählpunkt gleichzeitig an bis zu 5 Energiegemeinschaften teilnehmen.
           Hier werden die Teilnahmedatensätze verwaltet (Grundlage für EDA-Anmeldungen).
         </p>
+        <Link
+          href={`/eegs/${eegId}/eda?tab=abgleich`}
+          className="inline-flex items-center gap-1.5 text-sm text-blue-600 hover:underline mt-2"
+        >
+          Mit Netzbetreiber-Daten abgleichen (Zählpunktliste) →
+        </Link>
       </div>
 
       <ParticipationsClient

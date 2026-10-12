@@ -7,6 +7,7 @@ interface Props {
   confirmMessage: string;
   className: string;
   label?: string;
+  title?: string;
 }
 
 export function ConfirmDeleteButton({
@@ -16,12 +17,14 @@ export function ConfirmDeleteButton({
   confirmMessage,
   className,
   label = "Löschen",
+  title,
 }: Props) {
   return (
     <form action={action} className="inline">
       <input type="hidden" name={hiddenName} value={hiddenValue} />
       <button
         type="submit"
+        title={title}
         className={className}
         onClick={(e) => {
           if (!confirm(confirmMessage)) {

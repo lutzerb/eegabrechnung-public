@@ -20,9 +20,13 @@ interface TariffSchedule {
   name: string;
   granularity: "annual" | "monthly" | "daily" | "quarter_hour";
   is_active: boolean;
+  // Standardtarif der EEG (genau ein EEG-weiter Plan); gilt für Mitglieder ohne Zuweisung
+  is_default?: boolean;
+  // Anzahl der Mitglieder, denen dieser EEG-weite Plan zugewiesen ist
+  assigned_member_count?: number;
   entry_count: number;
   entries?: TariffEntry[];
-  // Individualtarif overrides — null/undefined = "EEG-Standard verwenden"
+  // Gebühren-Overrides (Individualtarif oder EEG-weiter Plan, nicht beim Standardtarif) — null/undefined = "EEG-Standard verwenden"
   free_kwh_override?: number | null;
   discount_pct_override?: number | null;
   meter_fee_eur_override?: number | null;
@@ -521,27 +525,55 @@ export default function TariffManager({ eegId, eegEnergyPrice, eegProducerPrice,
     finally { setCreating(false); }
   };
 
+  const apiError = async (res: Response, fallback: string) => {
+    try {
+      const data = await res.json();
+      return data?.error || fallback;
+    } catch { return fallback; }
+  };
+
+  // Reload the list (activation can change is_default/assigned counts on other plans too)
+  // and keep the editor's header badges in sync.
+  const reloadList = async () => {
+    const res = await fetch(basePath, { headers: authHeaders });
+    const data = await res.json();
+    const list: TariffSchedule[] = Array.isArray(data) ? data : [];
+    setSchedules(list);
+    setSelected((prev) => {
+      if (!prev) return prev;
+      const u = list.find((x) => x.id === prev.id);
+      return u ? { ...prev, is_active: u.is_active, is_default: u.is_default, assigned_member_count: u.assigned_member_count } : prev;
+    });
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm("Tarifplan wirklich löschen?")) return;
+    setError(null);
     try {
-      await fetch(`${basePath}/${id}`, { method: "DELETE", headers: authHeaders });
+      const res = await fetch(`${basePath}/${id}`, { method: "DELETE", headers: authHeaders });
+      if (!res.ok) { setError(await apiError(res, "Löschen fehlgeschlagen.")); return; }
       setSchedules((prev) => prev.filter((s) => s.id !== id));
       if (selected?.id === id) setSelected(null);
     } catch { setError("Löschen fehlgeschlagen."); }
   };
 
   const handleActivate = async (s: TariffSchedule) => {
+    setError(null);
     try {
-      if (s.is_active) {
-        await fetch(`${basePath}/${s.id}/activate`, { method: "DELETE", headers: authHeaders });
-        setSchedules((prev) => prev.map((x) => ({ ...x, is_active: x.id === s.id ? false : x.is_active })));
-        if (selected?.id === s.id) setSelected((prev) => prev ? { ...prev, is_active: false } : null);
-      } else {
-        await fetch(`${basePath}/${s.id}/activate`, { method: "POST", headers: authHeaders });
-        setSchedules((prev) => prev.map((x) => ({ ...x, is_active: x.id === s.id })));
-        if (selected?.id === s.id) setSelected((prev) => prev ? { ...prev, is_active: true } : null);
-      }
+      const res = await fetch(`${basePath}/${s.id}/activate`, { method: s.is_active ? "DELETE" : "POST", headers: authHeaders });
+      if (!res.ok) { setError(await apiError(res, "Fehler beim Aktivieren.")); return; }
+      await reloadList();
     } catch { setError("Fehler beim Aktivieren."); }
+  };
+
+  const handleSetDefault = async (s: TariffSchedule) => {
+    setError(null);
+    try {
+      const res = await fetch(`${basePath}/${s.id}/default`, { method: "POST", headers: authHeaders });
+      if (!res.ok) { setError(await apiError(res, "Fehler beim Setzen des Standardtarifs.")); return; }
+      await reloadList();
+      if (selected?.id === s.id) await selectSchedule(s);
+    } catch { setError("Fehler beim Setzen des Standardtarifs."); }
   };
 
   const handleSaveEntries = async (entries: TariffEntry[]) => {
@@ -573,8 +605,8 @@ export default function TariffManager({ eegId, eegEnergyPrice, eegProducerPrice,
         method: "PUT", headers: authHeaders,
         body: JSON.stringify({ name: selected.name, granularity: selected.granularity, ...overrides }),
       });
-      if (!res.ok) throw new Error("Speichern fehlgeschlagen");
-      setSuccess("Individualtarif-Overrides gespeichert.");
+      if (!res.ok) throw new Error(await apiError(res, "Speichern fehlgeschlagen"));
+      setSuccess(memberId ? "Individualtarif-Overrides gespeichert." : "Gebühren-Overrides gespeichert.");
       setSelected((prev) => prev ? { ...prev, ...overrides } : null);
       setSchedules((prev) => prev.map((s) => s.id === selected.id ? { ...s, ...overrides } : s));
     } catch (e: unknown) { setError((e as Error).message); }
@@ -640,17 +672,36 @@ export default function TariffManager({ eegId, eegEnergyPrice, eegProducerPrice,
                       {GRANULARITY_LABELS[s.granularity] ?? s.granularity}
                     </span>
                     <span className="text-xs text-slate-400">{s.entry_count ?? 0} Einträge</span>
+                    {s.is_default && (
+                      <span className="text-xs px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded font-medium">
+                        Standard
+                      </span>
+                    )}
                     {s.is_active && (
                       <span className="text-xs px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-medium">
                         Aktiv
+                      </span>
+                    )}
+                    {!memberId && (s.assigned_member_count ?? 0) > 0 && (
+                      <span className="text-xs text-slate-500">
+                        {s.assigned_member_count} {s.assigned_member_count === 1 ? "Mitglied" : "Mitglieder"}
                       </span>
                     )}
                   </div>
                 </div>
               </div>
               <div className="flex items-center gap-1.5 mt-3" onClick={(e) => e.stopPropagation()}>
+                {!memberId && !s.is_default && (
+                  <button onClick={() => handleSetDefault(s)}
+                    title="Gilt für alle Mitglieder ohne eigene Zuweisung"
+                    className="px-2 py-1 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded hover:bg-blue-100 transition-colors">
+                    Als Standard
+                  </button>
+                )}
                 <button onClick={() => handleActivate(s)}
-                  className={`flex-1 px-2 py-1 text-xs font-medium rounded transition-colors ${
+                  disabled={!memberId && !!s.is_default}
+                  title={!memberId && s.is_default ? "Der Standardtarif bleibt immer aktiv" : undefined}
+                  className={`flex-1 px-2 py-1 text-xs font-medium rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
                     s.is_active
                       ? "bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100"
                       : "bg-slate-50 text-slate-600 border border-slate-200 hover:bg-slate-100"
@@ -758,9 +809,19 @@ export default function TariffManager({ eegId, eegEnergyPrice, eegProducerPrice,
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="font-semibold text-slate-900">{selected.name}</h2>
-                  {selected.is_active && (
+                  {selected.is_default && (
+                    <span className="text-xs px-1.5 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded font-medium">
+                      Standardtarif &#8212; gilt für alle ohne Zuweisung
+                    </span>
+                  )}
+                  {selected.is_active && !selected.is_default && (
                     <span className="text-xs px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-medium">
-                      Aktiv &#8212; wird für Abrechnung verwendet
+                      {memberId ? "Aktiv \u2014 wird für Abrechnung verwendet" : "Aktiv \u2014 Mitgliedern zuweisbar"}
+                    </span>
+                  )}
+                  {!memberId && !selected.is_active && (
+                    <span className="text-xs px-1.5 py-0.5 bg-slate-100 text-slate-500 border border-slate-200 rounded font-medium">
+                      Inaktiv &#8212; nicht zuweisbar
                     </span>
                   )}
                 </div>
@@ -770,11 +831,14 @@ export default function TariffManager({ eegId, eegEnergyPrice, eegProducerPrice,
               </div>
             </div>
 
-            {memberId && (
+            {(memberId || !selected.is_default) && (
               <div className="mb-6 rounded-lg bg-amber-50 border border-amber-200 p-4">
-                <p className="text-sm font-medium text-amber-900 mb-1">Individualtarif-Overrides</p>
+                <p className="text-sm font-medium text-amber-900 mb-1">
+                  {memberId ? "Individualtarif-Overrides" : "Gebühren-Overrides dieses Tarifplans"}
+                </p>
                 <p className="text-xs text-amber-700 mb-3">
                   Nur angehakte Felder überschreiben den EEG-Standard. Nicht angehakte Felder verwenden weiterhin die EEG-Einstellung.
+                  {!memberId && " Gilt für alle Mitglieder, denen dieser Plan zugewiesen ist."}
                 </p>
                 <div className="space-y-2">
                   {OVERRIDE_FIELDS.map(({ key, label, unit, step }) => {

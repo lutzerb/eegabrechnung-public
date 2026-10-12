@@ -16,6 +16,7 @@ import type {
   MonthlyEnergyRow,
   MemberStat,
   Member,
+  EEG,
 } from "@/lib/api";
 import MemberCombobox from "@/components/member-combobox";
 import { eegDisplayName } from "@/lib/eeg-display-name";
@@ -61,6 +62,37 @@ function memberRole(s: MemberStat): "Produzent" | "Konsument" | "Prosument" {
 
 function isoDate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function shiftMonth(ym: string, delta: number): string {
+  const [y, m] = ym.split("-").map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function shiftDay(iso: string, delta: number): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  const result = new Date(y, m - 1, d + delta);
+  return isoDate(result);
+}
+
+function PeriodStepButton({ direction, onClick, title }: { direction: "prev" | "next"; onClick: () => void; title: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      className="p-1.5 border border-slate-200 rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-colors"
+    >
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+        {direction === "prev" ? (
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" />
+        ) : (
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5 15.75 12l-7.5 7.5" />
+        )}
+      </svg>
+    </button>
+  );
 }
 
 // ── Download helpers ───────────────────────────────────────────────────────
@@ -168,13 +200,18 @@ export default function ReportsPage() {
   const [memberStats, setMemberStats] = useState<MemberStat[]>([]);
   const [memberNames, setMemberNames] = useState<Record<string, string>>({});
   const [eegName, setEegName] = useState("");
+  const [eeg, setEeg] = useState<EEG | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Forecast (auto-loaded for month view when current/future month is selected)
   const [forecastDailyTotals, setForecastDailyTotals] = useState<ForecastDayTotal[]>([]);
 
-  const availableYears = Array.from({ length: 5 }, (_, i) => currentYear - i);
+  // Always includes selectedYear so the dropdown stays in sync after navigating
+  // outside the default 5-year window via the prev/next buttons.
+  const availableYears = Array.from(
+    new Set([...Array.from({ length: 5 }, (_, i) => currentYear - i), selectedYear])
+  ).sort((a, b) => b - a);
 
   // Compute date range and granularity from period state
   const getRange = useCallback((): { from: string; to: string; granularity: Granularity } => {
@@ -228,8 +265,9 @@ export default function ReportsPage() {
         fetch(`/api/eegs/${eegId}/members`, { headers: authHeaders }),
       ]);
       if (eegRes.ok) {
-        const eeg = await eegRes.json();
-        setEegName(eegDisplayName(eeg) || "");
+        const eegData: EEG = await eegRes.json();
+        setEeg(eegData);
+        setEegName(eegDisplayName(eegData) || "");
       }
       if (membersRes.ok) {
         const memberList: Member[] = await membersRes.json();
@@ -319,6 +357,26 @@ export default function ReportsPage() {
   }, [session, eegId, dataSource, periodMode, selectedMonth]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const { from, to, granularity } = getRange();
+
+  // Chart colors — per-EEG overrides from settings, falling back to the chart defaults.
+  const summaryChartColors = {
+    colorAusgetauscht: eeg?.report_chart_color_ausgetauscht || undefined,
+    colorRestbedarf: eeg?.report_chart_color_restbedarf || undefined,
+    colorEinspeisungEeg: eeg?.report_chart_color_einspeisung_eeg || undefined,
+    colorResteinspeisung: eeg?.report_chart_color_resteinspeisung || undefined,
+  };
+  const flowChartColors = {
+    colorEinspeisung: eeg?.report_chart_color_billed_einspeisung || undefined,
+    colorBezug: eeg?.report_chart_color_billed_bezug || undefined,
+  };
+  const financialChartColors = {
+    colorEinnahmen: eeg?.report_chart_color_einnahmen || undefined,
+    colorGutschriften: eeg?.report_chart_color_gutschriften || undefined,
+  };
+  const memberChartColors = {
+    colorEinspeisung: eeg?.report_chart_color_member_einspeisung || undefined,
+    colorBezug: eeg?.report_chart_color_member_bezug || undefined,
+  };
 
   // KPIs from raw summary
   const totalSelf = summaryData.reduce((s, r) => s + r.wh_self, 0);
@@ -478,34 +536,46 @@ export default function ReportsPage() {
         </div>
 
         {periodMode === "year" && (
-          <select
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(Number(e.target.value))}
-            className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            {availableYears.map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
+          <div className="flex items-center gap-1">
+            <PeriodStepButton direction="prev" title="Vorheriges Jahr" onClick={() => setSelectedYear((y) => y - 1)} />
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(Number(e.target.value))}
+              className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg bg-white text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              {availableYears.map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+            <PeriodStepButton direction="next" title="Nächstes Jahr" onClick={() => setSelectedYear((y) => y + 1)} />
+          </div>
         )}
 
         {periodMode === "month" && (
-          <input
-            type="month"
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="w-40 px-3 py-1.5 text-sm border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+          <div className="flex items-center gap-1">
+            <PeriodStepButton direction="prev" title="Vorheriger Monat" onClick={() => setSelectedMonth((m) => shiftMonth(m, -1))} />
+            <input
+              type="month"
+              value={selectedMonth}
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="w-40 px-3 py-1.5 text-sm border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <PeriodStepButton direction="next" title="Nächster Monat" onClick={() => setSelectedMonth((m) => shiftMonth(m, 1))} />
+          </div>
         )}
 
         {periodMode === "day" && (
           <div className="flex items-center gap-2">
-            <input
-              type="date"
-              value={selectedDay}
-              onChange={(e) => setSelectedDay(e.target.value)}
-              className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
+            <div className="flex items-center gap-1">
+              <PeriodStepButton direction="prev" title="Vorheriger Tag" onClick={() => setSelectedDay((d) => shiftDay(d, -1))} />
+              <input
+                type="date"
+                value={selectedDay}
+                onChange={(e) => setSelectedDay(e.target.value)}
+                className="px-3 py-1.5 text-sm border border-slate-200 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+              <PeriodStepButton direction="next" title="Nächster Tag" onClick={() => setSelectedDay((d) => shiftDay(d, 1))} />
+            </div>
             <span className="text-xs text-slate-400">15-Minuten-Intervalle</span>
           </div>
         )}
@@ -654,16 +724,17 @@ export default function ReportsPage() {
             forecastDailyTotals={forecastDailyTotals}
             from={from}
             to={to}
+            {...summaryChartColors}
           />
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div>
               <p className="text-xs text-slate-500 mb-2">Bezug / Einspeisung kWh</p>
-              <EnergyFlowChart data={monthlyBilled} />
+              <EnergyFlowChart data={monthlyBilled} {...flowChartColors} />
             </div>
             <div>
               <p className="text-xs text-slate-500 mb-2">Finanzen</p>
-              <FinancialChart data={monthlyBilled} />
+              <FinancialChart data={monthlyBilled} {...financialChartColors} />
             </div>
           </div>
         )}
@@ -673,7 +744,7 @@ export default function ReportsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         <div className="bg-white rounded-xl border border-slate-200 p-5 overflow-y-auto" style={{ maxHeight: "400px" }}>
           <h2 className="text-sm font-semibold text-slate-700 mb-4">Mitglieder — Energiemengen</h2>
-          <MemberEnergyChart data={displayedMemberStats} memberNames={memberNames} />
+          <MemberEnergyChart data={displayedMemberStats} memberNames={memberNames} {...memberChartColors} />
         </div>
 
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">

@@ -70,6 +70,28 @@ func (r *ExtraMeterRepository) ListActiveForMember(ctx context.Context, memberID
 	return list, rows.Err()
 }
 
+// CountByEeg returns the number of extra meters (any status) per member for the
+// whole EEG in one query — used by the members overview to show a "Zusatzzähler"
+// indicator per row without an N+1 query per member.
+func (r *ExtraMeterRepository) CountByEeg(ctx context.Context, eegID uuid.UUID) (map[uuid.UUID]int, error) {
+	q := `SELECT member_id, COUNT(*) FROM extra_meters WHERE eeg_id = $1 GROUP BY member_id`
+	rows, err := r.db.Query(ctx, q, eegID)
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+	defer rows.Close()
+	counts := make(map[uuid.UUID]int)
+	for rows.Next() {
+		var memberID uuid.UUID
+		var count int
+		if err := rows.Scan(&memberID, &count); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		counts[memberID] = count
+	}
+	return counts, rows.Err()
+}
+
 func (r *ExtraMeterRepository) Create(ctx context.Context, m *domain.ExtraMeter) error {
 	q := `INSERT INTO extra_meters (eeg_id, member_id, label, status, notes)
 		  VALUES ($1, $2, $3, $4, $5)
@@ -141,6 +163,18 @@ func (r *ExtraMeterRepository) CreateReading(ctx context.Context, rd *domain.Ext
 		  RETURNING id, created_at`
 	return r.db.QueryRow(ctx, q, rd.ExtraMeterID, rd.ReadingDate, rd.CounterValue, rd.Notes, rd.CreatedBy).
 		Scan(&rd.ID, &rd.CreatedAt)
+}
+
+func (r *ExtraMeterRepository) UpdateReading(ctx context.Context, rd *domain.ExtraMeterReading) error {
+	q := `UPDATE extra_meter_readings SET reading_date=$1, counter_value=$2, notes=$3 WHERE id=$4`
+	cmd, err := r.db.Exec(ctx, q, rd.ReadingDate, rd.CounterValue, rd.Notes, rd.ID)
+	if err != nil {
+		return fmt.Errorf("update: %w", err)
+	}
+	if cmd.RowsAffected() == 0 {
+		return fmt.Errorf("reading not found")
+	}
+	return nil
 }
 
 func (r *ExtraMeterRepository) DeleteReading(ctx context.Context, id uuid.UUID) error {

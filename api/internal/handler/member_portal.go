@@ -20,6 +20,7 @@ import (
 	edaxml "github.com/lutzerb/eegabrechnung/internal/eda/xml"
 	"github.com/lutzerb/eegabrechnung/internal/invoice"
 	"github.com/lutzerb/eegabrechnung/internal/mailutil"
+	"github.com/lutzerb/eegabrechnung/internal/netzbetreiber"
 	"github.com/lutzerb/eegabrechnung/internal/repository"
 )
 
@@ -85,11 +86,13 @@ func (h *MemberPortalHandler) resolveTenantOrg(r *http.Request) (uuid.UUID, erro
 
 // RequestLink handles POST /api/v1/public/portal/request-link
 // Body: {"email": "...", "eeg_id": "..."} — eeg_id is optional.
-// If eeg_id is omitted and the email matches multiple EEGs, returns a choices list
-// for the frontend to show a selection step. Always returns HTTP 200.
+// If eeg_id is omitted and the email matches multiple EEGs, the alphabetically-first
+// one (by EEG name) is picked automatically — the member can switch to any other
+// matching EEG from inside the portal after logging in (see SwitchEEG). Always
+// returns HTTP 200.
 //
 //	@Summary		Request a magic login link for the member portal
-//	@Description	Looks up the member by email (and optionally eeg_id) and sends a magic login link by email. If the email is associated with multiple EEGs and no eeg_id is given, returns a list of EEG choices for the user to select. Always returns HTTP 200 to avoid email enumeration.
+//	@Description	Looks up the member by email (and optionally eeg_id) and sends a magic login link by email. If the email is associated with multiple EEGs and no eeg_id is given, the alphabetically-first EEG is used automatically; the member can switch EEGs from inside the portal afterwards. Always returns HTTP 200 to avoid email enumeration.
 //	@Tags			Mitgliederportal
 //	@Accept			json
 //	@Produce		json
@@ -148,36 +151,20 @@ func (h *MemberPortalHandler) RequestLink(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Exactly one match → send link immediately (no selection needed)
-	if len(choices) == 1 {
-		c := choices[0]
-		token, err := h.portalRepo.CreateLinkSession(r.Context(), c.MemberID, c.EegID)
-		if err != nil {
-			w.Write([]byte(`{"ok":true}`))
-			return
-		}
-		if !c.IsDemo {
-			portalLink := fmt.Sprintf("%s/portal/%s", c.PortalBaseURL, token)
-			go h.sendPortalLinkEmail(c.EegID, c.Email, c.Name1+" "+c.Name2, portalLink)
-		}
+	// One or more matches → send the link for the alphabetically-first EEG
+	// (FindMembersByEmail orders by e.name). The member can switch to any of
+	// their other EEGs from inside the portal after logging in.
+	c := choices[0]
+	token, err := h.portalRepo.CreateLinkSession(r.Context(), c.MemberID, c.EegID)
+	if err != nil {
 		w.Write([]byte(`{"ok":true}`))
 		return
 	}
-
-	// Multiple matches → ask frontend to show EEG selection
-	type choiceItem struct {
-		EegID   string `json:"eeg_id"`
-		EegName string `json:"eeg_name"`
+	if !c.IsDemo {
+		portalLink := fmt.Sprintf("%s/portal/%s", c.PortalBaseURL, token)
+		go h.sendPortalLinkEmail(c.EegID, c.Email, c.Name1+" "+c.Name2, portalLink)
 	}
-	items := make([]choiceItem, len(choices))
-	for i, c := range choices {
-		items[i] = choiceItem{EegID: c.EegID.String(), EegName: c.EegName}
-	}
-	resp := struct {
-		OK      bool         `json:"ok"`
-		Choices []choiceItem `json:"choices"`
-	}{OK: true, Choices: items}
-	json.NewEncoder(w).Encode(resp)
+	w.Write([]byte(`{"ok":true}`))
 }
 
 func (h *MemberPortalHandler) sendPortalLinkEmail(eegID uuid.UUID, toEmail, name, link string) {
@@ -261,12 +248,11 @@ func (h *MemberPortalHandler) ExchangeToken(w http.ResponseWriter, r *http.Reque
 // LoginPassword handles POST /api/v1/public/portal/login-password
 // Body: {"email": "...", "password": "...", "eeg_id": "..."} — eeg_id is optional.
 // Password is checked against member_portal_credentials, which is keyed by email
-// (not member_id), so one password unlocks every EEG membership sharing that email —
-// same identity model as the magic-link flow's EEG-choice step. If the email has
-// more than one active membership and no eeg_id was given, returns a choices list
-// (same shape as RequestLink) for the frontend to disambiguate; the client then
-// resubmits with the chosen eeg_id and the same password. On success, returns the
-// same shape as ExchangeToken.
+// (not member_id), so one password unlocks every EEG membership sharing that email.
+// If the email has more than one active membership and no eeg_id was given, the
+// alphabetically-first one (by EEG name) is picked automatically; the member can
+// switch to any of their other EEGs from inside the portal afterwards (see
+// SwitchEEG). On success, returns the same shape as ExchangeToken.
 func (h *MemberPortalHandler) LoginPassword(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Email    string `json:"email"`
@@ -315,22 +301,11 @@ func (h *MemberPortalHandler) LoginPassword(w http.ResponseWriter, r *http.Reque
 			jsonError(w, invalidMsg, http.StatusUnauthorized)
 			return
 		}
-	} else if len(choices) == 1 {
-		chosen = &choices[0]
 	} else {
-		type choiceItem struct {
-			EegID   string `json:"eeg_id"`
-			EegName string `json:"eeg_name"`
-		}
-		items := make([]choiceItem, len(choices))
-		for i, c := range choices {
-			items[i] = choiceItem{EegID: c.EegID.String(), EegName: c.EegName}
-		}
-		jsonOK(w, struct {
-			OK      bool         `json:"ok"`
-			Choices []choiceItem `json:"choices"`
-		}{OK: true, Choices: items})
-		return
+		// No EEG specified — pick the alphabetically-first match (choices is
+		// ordered by e.name). The member can switch EEGs from inside the
+		// portal after logging in.
+		chosen = &choices[0]
 	}
 
 	sessionToken, err := h.portalRepo.CreateSessionForMember(r.Context(), chosen.MemberID, chosen.EegID)
@@ -358,6 +333,132 @@ func (h *MemberPortalHandler) portalAuth(r *http.Request) (memberID, eegID uuid.
 		return uuid.Nil, uuid.Nil, false
 	}
 	return mID, eID, true
+}
+
+// ListMyEEGs handles GET /api/v1/public/portal/eegs
+//
+//	@Summary		List the EEGs reachable from the current portal session
+//	@Description	Returns every active EEG membership sharing the current session's member email, within the same organization — the set of EEGs the member can switch to.
+//	@Tags			Mitgliederportal
+//	@Produce		json
+//	@Param			X-Portal-Session	header		string	true	"Portal session token"
+//	@Success		200					{array}		object{eeg_id=string,eeg_name=string}
+//	@Failure		401					{object}	map[string]string
+//	@Router			/public/portal/eegs [get]
+func (h *MemberPortalHandler) ListMyEEGs(w http.ResponseWriter, r *http.Request) {
+	memberID, _, ok := h.portalAuth(r)
+	if !ok {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	member, err := h.memberRepo.GetByID(r.Context(), memberID)
+	if err != nil {
+		jsonError(w, "not found", http.StatusNotFound)
+		return
+	}
+	orgID, err := h.resolveTenantOrg(r)
+	if err != nil {
+		jsonError(w, "unknown domain", http.StatusBadRequest)
+		return
+	}
+	choices, err := h.portalRepo.FindMembersByEmail(r.Context(), member.Email, orgID)
+	if err != nil {
+		jsonError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	type eegItem struct {
+		EegID   string `json:"eeg_id"`
+		EegName string `json:"eeg_name"`
+	}
+	items := make([]eegItem, len(choices))
+	for i, c := range choices {
+		items[i] = eegItem{EegID: c.EegID.String(), EegName: c.EegName}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(items)
+}
+
+// SwitchEEG handles POST /api/v1/public/portal/switch-eeg
+// Body: {"eeg_id": "..."}
+// Mints a fresh session for another EEG membership sharing the current session's
+// member email, without requiring a new magic-link/password round trip — the
+// current session already proved the email's identity. The target eeg_id is only
+// ever validated against FindMembersByEmail for the CURRENT session's own email and
+// organization, never against client-supplied input, so a session can't be used to
+// pivot to an unrelated member/EEG.
+//
+//	@Summary		Switch the active EEG for the current portal session
+//	@Description	Issues a new session token scoped to a different EEG membership sharing the current session's member email. Returns the same shape as exchange/login-password.
+//	@Tags			Mitgliederportal
+//	@Accept			json
+//	@Produce		json
+//	@Param			X-Portal-Session	header		string					true	"Portal session token"
+//	@Param			body				body		object{eeg_id=string}	true	"Target EEG ID"
+//	@Success		200					{object}	map[string]string		"session_token, member_id, eeg_id"
+//	@Failure		400					{object}	map[string]string
+//	@Failure		401					{object}	map[string]string
+//	@Failure		403					{object}	map[string]string	"eeg_id is not one of the session email's own memberships"
+//	@Router			/public/portal/switch-eeg [post]
+func (h *MemberPortalHandler) SwitchEEG(w http.ResponseWriter, r *http.Request) {
+	memberID, _, ok := h.portalAuth(r)
+	if !ok {
+		jsonError(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	var req struct {
+		EegID string `json:"eeg_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+	targetEEG, err := uuid.Parse(req.EegID)
+	if err != nil {
+		jsonError(w, "invalid request", http.StatusBadRequest)
+		return
+	}
+
+	member, err := h.memberRepo.GetByID(r.Context(), memberID)
+	if err != nil {
+		jsonError(w, "not found", http.StatusNotFound)
+		return
+	}
+	orgID, err := h.resolveTenantOrg(r)
+	if err != nil {
+		jsonError(w, "unknown domain", http.StatusBadRequest)
+		return
+	}
+
+	choices, err := h.portalRepo.FindMembersByEmail(r.Context(), member.Email, orgID)
+	if err != nil {
+		jsonError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	var chosen *repository.PortalMemberChoice
+	for i := range choices {
+		if choices[i].EegID == targetEEG {
+			chosen = &choices[i]
+			break
+		}
+	}
+	if chosen == nil {
+		jsonError(w, "unauthorized", http.StatusForbidden)
+		return
+	}
+
+	sessionToken, err := h.portalRepo.CreateSessionForMember(r.Context(), chosen.MemberID, chosen.EegID)
+	if err != nil {
+		jsonError(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"session_token": sessionToken,
+		"member_id":     chosen.MemberID.String(),
+		"eeg_id":        chosen.EegID.String(),
+	})
 }
 
 // GetMe handles GET /api/v1/public/portal/me
@@ -753,9 +854,11 @@ func (h *MemberPortalHandler) ChangeParticipationFactor(w http.ResponseWriter, r
 		return
 	}
 	belongs := false
+	var matchedMP domain.MeterPoint
 	for _, mp := range mps {
 		if mp.Zaehlpunkt == req.Zaehlpunkt {
 			belongs = true
+			matchedMP = mp
 			break
 		}
 	}
@@ -789,17 +892,67 @@ func (h *MemberPortalHandler) ChangeParticipationFactor(w http.ResponseWriter, r
 	tomorrow := now.AddDate(0, 0, 1)
 	validFrom := time.Date(tomorrow.Year(), tomorrow.Month(), tomorrow.Day(), 0, 0, 0, 0, time.UTC)
 
+	// Resolve the actual Netzbetreiber-ID from the Zählpunkt — same reasoning as
+	// the admin handler (handler/eda.go TeilnahmefaktorAendern): the raw 8-char
+	// prefix is not always the correct routing target.
+	netzbetreiberTo := eeg.EdaNetzbetreiberID
+	if len(req.Zaehlpunkt) >= 8 {
+		resolved, ok := netzbetreiber.ResolveRoutingID(req.Zaehlpunkt)
+		if !ok {
+			jsonError(w, fmt.Sprintf("Unbekannter Netzbetreiber-Code für Zählpunkt %s", req.Zaehlpunkt), http.StatusUnprocessableEntity)
+			return
+		}
+		if eeg.GemeinschaftTyp != "BEG" && resolved != eeg.EdaNetzbetreiberID {
+			jsonError(w, fmt.Sprintf("Zählpunkt %s passt nicht zum konfigurierten Netzbetreiber %s", req.Zaehlpunkt, eeg.EdaNetzbetreiberID), http.StatusBadRequest)
+			return
+		}
+		netzbetreiberTo = resolved
+	}
+
+	// ECDisModel is declared once for the whole community (eegs.eda_dis_model) —
+	// never let a UI path report a Verteilungsmodell that contradicts EEG settings.
+	ecDisModel := eeg.EdaDisModel
+	if ecDisModel == "" {
+		ecDisModel = "D"
+	}
+	energyDirection := matchedMP.Energierichtung
+	if energyDirection == "" {
+		energyDirection = "CONSUMPTION"
+	}
+	shareType := "GC"
+
+	// DateActivate ("Versorgt seit") must be the Zählpunkt's actual EEG
+	// registration date, not the new ValidFrom of this factor change — see the
+	// matching fix + comment in handler/eda.go TeilnahmefaktorAendern
+	// (ResponseCode 82 "Prozessdatum falsch" otherwise).
+	dateActivate := validFrom
+	if matchedMP.RegistriertSeit != nil {
+		dateActivate = *matchedMP.RegistriertSeit
+	}
+
 	convID := uuid.NewString()
-	xmlBody, err := edaxml.BuildCPRequest(edaxml.CPRequestParams{
-		From:                eeg.EdaMarktpartnerID,
-		To:                  eeg.EdaNetzbetreiberID,
-		GemeinschaftID:      eeg.GemeinschaftID,
-		Process:             "EC_PRTFACT_CHG",
-		MessageID:           uuid.NewString(),
-		ConversationID:      convID,
-		Zaehlpunkt:          req.Zaehlpunkt,
-		ValidFrom:           validFrom,
-		ParticipationFactor: req.ParticipationFactor,
+	// Teilnahmefaktor-Änderungen werden als ECMPList (ANFORDERUNG_CPF) gesendet,
+	// nicht als CPRequest — CPRequest ist nur für CR_REQ_PT/EC_PODLIST gültig.
+	// (BuildCPRequest hier war der Bug: edanet kennt für CPRequest+EC_PRTFACT_CHG
+	// kein aktiviertes Schema und lehnt mit "No activated XML Schema for
+	// MessageType:null Version:null" ab.)
+	xmlBody, err := edaxml.BuildECMPList(edaxml.ECMPListParams{
+		From:            eeg.EdaMarktpartnerID,
+		To:              netzbetreiberTo,
+		MessageID:       uuid.NewString(),
+		ConversationID:  convID,
+		ECID:            eeg.GemeinschaftID,
+		ECType:          shareType,
+		ECDisModel:      ecDisModel,
+		MessageCode:     "ANFORDERUNG_CPF",
+		MeteringPoint:   req.Zaehlpunkt,
+		DateFrom:        validFrom,
+		DateActivate:    dateActivate,
+		EnergyDirection: energyDirection,
+		ECPartFact:      req.ParticipationFactor,
+		// See TODO in handler/eda.go TeilnahmefaktorAendern — same placeholder
+		// pending confirmation of the real value from EDA GmbH/Netzbetreiber.
+		DataType: "EnergyCommunityRegistration",
 	})
 	if err != nil {
 		jsonError(w, fmt.Sprintf("build XML: %v", err), http.StatusInternalServerError)
@@ -824,6 +977,9 @@ func (h *MemberPortalHandler) ChangeParticipationFactor(w http.ResponseWriter, r
 		Zaehlpunkt:          req.Zaehlpunkt,
 		ValidFrom:           &validFrom,
 		ParticipationFactor: &factor,
+		ShareType:           shareType,
+		ECDisModel:          ecDisModel,
+		EnergyDirection:     energyDirection,
 		InitiatedAt:         time.Now().UTC(),
 	}
 	if err := h.edaProcRepo.Create(r.Context(), proc); err != nil {
@@ -831,7 +987,7 @@ func (h *MemberPortalHandler) ChangeParticipationFactor(w http.ResponseWriter, r
 		jsonError(w, "failed to create EDA process", http.StatusInternalServerError)
 		return
 	}
-	if err := h.jobRepo.EnqueueEDA(r.Context(), "EC_PRTFACT_CHG", eeg.EdaMarktpartnerID, eeg.EdaNetzbetreiberID,
+	if err := h.jobRepo.EnqueueEDA(r.Context(), "EC_PRTFACT_CHG", eeg.EdaMarktpartnerID, netzbetreiberTo,
 		eeg.GemeinschaftID, convID, xmlBody, proc.ID, eegID); err != nil {
 		slog.Error("failed to enqueue EDA job for portal factor change", "error", err)
 		jsonError(w, "failed to queue EDA job", http.StatusInternalServerError)

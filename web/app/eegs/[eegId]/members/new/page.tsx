@@ -2,7 +2,8 @@
 
 import { auth } from "@/lib/auth";
 import { redirect } from "next/navigation";
-import { getEEG, createMember } from "@/lib/api";
+import { getEEG, createMember, listTariffs, getNextKundenkonto, type TariffSchedule } from "@/lib/api";
+import { TariffPlanSelect } from "@/components/tariff-plan-select";
 import { ValidatedInput } from "@/components/validated-input";
 import Link from "next/link";
 import { eegDisplayName } from "@/lib/eeg-display-name";
@@ -20,10 +21,16 @@ export default async function NewMemberPage({ params, searchParams }: Props) {
   const { error: spError } = await searchParams;
 
   let eeg = null;
+  let tariffPlans: TariffSchedule[] = [];
+  let kundenkontoSuggestion = "";
   let loadError: string | null = null;
 
   try {
     eeg = await getEEG(session.accessToken!, eegId);
+    tariffPlans = await listTariffs(session.accessToken!, eegId).catch(() => []);
+    kundenkontoSuggestion = await getNextKundenkonto(session.accessToken!, eegId)
+      .then((r) => r.kundenkonto)
+      .catch(() => "");
   } catch (err: unknown) {
     const apiError = err as { message?: string };
     loadError = apiError.message || "Fehler beim Laden der Energiegemeinschaft.";
@@ -67,6 +74,7 @@ export default async function NewMemberPage({ params, searchParams }: Props) {
     try {
       await createMember(session.accessToken!, eegId, {
         mitglieds_nr: (formData.get("mitglieds_nr") as string) || undefined,
+        kundenkonto: (formData.get("kundenkonto") as string) || undefined,
         name1,
         name2: (formData.get("name2") as string) || undefined,
         email: (formData.get("email") as string) || undefined,
@@ -80,6 +88,7 @@ export default async function NewMemberPage({ params, searchParams }: Props) {
         vat_pct,
         beitritts_datum: (formData.get("beitritts_datum") as string) || undefined,
         austritts_datum: (formData.get("austritts_datum") as string) || undefined,
+        tariff_schedule_id: (formData.get("tariff_schedule_id") as string) || null,
       });
     } catch (err: unknown) {
       saveError = (err as { message?: string }).message || "Erstellen fehlgeschlagen.";
@@ -169,6 +178,19 @@ export default async function NewMemberPage({ params, searchParams }: Props) {
             />
             <p className="text-xs text-slate-500 mt-1">
               Leer lassen für automatische Vergabe
+            </p>
+          </div>
+
+          <div>
+            <label className={labelClass}>Kundenkonto</label>
+            <input
+              type="text"
+              name="kundenkonto"
+              defaultValue={kundenkontoSuggestion}
+              className={inputClass}
+            />
+            <p className="text-xs text-slate-500 mt-1">
+              Vorschlag — kann überschrieben werden, muss innerhalb der Energiegemeinschaft eindeutig sein
             </p>
           </div>
 
@@ -295,6 +317,14 @@ export default async function NewMemberPage({ params, searchParams }: Props) {
                 className={inputClass}
               />
             </div>
+          </div>
+
+          <div>
+            <label className={labelClass}>Tarifplan</label>
+            <TariffPlanSelect plans={tariffPlans} className={`${inputClass} bg-white`} />
+            <p className="text-xs text-slate-500 mt-1">
+              Ohne Auswahl gilt der Standardtarif der Energiegemeinschaft.
+            </p>
           </div>
         </div>
 

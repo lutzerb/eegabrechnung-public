@@ -44,8 +44,9 @@ func GeneratePain008(eeg *domain.EEG, entries []Pain008Entry) ([]byte, error) {
 
 	var ctrlSum float64
 	for _, tx := range txs {
-		ctrlSum += sepaPayAmount(tx.Invoice, tx.Member)
+		ctrlSum += roundCents(sepaPayAmount(tx.Invoice, tx.Member))
 	}
+	ctrlSum = roundCents(ctrlSum)
 
 	type instdAmt struct {
 		Ccy   string `xml:"Ccy,attr"`
@@ -166,7 +167,7 @@ func GeneratePain008(eeg *domain.EEG, entries []Pain008Entry) ([]byte, error) {
 
 		txElems = append(txElems, drctDbtTxInf{
 			PmtId:     pmtID{EndToEndId: strings.ReplaceAll(tx.Invoice.ID.String(), "-", "")},
-			InstdAmt:  instdAmt{Ccy: "EUR", Value: fmt.Sprintf("%.2f", sepaPayAmount(tx.Invoice, tx.Member))},
+			InstdAmt:  instdAmt{Ccy: "EUR", Value: fmt.Sprintf("%.2f", roundCents(sepaPayAmount(tx.Invoice, tx.Member)))},
 			DrctDbtTx: dt,
 			DbtrAgt:   dag,
 			Dbtr:      party{Nm: memberName},

@@ -8,6 +8,9 @@ interface MeterPointEntry {
   direction: string;
   generationType: string;
   participationFactor: number;
+  strasse: string;
+  plz: string;
+  ort: string;
 }
 
 interface FormData {
@@ -202,7 +205,7 @@ export default function OnboardingForm({
     useVat: false,
     uidNummer: "",
     beitrittsDatum: tomorrowISO,
-    meterPoints: [{ zaehlpunkt: "", direction: "CONSUMPTION", generationType: "", participationFactor: 100 }],
+    meterPoints: [{ zaehlpunkt: "", direction: "CONSUMPTION", generationType: "", participationFactor: 100, strasse: "", plz: "", ort: "" }],
     referralSource: referralCode ? "Empfehlung von einem Mitglied" : "",
     referralSourceNote: "",
   });
@@ -238,7 +241,7 @@ export default function OnboardingForm({
       ...prev,
       meterPoints: [
         ...prev.meterPoints,
-        { zaehlpunkt: "", direction: defaultDirection, generationType: "", participationFactor: 100 },
+        { zaehlpunkt: "", direction: defaultDirection, generationType: "", participationFactor: 100, strasse: "", plz: "", ort: "" },
       ],
     }));
   }
@@ -451,6 +454,9 @@ export default function OnboardingForm({
           direction: mp.direction,
           ...(mp.direction === "GENERATION" && mp.generationType ? { generation_type: mp.generationType } : {}),
           participation_factor: mp.participationFactor > 0 && mp.participationFactor <= 100 ? mp.participationFactor : 100,
+          ...(mp.strasse.trim() ? { strasse: mp.strasse.trim() } : {}),
+          ...(mp.plz.trim() ? { plz: mp.plz.trim() } : {}),
+          ...(mp.ort.trim() ? { ort: mp.ort.trim() } : {}),
         }));
 
       const res = await fetch(`/api/public/eegs/${eegId}/onboarding`, {
@@ -1037,8 +1043,9 @@ Datum der elektronischen Unterzeichnung: ${today}`;
             {formData.meterPoints.map((mp, index) => (
               <div
                 key={index}
-                className="flex gap-2 items-start p-3 bg-slate-50 rounded-lg border border-slate-200"
+                className="p-3 bg-slate-50 rounded-lg border border-slate-200"
               >
+              <div className="flex gap-2 items-start">
                 <div className="flex-1">
                   <label className="block text-xs font-medium text-slate-600 mb-1">
                     Zählpunktnummer {index + 1}
@@ -1146,6 +1153,37 @@ Datum der elektronischen Unterzeichnung: ${today}`;
                     </svg>
                   </button>
                 )}
+              </div>
+              <details className="mt-2" open={!!(mp.strasse || mp.plz || mp.ort)}>
+                <summary className="text-xs text-slate-500 cursor-pointer select-none">
+                  Standort des Zählpunkts (optional, falls abweichend vom Wohnsitz)
+                </summary>
+                <div className="mt-2 space-y-2">
+                  <input
+                    type="text"
+                    value={mp.strasse}
+                    onChange={(e) => updateMeterPoint(index, "strasse", e.target.value)}
+                    placeholder="Straße und Hausnummer"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                  />
+                  <div className="grid grid-cols-3 gap-2">
+                    <input
+                      type="text"
+                      value={mp.plz}
+                      onChange={(e) => updateMeterPoint(index, "plz", e.target.value)}
+                      placeholder="PLZ"
+                      className="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                    <input
+                      type="text"
+                      value={mp.ort}
+                      onChange={(e) => updateMeterPoint(index, "ort", e.target.value)}
+                      placeholder="Ort"
+                      className="col-span-2 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
+                    />
+                  </div>
+                </div>
+              </details>
               </div>
             ))}
           </div>

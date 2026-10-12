@@ -81,9 +81,11 @@ function fmtEur(v: number) {
 
 interface EnergyChartProps {
   data: MonthlyEnergyRow[];
+  colorEinspeisung?: string;
+  colorBezug?: string;
 }
 
-export function EnergyFlowChart({ data }: EnergyChartProps) {
+export function EnergyFlowChart({ data, colorEinspeisung = "#10b981", colorBezug = "#3b82f6" }: EnergyChartProps) {
   const mounted = useIsMounted();
   const [containerRef, width] = useContainerWidth();
   const chartData = data.map((r) => ({
@@ -110,8 +112,8 @@ export function EnergyFlowChart({ data }: EnergyChartProps) {
           />
           <Tooltip formatter={(v: number) => fmtKwh(v)} />
           <Legend iconType="circle" iconSize={8} />
-          <Bar dataKey="Einspeisung (kWh)" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={40} minPointSize={0} isAnimationActive={false} />
-          <Bar dataKey="Bezug (kWh)" fill="#3b82f6" radius={[3, 3, 0, 0]} maxBarSize={40} minPointSize={0} isAnimationActive={false} />
+          <Bar dataKey="Einspeisung (kWh)" fill={colorEinspeisung} radius={[3, 3, 0, 0]} maxBarSize={40} minPointSize={0} isAnimationActive={false} />
+          <Bar dataKey="Bezug (kWh)" fill={colorBezug} radius={[3, 3, 0, 0]} maxBarSize={40} minPointSize={0} isAnimationActive={false} />
         </BarChart>
       )}
     </div>
@@ -120,7 +122,13 @@ export function EnergyFlowChart({ data }: EnergyChartProps) {
 
 // ── Monthly financial chart ────────────────────────────────────────────────
 
-export function FinancialChart({ data }: EnergyChartProps) {
+interface FinancialChartProps {
+  data: MonthlyEnergyRow[];
+  colorEinnahmen?: string;
+  colorGutschriften?: string;
+}
+
+export function FinancialChart({ data, colorEinnahmen = "#3b82f6", colorGutschriften = "#f59e0b" }: FinancialChartProps) {
   const mounted = useIsMounted();
   const [containerRef, width] = useContainerWidth();
   const chartData = data.map((r) => ({
@@ -147,8 +155,8 @@ export function FinancialChart({ data }: EnergyChartProps) {
           />
           <Tooltip formatter={(v: number) => fmtEur(v)} />
           <Legend iconType="circle" iconSize={8} />
-          <Bar dataKey="Einnahmen" fill="#3b82f6" radius={[3, 3, 0, 0]} maxBarSize={40} minPointSize={0} isAnimationActive={false} />
-          <Bar dataKey="Gutschriften" fill="#f59e0b" radius={[3, 3, 0, 0]} maxBarSize={40} minPointSize={0} isAnimationActive={false} />
+          <Bar dataKey="Einnahmen" fill={colorEinnahmen} radius={[3, 3, 0, 0]} maxBarSize={40} minPointSize={0} isAnimationActive={false} />
+          <Bar dataKey="Gutschriften" fill={colorGutschriften} radius={[3, 3, 0, 0]} maxBarSize={40} minPointSize={0} isAnimationActive={false} />
         </BarChart>
       )}
     </div>
@@ -160,9 +168,11 @@ export function FinancialChart({ data }: EnergyChartProps) {
 interface MemberChartProps {
   data: MemberStat[];
   memberNames: Record<string, string>;
+  colorEinspeisung?: string;
+  colorBezug?: string;
 }
 
-export function MemberEnergyChart({ data, memberNames }: MemberChartProps) {
+export function MemberEnergyChart({ data, memberNames, colorEinspeisung = "#6366f1", colorBezug = "#10b981" }: MemberChartProps) {
   const mounted = useIsMounted();
   const [containerRef, width] = useContainerWidth();
   const chartData = data
@@ -203,8 +213,8 @@ export function MemberEnergyChart({ data, memberNames }: MemberChartProps) {
           />
           <Tooltip formatter={(v: number) => fmtKwh(v)} />
           <Legend iconType="circle" iconSize={8} />
-          <Bar dataKey="Einspeisung (kWh)" fill="#6366f1" radius={[0, 3, 3, 0]} maxBarSize={20} minPointSize={0} isAnimationActive={false} />
-          <Bar dataKey="Bezug (kWh)" fill="#10b981" radius={[0, 3, 3, 0]} maxBarSize={20} minPointSize={0} isAnimationActive={false} />
+          <Bar dataKey="Einspeisung (kWh)" fill={colorEinspeisung} radius={[0, 3, 3, 0]} maxBarSize={20} minPointSize={0} isAnimationActive={false} />
+          <Bar dataKey="Bezug (kWh)" fill={colorBezug} radius={[0, 3, 3, 0]} maxBarSize={20} minPointSize={0} isAnimationActive={false} />
         </BarChart>
       )}
     </div>
@@ -260,6 +270,10 @@ interface EnergySummaryChartProps {
   // x-axis instead of silently disappearing.
   from?: string;
   to?: string;
+  colorAusgetauscht?: string;
+  colorRestbedarf?: string;
+  colorEinspeisungEeg?: string;
+  colorResteinspeisung?: string;
 }
 
 // Truncates a period ISO string to the key granularity buckets align on.
@@ -325,10 +339,18 @@ function enumeratePeriods(from: string, to: string, granularity: "day" | "month"
   return keys;
 }
 
-function EnergySummaryTooltip({ active, payload, label }: {
+interface SummaryChartColors {
+  ausgetauscht: string;
+  restbedarf: string;
+  einspeisungEeg: string;
+  resteinspeisung: string;
+}
+
+function EnergySummaryTooltip({ active, payload, label, colors }: {
   active?: boolean;
   payload?: Array<{ name: string; value: number; fill: string }>;
   label?: string;
+  colors?: SummaryChartColors;
 }) {
   if (!active || !payload?.length) return null;
   const val = (name: string) => payload.find((p) => p.name === name)?.value ?? 0;
@@ -396,14 +418,14 @@ function EnergySummaryTooltip({ active, payload, label }: {
         </div>
         <div className="flex justify-between gap-4 pl-2">
           <span className="flex items-center gap-1 text-emerald-600">
-            <span className="w-2 h-2 rounded-sm bg-emerald-500 inline-block" />
+            <span className="w-2 h-2 rounded-sm inline-block" style={{ backgroundColor: colors?.ausgetauscht ?? "#10b981" }} />
             davon Ausgetauscht
           </span>
           <span className="font-medium text-emerald-700">{fmtKwh(ausgetauscht)}</span>
         </div>
         <div className="flex justify-between gap-4 pl-2">
           <span className="flex items-center gap-1 text-amber-600">
-            <span className="w-2 h-2 rounded-sm bg-amber-400 inline-block" />
+            <span className="w-2 h-2 rounded-sm inline-block" style={{ backgroundColor: colors?.restbedarf ?? "#fbbf24" }} />
             davon Restbedarf
           </span>
           <span className="font-medium text-amber-700">{fmtKwh(restbedarf)}</span>
@@ -416,14 +438,14 @@ function EnergySummaryTooltip({ active, payload, label }: {
             </div>
             <div className="flex justify-between gap-4 pl-2">
               <span className="flex items-center gap-1 text-indigo-600">
-                <span className="w-2 h-2 rounded-sm bg-indigo-500 inline-block" />
+                <span className="w-2 h-2 rounded-sm inline-block" style={{ backgroundColor: colors?.einspeisungEeg ?? "#6366f1" }} />
                 davon in EEG
               </span>
               <span className="font-medium text-indigo-700">{fmtKwh(eingespeist)}</span>
             </div>
             <div className="flex justify-between gap-4 pl-2">
               <span className="flex items-center gap-1 text-violet-400">
-                <span className="w-2 h-2 rounded-sm bg-violet-300 inline-block" />
+                <span className="w-2 h-2 rounded-sm inline-block" style={{ backgroundColor: colors?.resteinspeisung ?? "#c4b5fd" }} />
                 davon ins Netz
               </span>
               <span className="font-medium text-violet-500">{fmtKwh(resteinspeisung)}</span>
@@ -457,9 +479,6 @@ function makeForecastShape(color: string, patternId: string) {
     );
   };
 }
-
-const forecastConsShape = makeForecastShape("#10b981", "eeg-fc-cons");
-const forecastGenShape  = makeForecastShape("#6366f1", "eeg-fc-gen");
 
 // Gray cross-hatch marker for periods with no readings at all — visually
 // distinct from the (colored, single-direction) forecast hatch above.
@@ -495,9 +514,21 @@ function MissingHatchDef() {
   );
 }
 
-export function EnergySummaryChart({ data, granularity, forecastDailyTotals, from, to }: EnergySummaryChartProps) {
+export function EnergySummaryChart({
+  data, granularity, forecastDailyTotals, from, to,
+  colorAusgetauscht = "#10b981", colorRestbedarf = "#fbbf24",
+  colorEinspeisungEeg = "#6366f1", colorResteinspeisung = "#c4b5fd",
+}: EnergySummaryChartProps) {
   const mounted = useIsMounted();
   const [containerRef, width] = useContainerWidth();
+  const summaryColors: SummaryChartColors = {
+    ausgetauscht: colorAusgetauscht,
+    restbedarf: colorRestbedarf,
+    einspeisungEeg: colorEinspeisungEeg,
+    resteinspeisung: colorResteinspeisung,
+  };
+  const forecastConsShape = makeForecastShape(colorAusgetauscht, "eeg-fc-cons");
+  const forecastGenShape = makeForecastShape(colorEinspeisungEeg, "eeg-fc-gen");
   const labelFn =
     granularity === "15min" ? intervalLabel :
     granularity === "day"   ? dayLabel :
@@ -590,29 +621,29 @@ export function EnergySummaryChart({ data, granularity, forecastDailyTotals, fro
       {/* Legend */}
       <div className="flex flex-wrap gap-4 mb-4 text-xs text-slate-500">
         <div className="flex items-center gap-1.5">
-          <span className="w-3 h-2.5 rounded-sm inline-block bg-emerald-500" />
+          <span className="w-3 h-2.5 rounded-sm inline-block" style={{ backgroundColor: colorAusgetauscht }} />
           <span>Ausgetauscht <span className="text-slate-400">(EEG-Anteil am Verbrauch)</span></span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-3 h-2.5 rounded-sm inline-block bg-amber-400" />
+          <span className="w-3 h-2.5 rounded-sm inline-block" style={{ backgroundColor: colorRestbedarf }} />
           <span>Restbedarf <span className="text-slate-400">(aus dem Netz)</span></span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-3 h-2.5 rounded-sm inline-block bg-indigo-500" />
+          <span className="w-3 h-2.5 rounded-sm inline-block" style={{ backgroundColor: colorEinspeisungEeg }} />
           <span>Einspeisung EEG <span className="text-slate-400">(in EEG-Pool)</span></span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-3 h-2.5 rounded-sm inline-block bg-violet-300" />
+          <span className="w-3 h-2.5 rounded-sm inline-block" style={{ backgroundColor: colorResteinspeisung }} />
           <span>Resteinspeisung <span className="text-slate-400">(ins Netz)</span></span>
         </div>
         {hasForecast && (
           <>
             <div className="flex items-center gap-1.5">
-              <svg width="12" height="10"><rect width="12" height="10" fill="url(#eeg-fc-cons-legend)" rx={2} /><defs><pattern id="eeg-fc-cons-legend" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="white" fillOpacity={0.55} /><line x1="0" y1="0" x2="0" y2="6" stroke="#10b981" strokeWidth="2.5" strokeOpacity={0.55} /></pattern></defs></svg>
+              <svg width="12" height="10"><rect width="12" height="10" fill="url(#eeg-fc-cons-legend)" rx={2} /><defs><pattern id="eeg-fc-cons-legend" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="white" fillOpacity={0.55} /><line x1="0" y1="0" x2="0" y2="6" stroke={colorAusgetauscht} strokeWidth="2.5" strokeOpacity={0.55} /></pattern></defs></svg>
               <span>Verbrauch <span className="text-slate-400">(Prognose)</span></span>
             </div>
             <div className="flex items-center gap-1.5">
-              <svg width="12" height="10"><rect width="12" height="10" fill="url(#eeg-fc-gen-legend)" rx={2} /><defs><pattern id="eeg-fc-gen-legend" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="white" fillOpacity={0.55} /><line x1="0" y1="0" x2="0" y2="6" stroke="#6366f1" strokeWidth="2.5" strokeOpacity={0.55} /></pattern></defs></svg>
+              <svg width="12" height="10"><rect width="12" height="10" fill="url(#eeg-fc-gen-legend)" rx={2} /><defs><pattern id="eeg-fc-gen-legend" patternUnits="userSpaceOnUse" width="6" height="6" patternTransform="rotate(45)"><rect width="6" height="6" fill="white" fillOpacity={0.55} /><line x1="0" y1="0" x2="0" y2="6" stroke={colorEinspeisungEeg} strokeWidth="2.5" strokeOpacity={0.55} /></pattern></defs></svg>
               <span>Erzeugung <span className="text-slate-400">(Prognose)</span></span>
             </div>
           </>
@@ -637,14 +668,14 @@ export function EnergySummaryChart({ data, granularity, forecastDailyTotals, fro
               tickFormatter={yTickFormatter}
               width={64}
             />
-            <Tooltip content={<EnergySummaryTooltip />} />
+            <Tooltip content={<EnergySummaryTooltip colors={summaryColors} />} />
             {/* Consumption stack (historical + forecast in same stackId so width is consistent) */}
-            <Bar dataKey="Restbedarf"          stackId="cons" fill="#fbbf24"  maxBarSize={40} minPointSize={0} isAnimationActive={false} />
-            <Bar dataKey="Ausgetauscht"        stackId="cons" fill="#10b981"  maxBarSize={40} radius={[3, 3, 0, 0]} minPointSize={0} isAnimationActive={false} />
+            <Bar dataKey="Restbedarf"          stackId="cons" fill={colorRestbedarf}  maxBarSize={40} minPointSize={0} isAnimationActive={false} />
+            <Bar dataKey="Ausgetauscht"        stackId="cons" fill={colorAusgetauscht}  maxBarSize={40} radius={[3, 3, 0, 0]} minPointSize={0} isAnimationActive={false} />
             <Bar dataKey="Verbrauch Prognose"  stackId="cons" shape={forecastConsShape as never} maxBarSize={40} minPointSize={0} isAnimationActive={false} />
             {/* Generation stack */}
-            <Bar dataKey="Resteinspeisung"     stackId="gen"  fill="#c4b5fd"  maxBarSize={40} minPointSize={0} isAnimationActive={false} />
-            <Bar dataKey="Einspeisung EEG"     stackId="gen"  fill="#6366f1"  maxBarSize={40} radius={[3, 3, 0, 0]} minPointSize={0} isAnimationActive={false} />
+            <Bar dataKey="Resteinspeisung"     stackId="gen"  fill={colorResteinspeisung}  maxBarSize={40} minPointSize={0} isAnimationActive={false} />
+            <Bar dataKey="Einspeisung EEG"     stackId="gen"  fill={colorEinspeisungEeg}  maxBarSize={40} radius={[3, 3, 0, 0]} minPointSize={0} isAnimationActive={false} />
             <Bar dataKey="Erzeugung Prognose"  stackId="gen"  shape={forecastGenShape as never} maxBarSize={40} minPointSize={0} isAnimationActive={false} />
             {/* Gap markers — rendered in both stacks so a missing period shows a hatch on either side */}
             <Bar dataKey="Keine Daten"         stackId="cons" shape={MissingBarShape as never} maxBarSize={40} minPointSize={0} isAnimationActive={false} legendType="none" />

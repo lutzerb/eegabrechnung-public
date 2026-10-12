@@ -4,6 +4,7 @@ package sepa
 import (
 	"encoding/xml"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -50,8 +51,9 @@ func GeneratePain001(eeg *domain.EEG, entries []Pain001Entry, execDate time.Time
 
 	var ctrlSum float64
 	for _, tx := range txs {
-		ctrlSum += -sepaPayAmount(tx.Invoice, tx.Member)
+		ctrlSum += roundCents(-sepaPayAmount(tx.Invoice, tx.Member))
 	}
+	ctrlSum = roundCents(ctrlSum)
 
 	type instdAmt struct {
 		Ccy   string `xml:"Ccy,attr"`
@@ -131,7 +133,7 @@ func GeneratePain001(eeg *domain.EEG, entries []Pain001Entry, execDate time.Time
 
 	var txElems []cdtTrfTxInf
 	for _, tx := range txs {
-		amount := -sepaPayAmount(tx.Invoice, tx.Member)
+		amount := roundCents(-sepaPayAmount(tx.Invoice, tx.Member))
 		memberName := memberFullName(tx.Member)
 		ref := invoiceRef(tx.Invoice)
 		var ca cdtrAcct
@@ -228,6 +230,13 @@ func sepaPayAmount(inv *domain.Invoice, m *domain.Member) float64 {
 		return inv.TotalAmount + inv.GenerationVatAmount
 	}
 	return inv.TotalAmount
+}
+
+// roundCents rounds a euro amount to the nearest cent. CtrlSum must be the sum of the
+// already-rounded InstdAmt/Amt values printed per transaction — summing unrounded floats
+// and rounding only the total can drift by a cent from the sum of the printed lines.
+func roundCents(v float64) float64 {
+	return math.Round(v*100) / 100
 }
 
 // isGenerationRC reports whether Reverse Charge (§ 19 Abs. 1d UStG i.V.m. § 2 Z 2 UStBBKV) applies on the generation

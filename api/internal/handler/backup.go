@@ -389,6 +389,30 @@ func (h *BackupHandler) restoreInTx(ctx context.Context, targetEEGID, backupEEGI
 	}
 	defer tx.Rollback(ctx)
 
+	// Deleting tariff schedules nulls members.tariff_schedule_id (ON DELETE SET NULL). When the
+	// members section is not part of this restore, remember the current assignments so they can
+	// be re-applied after the schedules are re-inserted (schedule IDs are preserved).
+	keptAssignments := map[uuid.UUID]uuid.UUID{}
+	if included[SectionTariffSchedules] && !included[SectionMembers] {
+		arows, aerr := tx.Query(ctx,
+			`SELECT id, tariff_schedule_id FROM members WHERE eeg_id = $1 AND tariff_schedule_id IS NOT NULL`, targetEEGID)
+		if aerr != nil {
+			return summary, fmt.Errorf("read tariff assignments: %w", aerr)
+		}
+		for arows.Next() {
+			var mid, sid uuid.UUID
+			if err := arows.Scan(&mid, &sid); err != nil {
+				arows.Close()
+				return summary, fmt.Errorf("scan tariff assignment: %w", err)
+			}
+			keptAssignments[mid] = sid
+		}
+		arows.Close()
+		if err := arows.Err(); err != nil {
+			return summary, fmt.Errorf("read tariff assignments: %w", err)
+		}
+	}
+
 	// Delete existing EEG data in FK-safe order, only for included sections.
 	// members/meter_points are only blind-deleted on a full restore: partial
 	// deletes would cascade into non-included sections (see restoreInTx doc).
@@ -510,23 +534,26 @@ func (h *BackupHandler) restoreInTx(ctx context.Context, targetEEGID, backupEEGI
 			if isFull {
 				_, err = tx.Exec(ctx, `INSERT INTO meter_points
 					(id, member_id, eeg_id, zaehlpunkt, energierichtung, verteilungsmodell,
-					 zugeteilte_menge_pct, status, registriert_seit, created_at)
-					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+					 zugeteilte_menge_pct, status, registriert_seit, created_at, strasse, plz, ort)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
 					mp.ID, mp.MemberID, remap(mp.EegID), mp.Zaehlpunkt, mp.Energierichtung,
 					mp.Verteilungsmodell, mp.ZugeteilteMenugePct, mp.Status, mp.RegistriertSeit, mp.CreatedAt,
+					mp.Strasse, mp.Plz, mp.Ort,
 				)
 			} else {
 				_, err = tx.Exec(ctx, `INSERT INTO meter_points
 					(id, member_id, eeg_id, zaehlpunkt, energierichtung, verteilungsmodell,
-					 zugeteilte_menge_pct, status, registriert_seit, created_at)
-					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+					 zugeteilte_menge_pct, status, registriert_seit, created_at, strasse, plz, ort)
+					VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 					ON CONFLICT (id) DO UPDATE SET
 						member_id = EXCLUDED.member_id, eeg_id = EXCLUDED.eeg_id, zaehlpunkt = EXCLUDED.zaehlpunkt,
 						energierichtung = EXCLUDED.energierichtung, verteilungsmodell = EXCLUDED.verteilungsmodell,
 						zugeteilte_menge_pct = EXCLUDED.zugeteilte_menge_pct, status = EXCLUDED.status,
-						registriert_seit = EXCLUDED.registriert_seit`,
+						registriert_seit = EXCLUDED.registriert_seit,
+						strasse = EXCLUDED.strasse, plz = EXCLUDED.plz, ort = EXCLUDED.ort`,
 					mp.ID, mp.MemberID, remap(mp.EegID), mp.Zaehlpunkt, mp.Energierichtung,
 					mp.Verteilungsmodell, mp.ZugeteilteMenugePct, mp.Status, mp.RegistriertSeit, mp.CreatedAt,
+					mp.Strasse, mp.Plz, mp.Ort,
 				)
 			}
 			if err != nil {
@@ -551,17 +578,30 @@ func (h *BackupHandler) restoreInTx(ctx context.Context, targetEEGID, backupEEGI
 
 	// Restore tariff schedules and entries.
 	if included[SectionTariffSchedules] {
+		// Legacy backups predate is_default: there, the single active EEG-wide plan was the default.
+		anyDefault, legacyDefaultSet := false, false
 		for _, s := range backup.TariffSchedules {
+			if s.IsDefault {
+				anyDefault = true
+			}
+		}
+		for _, s := range backup.TariffSchedules {
+			isDefault := s.IsDefault
+			if !anyDefault && !legacyDefaultSet && s.MemberID == nil && s.IsActive {
+				isDefault, legacyDefaultSet = true, true
+			}
 			_, err = tx.Exec(ctx, `INSERT INTO tariff_schedules
 				(id, eeg_id, member_id, name, granularity, is_active, created_at,
 				 free_kwh_override, discount_pct_override, meter_fee_eur_override,
 				 participation_fee_eur_override, zaehlpunkts_gebuehr_eur_override,
-				 servicegebuehr_bezug_ct_kwh_override, servicegebuehr_einspeisung_ct_kwh_override)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+				 servicegebuehr_bezug_ct_kwh_override, servicegebuehr_einspeisung_ct_kwh_override,
+				 is_default)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
 				s.ID, remap(s.EegID), s.MemberID, s.Name, s.Granularity, s.IsActive, s.CreatedAt,
 				s.FreeKwhOverride, s.DiscountPctOverride, s.MeterFeeEurOverride,
 				s.ParticipationFeeEurOverride, s.ZaehlpunktsGebuehrOverride,
 				s.ServicegebuehrBezugCtKwhOverride, s.ServicegebuehrEinspeisungCtKwhOverride,
+				isDefault,
 			)
 			if err != nil {
 				return summary, fmt.Errorf("insert tariff_schedule %s: %w", s.ID, err)
@@ -578,6 +618,33 @@ func (h *BackupHandler) restoreInTx(ctx context.Context, targetEEGID, backupEEGI
 			}
 		}
 		summary.Restored[SectionTariffSchedules] = len(backup.TariffSchedules)
+	}
+
+	// Re-apply member → tariff plan assignments now that members and schedules both exist.
+	// Backup members win when the members section is restored; otherwise the assignments kept
+	// from before the schedules were replaced are put back. The EXISTS guard skips assignments
+	// whose schedule is not present in the target.
+	assign := func(memberID, scheduleID uuid.UUID) error {
+		_, err := tx.Exec(ctx,
+			`UPDATE members SET tariff_schedule_id = $2
+			 WHERE id = $1 AND eeg_id = $3 AND EXISTS (
+			   SELECT 1 FROM tariff_schedules WHERE id = $2 AND eeg_id = $3 AND member_id IS NULL)`,
+			memberID, scheduleID, targetEEGID)
+		return err
+	}
+	if included[SectionMembers] {
+		for _, m := range backup.Members {
+			if m.TariffScheduleID != nil {
+				if err := assign(m.ID, *m.TariffScheduleID); err != nil {
+					return summary, fmt.Errorf("restore tariff assignment for member %s: %w", m.ID, err)
+				}
+			}
+		}
+	}
+	for mid, sid := range keptAssignments {
+		if err := assign(mid, sid); err != nil {
+			return summary, fmt.Errorf("restore tariff assignment for member %s: %w", mid, err)
+		}
 	}
 
 	// Restore billing runs.

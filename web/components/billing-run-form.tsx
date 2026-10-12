@@ -94,7 +94,7 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
   });
   const [selectedQuarter, setSelectedQuarter] = useState<string>("");
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>([]);
+  const [selectedMemberIds, setSelectedMemberIds] = useState<string[]>(() => members.map((m) => m.id));
   const [billingType, setBillingType] = useState("all");
   const [force, setForce] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -132,7 +132,7 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
         force: forceOverride ?? force,
         preview,
       };
-      if (selectedMemberIds.length > 0) body.member_ids = selectedMemberIds;
+      if (selectedMemberIds.length < members.length) body.member_ids = selectedMemberIds;
       if (billingType !== "all") body.billing_type = billingType;
 
       const res = await fetch(`/api/eegs/${eegId}/billing/run`, {
@@ -462,7 +462,7 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
 
           <button
             type="button"
-            disabled={loading || !periodStart || !periodEnd}
+            disabled={loading || !periodStart || !periodEnd || selectedMemberIds.length === 0}
             onClick={(e) => handleSubmit(e as unknown as React.FormEvent, undefined, true)}
             className="px-5 py-2.5 bg-slate-100 text-slate-700 font-medium rounded-lg hover:bg-slate-200 disabled:opacity-50 disabled:cursor-not-allowed transition-colors whitespace-nowrap"
           >
@@ -470,7 +470,7 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
           </button>
           <button
             type="submit"
-            disabled={loading || !periodStart || !periodEnd}
+            disabled={loading || !periodStart || !periodEnd || selectedMemberIds.length === 0}
             className="px-6 py-2.5 bg-amber-600 text-white font-medium rounded-lg hover:bg-amber-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 whitespace-nowrap"
           >
             {loading ? (
@@ -507,7 +507,7 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
           Erweiterte Optionen
-          {(selectedMemberIds.length > 0 || billingType !== "all") && (
+          {(selectedMemberIds.length < members.length || billingType !== "all") && (
             <span className="ml-1 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">aktiv</span>
           )}
         </button>
@@ -544,17 +544,23 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
                 <div className="flex items-center justify-between mb-2">
                   <label className="text-sm font-medium text-slate-700">
                     Mitglieder einschränken
-                    <span className="ml-1 text-xs text-slate-400 font-normal">(leer = alle)</span>
                   </label>
-                  {selectedMemberIds.length > 0 && (
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedMemberIds(members.map((m) => m.id))}
+                      className="text-xs text-slate-400 hover:text-slate-600"
+                    >
+                      Alle markieren
+                    </button>
                     <button
                       type="button"
                       onClick={() => setSelectedMemberIds([])}
                       className="text-xs text-slate-400 hover:text-slate-600"
                     >
-                      Auswahl aufheben
+                      Niemanden markieren
                     </button>
-                  )}
+                  </div>
                 </div>
                 <div className="space-y-1.5 max-h-40 overflow-y-auto border border-slate-200 rounded-lg p-3">
                   {members.map((m) => (
@@ -572,11 +578,15 @@ export default function BillingRunForm({ eegId, members }: BillingRunFormProps) 
                     </label>
                   ))}
                 </div>
-                {selectedMemberIds.length > 0 && (
+                {selectedMemberIds.length === 0 ? (
+                  <p className="text-xs text-red-600 mt-1">
+                    Bitte mindestens ein Mitglied auswählen.
+                  </p>
+                ) : selectedMemberIds.length < members.length ? (
                   <p className="text-xs text-amber-600 mt-1">
                     {selectedMemberIds.length} von {members.length} Mitgliedern ausgewählt
                   </p>
-                )}
+                ) : null}
               </div>
             )}
           </div>

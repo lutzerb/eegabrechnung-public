@@ -219,8 +219,10 @@ export default function AccountingExportPage() {
           <li>Status (Entwurf / Versendet / Bezahlt)</li>
         </ul>
         <p className="text-xs text-blue-700 mt-2">
-          Für DATEV: Debitorenkonten werden aus Mitgliedsnummern + Basis-Kontonummer gebildet.
-          Erlös- und Aufwandskonten sind in den EEG-Einstellungen konfigurierbar.
+          Für DATEV: Debitorenkonto ist das Kundenkonto des Mitglieds, sofern vergeben
+          (siehe „Kundenkonten" in der Verwaltung) — sonst ersatzweise Mitgliedsnummer +
+          Basis-Kontonummer. Erlös- und Aufwandskonten sind in den EEG-Einstellungen
+          konfigurierbar.
         </p>
       </div>
     </div>

@@ -68,6 +68,9 @@ export default async function EditMeterPointPage({ params, searchParams }: Props
     const abgemeldet_am_raw = formData.get("abgemeldet_am") as string;
     const generation_type = formData.get("generation_type") as string;
     const notes = formData.get("notes") as string;
+    const strasse = ((formData.get("strasse") as string) || "").trim();
+    const plz = ((formData.get("plz") as string) || "").trim();
+    const ort = ((formData.get("ort") as string) || "").trim();
 
     const abgemeldet_am_clear = formData.get("abgemeldet_am_clear") as string;
     // "clear" checkbox takes priority; empty date string = keep existing
@@ -87,6 +90,9 @@ export default async function EditMeterPointPage({ params, searchParams }: Props
         abgemeldet_am,
         generation_type: generation_type || undefined,
         notes: notes ?? "",
+        strasse,
+        plz,
+        ort,
       });
     } catch (err: unknown) {
       const msg = (err as { message?: string }).message || "Aktualisierung fehlgeschlagen.";
@@ -282,6 +288,27 @@ export default async function EditMeterPointPage({ params, searchParams }: Props
               className={`${inputClass} resize-none`}
             />
             <p className="text-xs text-slate-400 mt-1">Nur intern sichtbar.</p>
+          </div>
+
+          <div className="border-t border-slate-100 pt-4 space-y-4">
+            <div>
+              <p className="text-sm font-medium text-slate-700">Standort (optional)</p>
+              <p className="text-xs text-slate-400 mt-0.5">Nur zur Information, z. B. wenn ein Mitglied Zählpunkte an verschiedenen Orten hat.</p>
+            </div>
+            <div>
+              <label className={labelClass}>Straße</label>
+              <input type="text" name="strasse" placeholder="Hauptstraße 1" defaultValue={mp.strasse || ""} className={inputClass} />
+            </div>
+            <div className="grid grid-cols-3 gap-4">
+              <div>
+                <label className={labelClass}>PLZ</label>
+                <input type="text" name="plz" placeholder="1010" defaultValue={mp.plz || ""} className={inputClass} />
+              </div>
+              <div className="col-span-2">
+                <label className={labelClass}>Ort</label>
+                <input type="text" name="ort" placeholder="Wien" defaultValue={mp.ort || ""} className={inputClass} />
+              </div>
+            </div>
           </div>
         </div>
 

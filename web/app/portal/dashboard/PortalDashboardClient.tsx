@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { eegDisplayName } from "@/lib/eeg-display-name";
+import PortalEEGSwitcher from "./PortalEEGSwitcher";
 
 const PortalEnergyChart = dynamic(() => import("./PortalEnergyChart"), { ssr: false });
 const PortalCommunityStats = dynamic(() => import("./PortalCommunityStats"), { ssr: false });
@@ -423,13 +424,15 @@ export default function PortalDashboardClient({ member, eeg, invoices, documents
     <div className="min-h-screen bg-slate-50">
       {/* Header */}
       <header className="bg-white border-b border-slate-200 px-4 sm:px-8 py-4">
-        <div className="max-w-6xl mx-auto flex items-center justify-between">
+        <div className="max-w-6xl mx-auto flex items-center justify-between gap-4">
           <div>
-            <p className="text-xs text-slate-500">{eegDisplayName(eeg)}</p>
             <h1 className="text-lg font-bold text-slate-900">{memberName}</h1>
             {member.mitglieds_nr && (
               <p className="text-xs text-slate-400 font-mono">Mitgl.-Nr. {member.mitglieds_nr}</p>
             )}
+          </div>
+          <div className="flex-1 flex justify-center">
+            <PortalEEGSwitcher currentId={eeg.id} currentName={eegDisplayName(eeg)} />
           </div>
           <button
             onClick={handleLogout}

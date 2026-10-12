@@ -28,6 +28,9 @@ type EDAHandler struct {
 	edaErrorRepo     *repository.EDAErrorRepository
 	workerStatusRepo *repository.EDAWorkerStatusRepository
 	readingRepo      *repository.ReadingRepository
+	edaMsgRepo       *repository.EDAMessageRepository
+	participRepo     *repository.ParticipationRepository
+	memberRepo       *repository.MemberRepository
 	edaWorkerURL     string
 }
 
@@ -39,6 +42,9 @@ func NewEDAHandler(
 	edaErrorRepo *repository.EDAErrorRepository,
 	workerStatusRepo *repository.EDAWorkerStatusRepository,
 	readingRepo *repository.ReadingRepository,
+	edaMsgRepo *repository.EDAMessageRepository,
+	participRepo *repository.ParticipationRepository,
+	memberRepo *repository.MemberRepository,
 	edaWorkerURL string,
 ) *EDAHandler {
 	return &EDAHandler{
@@ -49,6 +55,9 @@ func NewEDAHandler(
 		edaErrorRepo:     edaErrorRepo,
 		workerStatusRepo: workerStatusRepo,
 		readingRepo:      readingRepo,
+		edaMsgRepo:       edaMsgRepo,
+		participRepo:     participRepo,
+		memberRepo:       memberRepo,
 		edaWorkerURL:     edaWorkerURL,
 	}
 }
@@ -127,6 +136,7 @@ type anmeldungRequest struct {
 	ShareType           string  `json:"share_type"`           // GC, RC_R, RC_L, CC …
 	ParticipationFactor float64 `json:"participation_factor"` // 0..100
 	EnergyDirection     string  `json:"energy_direction"`     // CONSUMPTION or GENERATION
+	Force               bool    `json:"force"`                // skip the already-active-Anmeldung check (confirmed by the user)
 }
 
 // Anmeldung godoc
@@ -188,9 +198,18 @@ func (h *EDAHandler) Anmeldung(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if active, err := h.edaProcRepo.HasActiveAnmeldung(r.Context(), eegID, req.Zaehlpunkt); err == nil && active {
-		jsonError(w, "Für diesen Zählpunkt läuft bereits eine Anmeldung oder sie ist bereits bestätigt — bitte Status abwarten statt erneut anzumelden", http.StatusConflict)
-		return
+	if !req.Force {
+		if existing, err := h.edaProcRepo.GetActiveAnmeldung(r.Context(), eegID, req.Zaehlpunkt); err == nil && existing != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"error":                 "Für diesen Zählpunkt läuft bereits eine Anmeldung oder sie ist bereits bestätigt — bitte Status abwarten statt erneut anzumelden",
+				"existing_process_id":   existing.ID,
+				"existing_status":       existing.Status,
+				"existing_initiated_at": existing.InitiatedAt.Format(time.RFC3339),
+			})
+			return
+		}
 	}
 
 	viennaLoc, _ := time.LoadLocation("Europe/Vienna")
@@ -278,15 +297,15 @@ func (h *EDAHandler) Anmeldung(w http.ResponseWriter, r *http.Request) {
 	deadline := now.AddDate(0, 2, 0) // 2 months (EAG §16e Abs. 1)
 
 	proc := &domain.EDAProcess{
-		EegID:               eegID,
-		MeterPointID:        mpID,
-		ProcessType:         "EC_REQ_ONL",
-		Status:              "pending",
-		ConversationID:      convID,
-		Zaehlpunkt:          req.Zaehlpunkt,
-		ShareType:           req.ShareType,
-		InitiatedAt:         now,
-		DeadlineAt:          &deadline,
+		EegID:          eegID,
+		MeterPointID:   mpID,
+		ProcessType:    "EC_REQ_ONL",
+		Status:         "pending",
+		ConversationID: convID,
+		Zaehlpunkt:     req.Zaehlpunkt,
+		ShareType:      req.ShareType,
+		InitiatedAt:    now,
+		DeadlineAt:     &deadline,
 	}
 	if !validFrom.IsZero() {
 		proc.ValidFrom = &validFrom
@@ -453,6 +472,25 @@ func (h *EDAHandler) TeilnahmefaktorAendern(w http.ResponseWriter, r *http.Reque
 		netzbetreiberTo = resolved
 	}
 
+	// Scoped to THIS EEG — see comment in Anmeldung above on why an unscoped lookup
+	// is unsafe when the same Zählpunkt is active in another EEG.
+	//
+	// DateActivate ("Versorgt seit") must be the Zählpunkt's actual EEG
+	// registration date, not the new ValidFrom of this factor change — it was
+	// previously sent as validFrom (a future date), which the Netzbetreiber
+	// rejects with ABLEHNUNG_CPF ResponseCode 82 ("Prozessdatum falsch"), since
+	// "supplied since" can't lie in the future. Falls back to validFrom only
+	// when the meter point (or its registriert_seit) can't be resolved.
+	var mpID *uuid.UUID
+	dateActivate := validFrom
+	if mp, err := h.mpRepo.GetLatestByZaehlpunktInEEG(r.Context(), eegID, req.Zaehlpunkt); err == nil {
+		id := mp.ID
+		mpID = &id
+		if mp.RegistriertSeit != nil {
+			dateActivate = *mp.RegistriertSeit
+		}
+	}
+
 	convID := uuid.NewString()
 	xmlBody, err := edaxml.BuildECMPList(edaxml.ECMPListParams{
 		From:            eeg.EdaMarktpartnerID,
@@ -466,7 +504,7 @@ func (h *EDAHandler) TeilnahmefaktorAendern(w http.ResponseWriter, r *http.Reque
 		MeteringPoint:   req.Zaehlpunkt,
 		DateFrom:        validFrom,
 		DateTo:          dateTo,
-		DateActivate:    validFrom,
+		DateActivate:    dateActivate,
 		EnergyDirection: energyDirection,
 		ECPartFact:      req.ParticipationFactor,
 		ECShare:         req.ECShare,
@@ -482,14 +520,6 @@ func (h *EDAHandler) TeilnahmefaktorAendern(w http.ResponseWriter, r *http.Reque
 	if err != nil {
 		jsonError(w, fmt.Sprintf("build XML: %v", err), http.StatusInternalServerError)
 		return
-	}
-
-	// Scoped to THIS EEG — see comment in Anmeldung above on why an unscoped lookup
-	// is unsafe when the same Zählpunkt is active in another EEG.
-	var mpID *uuid.UUID
-	if mp, err := h.mpRepo.GetLatestByZaehlpunktInEEG(r.Context(), eegID, req.Zaehlpunkt); err == nil {
-		id := mp.ID
-		mpID = &id
 	}
 
 	factor := req.ParticipationFactor

@@ -1,0 +1,4 @@
+ALTER TABLE meter_points
+  DROP COLUMN IF EXISTS strasse,
+  DROP COLUMN IF EXISTS plz,
+  DROP COLUMN IF EXISTS ort;

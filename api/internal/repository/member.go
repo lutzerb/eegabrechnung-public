@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"time"
 
 	"github.com/google/uuid"
@@ -43,20 +44,20 @@ func (r *MemberRepository) Upsert(ctx context.Context, m *domain.Member) error {
 	).Scan(&m.ID, &m.UidNummer, &m.UseVat, &m.VatPct, &m.Status, &m.CreatedAt)
 }
 
-const memberCols = `id, eeg_id, mitglieds_nr, name1, name2, email, iban, strasse, plz, ort,
+const memberCols = `id, eeg_id, mitglieds_nr, kundenkonto, name1, name2, email, iban, strasse, plz, ort,
 	business_role, uid_nummer, use_vat, vat_pct, status, beitritt_datum, austritt_datum,
 	sepa_mandate_signed_at, sepa_mandate_signed_ip, sepa_mandate_text, created_at,
-	referral_code, referred_by_member_id`
+	referral_code, referred_by_member_id, tariff_schedule_id`
 
 func scanMember(row interface{ Scan(...any) error }, m *domain.Member) error {
 	var mandateIP *string
 	var mandateText *string
 	var referralCode *string
 	err := row.Scan(
-		&m.ID, &m.EegID, &m.MitgliedsNr, &m.Name1, &m.Name2, &m.Email, &m.IBAN, &m.Strasse, &m.Plz, &m.Ort,
+		&m.ID, &m.EegID, &m.MitgliedsNr, &m.Kundenkonto, &m.Name1, &m.Name2, &m.Email, &m.IBAN, &m.Strasse, &m.Plz, &m.Ort,
 		&m.BusinessRole, &m.UidNummer, &m.UseVat, &m.VatPct, &m.Status, &m.BeitrittsDatum, &m.AustrittsDatum,
 		&m.SepaMandateSignedAt, &mandateIP, &mandateText, &m.CreatedAt,
-		&referralCode, &m.ReferredByMemberID,
+		&referralCode, &m.ReferredByMemberID, &m.TariffScheduleID,
 	)
 	if mandateIP != nil {
 		m.SepaMandateSignedIP = *mandateIP
@@ -198,13 +199,13 @@ func (r *MemberRepository) Create(ctx context.Context, m *domain.Member) error {
 	if m.Status == "" {
 		m.Status = "ACTIVE"
 	}
-	q := `INSERT INTO members (eeg_id, mitglieds_nr, name1, name2, email, iban, strasse, plz, ort, business_role, uid_nummer, use_vat, vat_pct, status, beitritt_datum, austritt_datum)
-	      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+	q := `INSERT INTO members (eeg_id, mitglieds_nr, kundenkonto, name1, name2, email, iban, strasse, plz, ort, business_role, uid_nummer, use_vat, vat_pct, status, beitritt_datum, austritt_datum, tariff_schedule_id)
+	      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 	      RETURNING id, created_at`
 	return r.db.QueryRow(ctx, q,
-		m.EegID, m.MitgliedsNr, m.Name1, m.Name2, m.Email, m.IBAN, m.Strasse, m.Plz, m.Ort,
+		m.EegID, m.MitgliedsNr, m.Kundenkonto, m.Name1, m.Name2, m.Email, m.IBAN, m.Strasse, m.Plz, m.Ort,
 		m.BusinessRole, m.UidNummer, m.UseVat, m.VatPct, m.Status,
-		m.BeitrittsDatum, m.AustrittsDatum,
+		m.BeitrittsDatum, m.AustrittsDatum, m.TariffScheduleID,
 	).Scan(&m.ID, &m.CreatedAt)
 }
 
@@ -215,17 +216,151 @@ func (r *MemberRepository) Update(ctx context.Context, m *domain.Member) error {
 	q := `UPDATE members SET
 	        name1=$1, name2=$2, email=$3, iban=$4, strasse=$5, plz=$6, ort=$7,
 	        business_role=$8, mitglieds_nr=$9, uid_nummer=$10, use_vat=$11, vat_pct=$12, status=$13,
-	        beitritt_datum=$14, austritt_datum=$15
-	      WHERE id=$16`
+	        beitritt_datum=$14, austritt_datum=$15, tariff_schedule_id=$16, kundenkonto=$17
+	      WHERE id=$18`
 	_, err := r.db.Exec(ctx, q,
 		m.Name1, m.Name2, m.Email, m.IBAN, m.Strasse, m.Plz, m.Ort,
 		m.BusinessRole, m.MitgliedsNr, m.UidNummer, m.UseVat, m.VatPct, m.Status,
-		m.BeitrittsDatum, m.AustrittsDatum, m.ID,
+		m.BeitrittsDatum, m.AustrittsDatum, m.TariffScheduleID, m.Kundenkonto, m.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update: %w", err)
 	}
 	return nil
+}
+
+// NextKundenkontoSuggestion returns a suggested next Kundenkonto value for an EEG:
+// one more than the highest existing numeric Kundenkonto in that EEG, floored at
+// eegs.kundenkonto_start. Purely advisory (used to prefill the create-member form) —
+// the field stays freely editable, so no row locking is needed here. There is
+// deliberately no cross-EEG or org-wide sequence; each EEG is numbered independently.
+func (r *MemberRepository) NextKundenkontoSuggestion(ctx context.Context, eegID uuid.UUID) (string, error) {
+	var start int
+	if err := r.db.QueryRow(ctx, `SELECT kundenkonto_start FROM eegs WHERE id = $1`, eegID).Scan(&start); err != nil {
+		return "", fmt.Errorf("load kundenkonto_start: %w", err)
+	}
+	var currentMax int
+	q := `SELECT COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(kundenkonto, '[^0-9]', '', 'g'), '') AS int)), 0)
+	      FROM members WHERE eeg_id = $1`
+	if err := r.db.QueryRow(ctx, q, eegID).Scan(&currentMax); err != nil {
+		return "", fmt.Errorf("next kundenkonto suggestion: %w", err)
+	}
+	next := currentMax + 1
+	if next < start {
+		next = start
+	}
+	return strconv.Itoa(next), nil
+}
+
+// BulkAssignKundenkonto assigns sequential Kundenkonto numbers to every member of
+// eegID that doesn't have one yet (optionally restricted to memberIDs), starting
+// after the current max and floored at the EEG's own kundenkonto_start — never a
+// cross-EEG or org-wide sequence. Locks the eegs row for the duration of the
+// transaction, mirroring InvoiceRepository.nextNumberTx's locking pattern.
+func (r *MemberRepository) BulkAssignKundenkonto(ctx context.Context, eegID uuid.UUID, memberIDs []uuid.UUID) ([]domain.Member, error) {
+	tx, err := r.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin kundenkonto tx: %w", err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+
+	var start int
+	if err := tx.QueryRow(ctx, `SELECT kundenkonto_start FROM eegs WHERE id=$1 FOR UPDATE`, eegID).Scan(&start); err != nil {
+		return nil, fmt.Errorf("lock eeg for kundenkonto: %w", err)
+	}
+
+	var currentMax int
+	if err := tx.QueryRow(ctx,
+		`SELECT COALESCE(MAX(CAST(NULLIF(REGEXP_REPLACE(kundenkonto, '[^0-9]', '', 'g'), '') AS int)), 0)
+		 FROM members WHERE eeg_id = $1`, eegID).Scan(&currentMax); err != nil {
+		return nil, fmt.Errorf("query current max kundenkonto: %w", err)
+	}
+	next := currentMax + 1
+	if next < start {
+		next = start
+	}
+
+	args := []any{eegID}
+	where := "eeg_id = $1 AND kundenkonto = ''"
+	if len(memberIDs) > 0 {
+		args = append(args, memberIDs)
+		where += fmt.Sprintf(" AND id = ANY($%d)", len(args))
+	}
+	rows, err := tx.Query(ctx, `SELECT `+memberCols+` FROM members WHERE `+where+` ORDER BY mitglieds_nr FOR UPDATE`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("select members for kundenkonto: %w", err)
+	}
+	var targets []domain.Member
+	for rows.Next() {
+		var m domain.Member
+		if err := scanMember(rows, &m); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		targets = append(targets, m)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	assigned := make([]domain.Member, 0, len(targets))
+	for _, m := range targets {
+		m.Kundenkonto = strconv.Itoa(next)
+		next++
+		if _, err := tx.Exec(ctx, `UPDATE members SET kundenkonto=$1 WHERE id=$2`, m.Kundenkonto, m.ID); err != nil {
+			return nil, fmt.Errorf("assign kundenkonto to %s: %w", m.ID, err)
+		}
+		assigned = append(assigned, m)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit kundenkonto tx: %w", err)
+	}
+	return assigned, nil
+}
+
+// IsAssignableTariff reports whether scheduleID is an active EEG-wide (non-Individualtarif)
+// plan of the given EEG, i.e. a valid target for members.tariff_schedule_id.
+func (r *MemberRepository) IsAssignableTariff(ctx context.Context, eegID, scheduleID uuid.UUID) (bool, error) {
+	var ok bool
+	err := r.db.QueryRow(ctx,
+		`SELECT EXISTS(SELECT 1 FROM tariff_schedules WHERE id = $1 AND eeg_id = $2 AND member_id IS NULL AND is_active)`,
+		scheduleID, eegID).Scan(&ok)
+	return ok, err
+}
+
+// EffectiveTariffs returns, per member of the EEG, the tariff plan that is valid right now:
+// an active Individualtarif, else the assigned EEG-wide plan, else the Standardtarif.
+// Source "none" means no plan applies (flat EEG prices).
+func (r *MemberRepository) EffectiveTariffs(ctx context.Context, eegID uuid.UUID) (map[uuid.UUID]domain.EffectiveTariff, error) {
+	rows, err := r.db.Query(ctx, `
+		SELECT m.id,
+		       CASE WHEN ind.id IS NOT NULL THEN 'individual'
+		            WHEN asg.id IS NOT NULL THEN 'assigned'
+		            WHEN def.id IS NOT NULL THEN 'default'
+		            ELSE 'none' END,
+		       COALESCE(ind.id, asg.id, def.id),
+		       COALESCE(ind.name, asg.name, def.name, '')
+		FROM members m
+		LEFT JOIN tariff_schedules ind ON ind.member_id = m.id AND ind.is_active
+		LEFT JOIN tariff_schedules asg ON asg.id = m.tariff_schedule_id AND asg.is_active AND asg.member_id IS NULL
+		LEFT JOIN tariff_schedules def ON def.eeg_id = m.eeg_id AND def.is_default AND def.member_id IS NULL
+		WHERE m.eeg_id = $1`, eegID)
+	if err != nil {
+		return nil, fmt.Errorf("query: %w", err)
+	}
+	defer rows.Close()
+	result := make(map[uuid.UUID]domain.EffectiveTariff)
+	for rows.Next() {
+		var memberID uuid.UUID
+		var et domain.EffectiveTariff
+		if err := rows.Scan(&memberID, &et.Source, &et.ScheduleID, &et.Name); err != nil {
+			return nil, fmt.Errorf("scan: %w", err)
+		}
+		result[memberID] = et
+	}
+	return result, rows.Err()
 }
 
 // ActivateByMeterPoint sets the member's status to ACTIVE when an EDA Anmeldung

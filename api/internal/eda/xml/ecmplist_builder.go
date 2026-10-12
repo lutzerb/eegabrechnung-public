@@ -187,8 +187,13 @@ func BuildECMPList(p ECMPListParams) (string, error) {
 		ProcessDir: ecmpProcessDirXML{
 			MessageID:      msgID,
 			ConversationID: convID,
-			ProcessDate:    now.Format(ecmpDateLayout),
-			ECID:           p.ECID,
+			// ProcessDate must equal DateFrom ("nächster Kalendertag"), not the
+			// send date — confirmed against the eegfaktura-eda-xp reference
+			// implementation (MessageHelper.getProcessDate == DateFrom == today+1).
+			// Response code 82 "Prozessdatum falsch" was triggered on every one of
+			// our live attempts because this used to be `now` (the send day).
+			ProcessDate: p.DateFrom.Format(ecmpDateLayout),
+			ECID:        p.ECID,
 			ECType:         p.ECType,
 			ECDisModel:     p.ECDisModel,
 			MPListData: ecmpMPListDataXML{

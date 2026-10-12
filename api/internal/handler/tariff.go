@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -14,10 +15,11 @@ import (
 type TariffHandler struct {
 	tariffRepo *repository.TariffRepository
 	eegRepo    *repository.EEGRepository
+	memberRepo *repository.MemberRepository
 }
 
-func NewTariffHandler(tariffRepo *repository.TariffRepository, eegRepo *repository.EEGRepository) *TariffHandler {
-	return &TariffHandler{tariffRepo: tariffRepo, eegRepo: eegRepo}
+func NewTariffHandler(tariffRepo *repository.TariffRepository, eegRepo *repository.EEGRepository, memberRepo *repository.MemberRepository) *TariffHandler {
+	return &TariffHandler{tariffRepo: tariffRepo, eegRepo: eegRepo, memberRepo: memberRepo}
 }
 
 // verifyScheduleOwnership loads the schedule and confirms it belongs to eegID and to the
@@ -25,20 +27,33 @@ func NewTariffHandler(tariffRepo *repository.TariffRepository, eegRepo *reposito
 // Individualtarif). Returns false — after writing a 404 — for a missing or foreign-scoped
 // schedule, so a schedule UUID from another tenant can't be read or mutated.
 func (h *TariffHandler) verifyScheduleOwnership(w http.ResponseWriter, r *http.Request, scheduleID, eegID uuid.UUID, memberID *uuid.UUID) bool {
+	_, ok := h.loadOwnedSchedule(w, r, scheduleID, eegID, memberID)
+	return ok
+}
+
+// loadOwnedSchedule is verifyScheduleOwnership returning the loaded schedule.
+func (h *TariffHandler) loadOwnedSchedule(w http.ResponseWriter, r *http.Request, scheduleID, eegID uuid.UUID, memberID *uuid.UUID) (*domain.TariffSchedule, bool) {
 	s, err := h.tariffRepo.GetWithEntries(r.Context(), scheduleID)
 	if err != nil || s == nil || s.EegID != eegID {
 		jsonError(w, "schedule not found", http.StatusNotFound)
-		return false
+		return nil, false
 	}
 	switch {
 	case memberID == nil && s.MemberID != nil:
 		jsonError(w, "schedule not found", http.StatusNotFound)
-		return false
+		return nil, false
 	case memberID != nil && (s.MemberID == nil || *s.MemberID != *memberID):
 		jsonError(w, "schedule not found", http.StatusNotFound)
-		return false
+		return nil, false
 	}
-	return true
+	return s, true
+}
+
+// hasOverrides reports whether any fee override is set.
+func (o tariffOverrides) hasOverrides() bool {
+	return o.FreeKwhOverride != nil || o.DiscountPctOverride != nil || o.MeterFeeEurOverride != nil ||
+		o.ParticipationFeeEurOverride != nil || o.ZaehlpunktsGebuehrOverride != nil ||
+		o.ServicegebuehrBezugCtKwhOverride != nil || o.ServicegebuehrEinspeisungCtKwhOverride != nil
 }
 
 // optionalMemberID reads the "memberID" chi URL param when the route is nested under a member
@@ -55,9 +70,9 @@ func optionalMemberID(r *http.Request) (*uuid.UUID, error) {
 	return &id, nil
 }
 
-// tariffOverrides is the shared set of nullable Individualtarif override fields accepted by
-// CreateSchedule/UpdateSchedule. nil = fall back to the EEG default. Ignored for EEG-wide
-// (non-member) schedules.
+// tariffOverrides is the shared set of nullable fee override fields accepted by
+// CreateSchedule/UpdateSchedule on Individualtarife and on non-default EEG-wide plans.
+// nil = fall back to the EEG default. Not allowed on the Standardtarif.
 type tariffOverrides struct {
 	FreeKwhOverride                        *float64 `json:"free_kwh_override,omitempty"`
 	DiscountPctOverride                    *float64 `json:"discount_pct_override,omitempty"`
@@ -145,6 +160,13 @@ func (h *TariffHandler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "name is required", http.StatusBadRequest)
 		return
 	}
+	if memberID != nil {
+		m, mErr := h.memberRepo.GetByID(r.Context(), *memberID)
+		if mErr != nil || m.EegID != eegID {
+			jsonError(w, "member not found", http.StatusNotFound)
+			return
+		}
+	}
 	valid := map[string]bool{"annual": true, "monthly": true, "daily": true, "quarter_hour": true}
 	if !valid[req.Granularity] {
 		req.Granularity = "monthly"
@@ -155,15 +177,13 @@ func (h *TariffHandler) CreateSchedule(w http.ResponseWriter, r *http.Request) {
 		Name:        req.Name,
 		Granularity: req.Granularity,
 	}
-	if memberID != nil {
-		s.FreeKwhOverride = req.FreeKwhOverride
-		s.DiscountPctOverride = req.DiscountPctOverride
-		s.MeterFeeEurOverride = req.MeterFeeEurOverride
-		s.ParticipationFeeEurOverride = req.ParticipationFeeEurOverride
-		s.ZaehlpunktsGebuehrOverride = req.ZaehlpunktsGebuehrOverride
-		s.ServicegebuehrBezugCtKwhOverride = req.ServicegebuehrBezugCtKwhOverride
-		s.ServicegebuehrEinspeisungCtKwhOverride = req.ServicegebuehrEinspeisungCtKwhOverride
-	}
+	s.FreeKwhOverride = req.FreeKwhOverride
+	s.DiscountPctOverride = req.DiscountPctOverride
+	s.MeterFeeEurOverride = req.MeterFeeEurOverride
+	s.ParticipationFeeEurOverride = req.ParticipationFeeEurOverride
+	s.ZaehlpunktsGebuehrOverride = req.ZaehlpunktsGebuehrOverride
+	s.ServicegebuehrBezugCtKwhOverride = req.ServicegebuehrBezugCtKwhOverride
+	s.ServicegebuehrEinspeisungCtKwhOverride = req.ServicegebuehrEinspeisungCtKwhOverride
 	if err := h.tariffRepo.Create(r.Context(), s); err != nil {
 		jsonError(w, "failed to create schedule: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -241,7 +261,8 @@ func (h *TariffHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid schedule ID", http.StatusBadRequest)
 		return
 	}
-	if !h.verifyScheduleOwnership(w, r, scheduleID, eeg.ID, memberID) {
+	existing, ok := h.loadOwnedSchedule(w, r, scheduleID, eeg.ID, memberID)
+	if !ok {
 		return
 	}
 	var req struct {
@@ -252,6 +273,16 @@ func (h *TariffHandler) UpdateSchedule(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		jsonError(w, "invalid request body", http.StatusBadRequest)
 		return
+	}
+	if existing.IsDefault && req.hasOverrides() {
+		jsonError(w, "the Standardtarif cannot carry fee overrides — EEG-wide values are set in the EEG settings", http.StatusBadRequest)
+		return
+	}
+	if req.Name == "" {
+		req.Name = existing.Name
+	}
+	if !map[string]bool{"annual": true, "monthly": true, "daily": true, "quarter_hour": true}[req.Granularity] {
+		req.Granularity = existing.Granularity
 	}
 	s := &domain.TariffSchedule{
 		ID:                                     scheduleID,
@@ -300,7 +331,11 @@ func (h *TariffHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "invalid schedule ID", http.StatusBadRequest)
 		return
 	}
-	if !h.verifyScheduleOwnership(w, r, scheduleID, eeg.ID, memberID) {
+	existing, ok := h.loadOwnedSchedule(w, r, scheduleID, eeg.ID, memberID)
+	if !ok {
+		return
+	}
+	if !h.checkNotInUse(w, r, existing, "deleted") {
 		return
 	}
 	if err := h.tariffRepo.Delete(r.Context(), scheduleID); err != nil {
@@ -313,7 +348,7 @@ func (h *TariffHandler) DeleteSchedule(w http.ResponseWriter, r *http.Request) {
 // ActivateSchedule godoc
 //
 //	@Summary		Tarifplan aktivieren
-//	@Description	Aktiviert einen Tarifplan. Pro EEG kann nur ein EEG-Standard-Tarifplan gleichzeitig aktiv sein; pro Mitglied kann nur ein Individualtarif gleichzeitig aktiv sein (unabhängige Scopes).
+//	@Description	Aktiviert (gibt frei) einen Tarifplan. EEG-weite Pläne können parallel aktiv sein und Mitgliedern zugewiesen werden; pro Mitglied ist nur ein Individualtarif gleichzeitig aktiv.
 //	@Tags			Tarifpläne
 //	@Produce		json
 //	@Param			eegID		path		string	true	"EEG ID (UUID)"
@@ -352,7 +387,7 @@ func (h *TariffHandler) ActivateSchedule(w http.ResponseWriter, r *http.Request)
 // DeactivateSchedule godoc
 //
 //	@Summary		Tarifplan deaktivieren
-//	@Description	Deaktiviert den aktiven Tarifplan, ohne ihn zu löschen.
+//	@Description	Deaktiviert einen Tarifplan, ohne ihn zu löschen. Der Standardtarif und Pläne mit zugewiesenen Mitgliedern können nicht deaktiviert werden (409).
 //	@Tags			Tarifpläne
 //	@Produce		json
 //	@Param			eegID		path		string	true	"EEG ID (UUID)"
@@ -377,7 +412,11 @@ func (h *TariffHandler) DeactivateSchedule(w http.ResponseWriter, r *http.Reques
 		jsonError(w, "invalid schedule ID", http.StatusBadRequest)
 		return
 	}
-	if !h.verifyScheduleOwnership(w, r, scheduleID, eeg.ID, memberID) {
+	existing, ok := h.loadOwnedSchedule(w, r, scheduleID, eeg.ID, memberID)
+	if !ok {
+		return
+	}
+	if !h.checkNotInUse(w, r, existing, "deactivated") {
 		return
 	}
 	if err := h.tariffRepo.Deactivate(r.Context(), scheduleID); err != nil {
@@ -385,6 +424,60 @@ func (h *TariffHandler) DeactivateSchedule(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	jsonOK(w, map[string]bool{"is_active": false})
+}
+
+// checkNotInUse writes a 409 and returns false when an EEG-wide plan is the Standardtarif or
+// still has members assigned. Individualtarife are never "in use" this way.
+func (h *TariffHandler) checkNotInUse(w http.ResponseWriter, r *http.Request, s *domain.TariffSchedule, verb string) bool {
+	if s.MemberID != nil {
+		return true
+	}
+	if s.IsDefault {
+		jsonError(w, "the Standardtarif cannot be "+verb+" — set another plan as Standardtarif first", http.StatusConflict)
+		return false
+	}
+	n, err := h.tariffRepo.CountAssignedMembers(r.Context(), s.ID)
+	if err != nil {
+		jsonError(w, "failed to check assignments", http.StatusInternalServerError)
+		return false
+	}
+	if n > 0 {
+		jsonError(w, fmt.Sprintf("plan is assigned to %d member(s) and cannot be %s — reassign them first", n, verb), http.StatusConflict)
+		return false
+	}
+	return true
+}
+
+// SetDefaultSchedule godoc
+//
+//	@Summary		Standardtarif festlegen
+//	@Description	Macht einen EEG-weiten Tarifplan zum Standardtarif (gilt für alle Mitglieder ohne Zuweisung und ohne Individualtarif). Der Plan wird dabei aktiviert; Gebühren-Overrides am Plan werden entfernt.
+//	@Tags			Tarifpläne
+//	@Produce		json
+//	@Param			eegID		path		string	true	"EEG ID (UUID)"
+//	@Param			scheduleID	path		string	true	"Tarifplan-ID (UUID)"
+//	@Success		200			{object}	object	"is_default: true"
+//	@Failure		404			{object}	object	"Tarifplan nicht gefunden"
+//	@Security		BearerAuth
+//	@Router			/eegs/{eegID}/tariffs/{scheduleID}/default [post]
+func (h *TariffHandler) SetDefaultSchedule(w http.ResponseWriter, r *http.Request) {
+	_, eeg, ok := requireEEGAccess(w, r, h.eegRepo)
+	if !ok {
+		return
+	}
+	scheduleID, err := uuid.Parse(chi.URLParam(r, "scheduleID"))
+	if err != nil {
+		jsonError(w, "invalid schedule ID", http.StatusBadRequest)
+		return
+	}
+	if !h.verifyScheduleOwnership(w, r, scheduleID, eeg.ID, nil) {
+		return
+	}
+	if err := h.tariffRepo.SetDefault(r.Context(), scheduleID, eeg.ID); err != nil {
+		jsonError(w, "failed to set default schedule: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	jsonOK(w, map[string]bool{"is_default": true})
 }
 
 // SetEntries godoc

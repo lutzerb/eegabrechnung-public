@@ -134,6 +134,10 @@ Zu jedem Zählpunkt können interne **Notizen** hinterlegt werden — z.B. „Z�
 
 Über `PUT /api/v1/eegs/{eegId}/members/{memberId}/meter-points/{mpId}` wird das Feld `notes` mitgeschickt.
 
+### Zählpunkt-Adresse (optional)
+
+Jeder Zählpunkt kann optional einen **Standort** (`strasse`, `plz`, `ort` — drei getrennte Felder) erhalten. Das ist rein informativ und nützlich, wenn ein Mitglied Zählpunkte an verschiedenen Orten hat; Abrechnung und EDA sind nicht betroffen. Die Adresse wird im Formular „Zählpunkt anlegen/bearbeiten“ erfasst, auf der Mitglieds-Detailseite unter der Zählpunkt-ID angezeigt und lässt sich in der Mitgliederübersicht mit der Checkbox „Zählpunkt-Adressen anzeigen“ ein- und ausblenden (merkt sich der Browser). Sie ist auch über die globale Suche auffindbar, Teil von Backup/Restore und des Stammdaten-XLSX (optionale Spalten 8–10 im Blatt „Zählpunkte“) und kann im Onboarding-Formular pro Zählpunkt angegeben werden. Bei `PUT` bedeutet ein fehlendes Feld „unverändert“, ein leerer String „löschen“.
+
 ### Consent-ID (EDA-Zustimmungskennung)
 
 Wenn ein Zählpunkt vom Netzbetreiber im EDA-System angemeldet wird (EC_REQ_ONL bestätigt), sendet der Netzbetreiber in der ECMPList-Bestätigung eine **ConsentId**. Diese wird automatisch auf dem Zählpunkt gespeichert (`consent_id`) und ist Voraussetzung für das spätere Widerruf-Verfahren (CM_REV_SP).

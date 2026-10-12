@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
+	"github.com/lutzerb/eegabrechnung/internal/eda/responsecodes"
 	"github.com/lutzerb/eegabrechnung/internal/eda/transport"
 	"github.com/lutzerb/eegabrechnung/internal/eda/types"
 	edaxml "github.com/lutzerb/eegabrechnung/internal/eda/xml"
@@ -52,6 +53,7 @@ type Worker struct {
 	workerStatusRepo *repository.EDAWorkerStatusRepository
 	onboardingRepo   *repository.OnboardingRepository
 	emailLogRepo     *repository.EmailLogRepository
+	participationRepo *repository.ParticipationRepository
 
 	// polling prevents the ticker-driven poll() and the manual /eda/poll-now
 	// endpoint (PollOnce) from running two overlapping poll cycles.
@@ -87,6 +89,7 @@ func NewWorker(db *pgxpool.Pool, tr types.Transport, transportMode string, encKe
 		workerStatusRepo: repository.NewEDAWorkerStatusRepository(db),
 		onboardingRepo:   repository.NewOnboardingRepository(db),
 		emailLogRepo:     repository.NewEmailLogRepository(db),
+		participationRepo: repository.NewParticipationRepository(db),
 		smtpNextSendAt:   map[string]time.Time{},
 	}
 }
@@ -492,6 +495,42 @@ func (w *Worker) processInboundMessages(ctx context.Context, msgs []*types.Messa
 					if eeg, eegErr := w.eegRepo.GetByIDInternal(ctx, notifProc.EegID); eegErr == nil {
 						go w.sendEDAErrorNotification(context.WithoutCancel(ctx), notifProc, eeg)
 					}
+				}
+			}
+			// ANTWORT_CPF (ResponseCode 70) = Netzbetreiber accepted the
+			// Teilnahmefaktor-Änderung. Unlike CR_REQ_PT (where the actual data
+			// arrives later via DATEN_CRMSG), this CPNotification IS the final
+			// answer for EC_PRTFACT_CHG — mark the process completed and apply
+			// the confirmed factor, mirroring the other post-confirmation actions
+			// (EC_REQ_ONL confirmed → registriert_seit, CM_REV_SP confirmed →
+			// abgemeldet_am). Without this the process stayed stuck at "sent"
+			// forever and the factor was never written to eeg_meter_participations.
+			if strings.HasPrefix(notif.MessageCode, "ANTWORT") && notifProc != nil &&
+				notifProc.ProcessType == "EC_PRTFACT_CHG" {
+				now := time.Now().UTC()
+				if err := w.edaProcRepo.UpdateStatus(ctx, notifProc.ID, "completed", &now, ""); err != nil {
+					w.log.Warn("ANTWORT_CPF: failed to mark process completed",
+						"process_id", notifProc.ID,
+						"error", err,
+					)
+				} else if notifProc.MeterPointID != nil && notifProc.ParticipationFactor != nil {
+					if err := w.participationRepo.UpsertFactor(ctx, notifProc.EegID, *notifProc.MeterPointID, *notifProc.ParticipationFactor, "GC", time.Now(), ""); err != nil {
+						w.log.Warn("ANTWORT_CPF: failed to apply confirmed participation factor",
+							"process_id", notifProc.ID,
+							"meter_point_id", *notifProc.MeterPointID,
+							"error", err,
+						)
+					} else {
+						w.log.Info("ANTWORT_CPF: participation factor confirmed and applied",
+							"process_id", notifProc.ID,
+							"meter_point_id", *notifProc.MeterPointID,
+							"factor", *notifProc.ParticipationFactor,
+						)
+					}
+				} else {
+					w.log.Warn("ANTWORT_CPF: process completed but missing meter_point_id/participation_factor, factor not applied",
+						"process_id", notifProc.ID,
+					)
 				}
 			}
 			if err := w.edaMsgRepo.MarkProcessed(ctx, msgID); err != nil {
@@ -2006,21 +2045,22 @@ func (w *Worker) processCMRevoke(ctx context.Context, msgID uuid.UUID, msg *type
 	}
 
 	// Set abgemeldet_am on the meter point using the ConsentEnd date from the message.
+	// A failure here must surface as an error (routing the message to the eda_errors
+	// dead-letter table) rather than being logged and swallowed — otherwise the message
+	// is marked "processed" despite the deregistration never having been applied, and
+	// nothing about the member/meter-point view will indicate anything went wrong.
 	if result.ConsentEnd != "" && proc.MeterPointID != nil && *proc.MeterPointID != uuid.Nil {
-		if consentEndDate, parseErr := time.Parse("2006-01-02", result.ConsentEnd); parseErr == nil {
-			if err := w.meterPointRepo.UpdateAbgemeldetAm(ctx, *proc.MeterPointID, proc.EegID, proc.Zaehlpunkt, consentEndDate.UTC(), errMsg, "eda"); err != nil {
-				w.log.Warn("CMRevoke: failed to set abgemeldet_am",
-					"meter_point_id", *proc.MeterPointID,
-					"consent_end", result.ConsentEnd,
-					"error", err,
-				)
-			} else {
-				w.log.Info("CMRevoke: abgemeldet_am set on meter point",
-					"meter_point_id", *proc.MeterPointID,
-					"consent_end", result.ConsentEnd,
-				)
-			}
+		consentEndDate, parseErr := time.Parse("2006-01-02", result.ConsentEnd)
+		if parseErr != nil {
+			return uuid.Nil, fmt.Errorf("CMRevoke: invalid ConsentEnd %q: %w", result.ConsentEnd, parseErr)
 		}
+		if err := w.meterPointRepo.UpdateAbgemeldetAm(ctx, *proc.MeterPointID, proc.EegID, proc.Zaehlpunkt, consentEndDate.UTC(), errMsg, "eda"); err != nil {
+			return uuid.Nil, fmt.Errorf("CMRevoke: set abgemeldet_am on meter point %s: %w", *proc.MeterPointID, err)
+		}
+		w.log.Info("CMRevoke: abgemeldet_am set on meter point",
+			"meter_point_id", *proc.MeterPointID,
+			"consent_end", result.ConsentEnd,
+		)
 	}
 
 	w.log.Info("CMRevoke: EDA process marked completed",
@@ -2061,26 +2101,24 @@ func (w *Worker) processCMRevokeUnsolicited(ctx context.Context, result *edaxml.
 
 	reason := result.ReasonText()
 
+	// A message we can't act on, or a failed write, must surface as an error (routing
+	// to the eda_errors dead-letter table) instead of being warn-logged and swallowed —
+	// otherwise the message is marked "processed" despite the deregistration never
+	// having been applied, silently leaving the meter point looking active.
 	if result.ConsentEnd == "" {
-		w.log.Warn("CMRevoke: unsolicited revoke has no ConsentEnd — cannot close registration period",
-			"meter_point_id", mp.ID, "metering_point", result.MeteringPoint)
-		return mp.EegID, nil
+		return uuid.Nil, fmt.Errorf("CMRevoke: unsolicited revoke for meter point %s has no ConsentEnd — cannot close registration period", mp.ID)
 	}
 	consentEndDate, parseErr := time.Parse("2006-01-02", result.ConsentEnd)
 	if parseErr != nil {
-		w.log.Warn("CMRevoke: invalid ConsentEnd date",
-			"consent_end", result.ConsentEnd, "error", parseErr)
-		return mp.EegID, nil
+		return uuid.Nil, fmt.Errorf("CMRevoke: invalid ConsentEnd %q: %w", result.ConsentEnd, parseErr)
 	}
 
 	if err := w.meterPointRepo.UpdateAbgemeldetAm(ctx, mp.ID, mp.EegID, mp.Zaehlpunkt, consentEndDate.UTC(), reason, "eda"); err != nil {
-		w.log.Warn("CMRevoke: failed to set abgemeldet_am (unsolicited)",
-			"meter_point_id", mp.ID, "consent_end", result.ConsentEnd, "error", err)
-	} else {
-		w.log.Info("CMRevoke: abgemeldet_am set on meter point (unsolicited Netzbetreiber revoke)",
-			"meter_point_id", mp.ID, "message_code", result.MessageCode,
-			"consent_end", result.ConsentEnd, "reason", reason)
+		return uuid.Nil, fmt.Errorf("CMRevoke: set abgemeldet_am (unsolicited) on meter point %s: %w", mp.ID, err)
 	}
+	w.log.Info("CMRevoke: abgemeldet_am set on meter point (unsolicited Netzbetreiber revoke)",
+		"meter_point_id", mp.ID, "message_code", result.MessageCode,
+		"consent_end", result.ConsentEnd, "reason", reason)
 
 	if isIMP {
 		if eeg, eegErr := w.eegRepo.GetByIDInternal(ctx, mp.EegID); eegErr == nil {
@@ -2194,6 +2232,24 @@ func (w *Worker) sendEDAErrorNotification(ctx context.Context, proc *domain.EDAP
 	if errDetails == "" {
 		errDetails = "(keine Fehlermeldung)"
 	}
+
+	// Spell out the ResponseCode(s) in plain German, same as the "Bedeutung" shown
+	// per process on the EDA/Prozesse page (web/lib/eda-error-codes.ts) — the raw
+	// gateway string alone ("response_code=56") means little to an EEG operator.
+	codesRow := ""
+	if codes := responsecodes.Parse(proc.ErrorMsg); len(codes) > 0 {
+		var labels strings.Builder
+		for i, c := range codes {
+			if i > 0 {
+				labels.WriteString("<br>")
+			}
+			fmt.Fprintf(&labels, "Code %s: %s", c.Code, c.Label)
+		}
+		codesRow = fmt.Sprintf(`
+  <tr><td style="padding: 6px 12px; background: #f1f5f9; font-weight: 600;">Bedeutung</td>
+      <td style="padding: 6px 12px;">%s</td></tr>`, labels.String())
+	}
+
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"></head>
@@ -2208,7 +2264,7 @@ func (w *Worker) sendEDAErrorNotification(ctx context.Context, proc *domain.EDAP
   <tr><td style="padding: 6px 12px; background: #f1f5f9; font-weight: 600;">Status</td>
       <td style="padding: 6px 12px; color: #dc2626; font-weight: 600;">%s</td></tr>
   <tr><td style="padding: 6px 12px; background: #f1f5f9; font-weight: 600;">Fehlermeldung</td>
-      <td style="padding: 6px 12px;">%s</td></tr>
+      <td style="padding: 6px 12px;">%s</td></tr>%s
   <tr><td style="padding: 6px 12px; background: #f1f5f9; font-weight: 600;">Prozess-ID</td>
       <td style="padding: 6px 12px; font-size: 12px; color: #64748b;">%s</td></tr>
 </table>
@@ -2216,7 +2272,7 @@ func (w *Worker) sendEDAErrorNotification(ctx context.Context, proc *domain.EDAP
 <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0;">
 <p style="color: #94a3b8; font-size: 12px;">Diese Nachricht wurde automatisch generiert.</p>
 </body>
-</html>`, eeg.DisplayNameOrName(), proc.ProcessType, proc.Zaehlpunkt, proc.Status, errDetails, proc.ID)
+</html>`, eeg.DisplayNameOrName(), proc.ProcessType, proc.Zaehlpunkt, proc.Status, errDetails, codesRow, proc.ID)
 
 	var msgBuilder strings.Builder
 	msgBuilder.WriteString(mailutil.Headers(mailutil.FormatAddress(eeg.DisplayNameOrName(), eeg.SMTPFrom), eeg.SMTPFrom, subject))

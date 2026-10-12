@@ -36,3 +36,31 @@ export function formatXml(input: string): string {
 
   return out.join("\n");
 }
+
+// Extracts just the <MPListData>…</MPListData> block for one Zählpunkt from a raw
+// (unformatted) ECMPList XML payload. These messages list one block per meter point —
+// MeteringPoint, ConsentId, and all MPTimeData periods — as siblings under ProcessDirectory,
+// so for a document with many meter points the full XML is mostly noise when the admin only
+// cares about one of them (e.g. reviewing a single Zählpunktdaten-Abgleich diff). Returns null
+// if no matching block is found (caller falls back to showing the full XML).
+export function extractXmlBlockForZaehlpunkt(xml: string, zaehlpunkt: string): string | null {
+  const tagMatch = xml.match(/<([\w.-]*:)?MPListData\b/);
+  if (!tagMatch) return null;
+  const prefix = tagMatch[1] || "";
+  const openTag = `<${prefix}MPListData`;
+  const closeTag = `</${prefix}MPListData>`;
+
+  let searchFrom = 0;
+  while (true) {
+    const openIdx = xml.indexOf(openTag, searchFrom);
+    if (openIdx === -1) return null;
+    const closeIdx = xml.indexOf(closeTag, openIdx);
+    if (closeIdx === -1) return null;
+    const blockEnd = closeIdx + closeTag.length;
+    const block = xml.slice(openIdx, blockEnd);
+    if (block.includes(zaehlpunkt)) {
+      return block;
+    }
+    searchFrom = blockEnd;
+  }
+}

@@ -17,6 +17,10 @@ function formatDate(dateStr: string): string {
   }
 }
 
+function toInputDate(dateStr: string): string {
+  return dateStr.slice(0, 10);
+}
+
 function ReadingsSection({ eegId, memberId, meter }: { eegId: string; memberId: string; meter: ExtraMeter }) {
   const [readings, setReadings] = useState<ExtraMeterReading[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -26,6 +30,11 @@ function ReadingsSection({ eegId, memberId, meter }: { eegId: string; memberId: 
   const [counterValue, setCounterValue] = useState("");
   const [notes, setNotes] = useState("");
   const [saving, setSaving] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDate, setEditDate] = useState("");
+  const [editCounterValue, setEditCounterValue] = useState("");
+  const [editNotes, setEditNotes] = useState("");
+  const [editSaving, setEditSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -72,6 +81,48 @@ function ReadingsSection({ eegId, memberId, meter }: { eegId: string; memberId: 
     }
   }
 
+  function startEdit(r: ExtraMeterReading) {
+    setEditingId(r.id);
+    setEditDate(toInputDate(r.reading_date));
+    setEditCounterValue(String(r.counter_value));
+    setEditNotes(r.notes);
+    setError(null);
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+  }
+
+  async function handleSaveEdit(readingId: string) {
+    setEditSaving(true);
+    setError(null);
+    try {
+      const res = await fetch(`/api/eegs/${eegId}/members/${memberId}/extra-meters/${meter.id}/readings/${readingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reading_date: editDate, counter_value: parseFloat(editCounterValue), notes: editNotes }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || `Fehler ${res.status}`);
+      }
+      setReadings((prev) =>
+        (prev || [])
+          .map((r) =>
+            r.id === readingId
+              ? { ...r, reading_date: editDate, counter_value: parseFloat(editCounterValue), notes: editNotes }
+              : r
+          )
+          .sort((a, b) => (a.reading_date < b.reading_date ? 1 : -1))
+      );
+      setEditingId(null);
+    } catch (err: unknown) {
+      setError((err as Error).message);
+    } finally {
+      setEditSaving(false);
+    }
+  }
+
   async function handleDeleteReading(readingId: string) {
     if (!confirm("Ablesung wirklich löschen?")) return;
     try {
@@ -106,18 +157,66 @@ function ReadingsSection({ eegId, memberId, meter }: { eegId: string; memberId: 
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-200">
-            {readings.map((r) => (
-              <tr key={r.id}>
-                <td className="py-1 text-slate-700">{formatDate(r.reading_date)}</td>
-                <td className="py-1 font-mono text-slate-700">{r.counter_value}</td>
-                <td className="py-1 text-slate-500">{r.notes || "—"}</td>
-                <td className="py-1 text-right">
-                  <button onClick={() => handleDeleteReading(r.id)} className="text-red-600 hover:underline">
-                    Löschen
-                  </button>
-                </td>
-              </tr>
-            ))}
+            {readings.map((r) =>
+              editingId === r.id ? (
+                <tr key={r.id}>
+                  <td className="py-1 pr-1">
+                    <input
+                      type="date"
+                      value={editDate}
+                      onChange={(e) => setEditDate(e.target.value)}
+                      disabled={editSaving}
+                      className="w-full px-1.5 py-0.5 border border-slate-300 rounded text-xs text-slate-900"
+                    />
+                  </td>
+                  <td className="py-1 pr-1">
+                    <input
+                      type="number"
+                      step="0.001"
+                      value={editCounterValue}
+                      onChange={(e) => setEditCounterValue(e.target.value)}
+                      disabled={editSaving}
+                      className="w-full px-1.5 py-0.5 border border-slate-300 rounded text-xs text-slate-900 font-mono"
+                    />
+                  </td>
+                  <td className="py-1 pr-1">
+                    <input
+                      type="text"
+                      value={editNotes}
+                      onChange={(e) => setEditNotes(e.target.value)}
+                      disabled={editSaving}
+                      className="w-full px-1.5 py-0.5 border border-slate-300 rounded text-xs text-slate-900"
+                    />
+                  </td>
+                  <td className="py-1 text-right whitespace-nowrap">
+                    <button
+                      onClick={() => handleSaveEdit(r.id)}
+                      disabled={editSaving}
+                      className="text-blue-700 hover:underline mr-2 disabled:opacity-50"
+                    >
+                      {editSaving ? "Speichert…" : "Speichern"}
+                    </button>
+                    <button onClick={cancelEdit} disabled={editSaving} className="text-slate-500 hover:underline">
+                      Abbrechen
+                    </button>
+                  </td>
+                </tr>
+              ) : (
+                <tr key={r.id}>
+                  <td className="py-1 text-slate-700">{formatDate(r.reading_date)}</td>
+                  <td className="py-1 font-mono text-slate-700">{r.counter_value}</td>
+                  <td className="py-1 text-slate-500">{r.notes || "—"}</td>
+                  <td className="py-1 text-right whitespace-nowrap">
+                    <button onClick={() => startEdit(r)} className="text-blue-700 hover:underline mr-2">
+                      Bearbeiten
+                    </button>
+                    <button onClick={() => handleDeleteReading(r.id)} className="text-red-600 hover:underline">
+                      Löschen
+                    </button>
+                  </td>
+                </tr>
+              )
+            )}
           </tbody>
         </table>
       )}

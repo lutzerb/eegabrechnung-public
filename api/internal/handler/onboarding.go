@@ -761,11 +761,13 @@ func (h *OnboardingHandler) UpdateOnboardingStatus(w http.ResponseWriter, r *htt
 				genType = &gt
 			}
 			mpQ := `INSERT INTO meter_points (member_id, eeg_id, zaehlpunkt, energierichtung, verteilungsmodell,
-			                                  zugeteilte_menge_pct, status, registriert_seit, generation_type)
-			        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			                                  zugeteilte_menge_pct, status, registriert_seit, generation_type,
+			                                  strasse, plz, ort)
+			        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 			        RETURNING id`
 			err := tx.QueryRow(ctx, mpQ,
 				memberID, eegID, mp.Zaehlpunkt, direction, "DYNAMIC", float64(100), "ACTIVE", beitrittsDatum, genType,
+				cleanText(mp.Strasse), cleanText(mp.Plz), cleanText(mp.Ort),
 			).Scan(&mpID)
 			if err != nil {
 				slog.Error("failed to insert meter point", "error", err, "zaehlpunkt", mp.Zaehlpunkt)

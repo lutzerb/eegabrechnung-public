@@ -23,6 +23,9 @@ type MeterPointSearchResult struct {
 	Energierichtung string
 	MemberID        uuid.UUID
 	MemberName      string
+	Strasse         string
+	Plz             string
+	Ort             string
 }
 
 func NewMeterPointRepository(db *pgxpool.Pool) *MeterPointRepository {
@@ -75,11 +78,15 @@ func (r *MeterPointRepository) Upsert(ctx context.Context, mp *domain.MeterPoint
 
 	case existingMemberID == mp.MemberID:
 		q := `UPDATE meter_points
-		      SET energierichtung = $1, verteilungsmodell = $2, zugeteilte_menge_pct = $3, status = $4
+		      SET energierichtung = $1, verteilungsmodell = $2, zugeteilte_menge_pct = $3, status = $4,
+		          strasse = CASE WHEN $6::text = '' AND $7::text = '' AND $8::text = '' THEN strasse ELSE $6::text END,
+		          plz     = CASE WHEN $6::text = '' AND $7::text = '' AND $8::text = '' THEN plz     ELSE $7::text END,
+		          ort     = CASE WHEN $6::text = '' AND $7::text = '' AND $8::text = '' THEN ort     ELSE $8::text END
 		      WHERE id = $5
 		      RETURNING id, created_at`
 		if err := r.db.QueryRow(ctx, q,
 			mp.Energierichtung, mp.Verteilungsmodell, mp.ZugeteilteMenugePct, mp.Status, existingID,
+			mp.Strasse, mp.Plz, mp.Ort,
 		).Scan(&mp.ID, &mp.CreatedAt); err != nil {
 			return nil, fmt.Errorf("update meter point: %w", err)
 		}
@@ -120,12 +127,13 @@ func (r *MeterPointRepository) Upsert(ctx context.Context, mp *domain.MeterPoint
 			return nil, fmt.Errorf("close registration period: %w", err)
 		}
 
-		insertQ := `INSERT INTO meter_points (member_id, eeg_id, zaehlpunkt, energierichtung, verteilungsmodell, zugeteilte_menge_pct, status, registriert_seit, generation_type)
-		            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		insertQ := `INSERT INTO meter_points (member_id, eeg_id, zaehlpunkt, energierichtung, verteilungsmodell, zugeteilte_menge_pct, status, registriert_seit, generation_type, strasse, plz, ort)
+		            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		            RETURNING id, created_at`
 		if err := tx.QueryRow(ctx, insertQ,
 			mp.MemberID, mp.EegID, mp.Zaehlpunkt, mp.Energierichtung,
 			mp.Verteilungsmodell, mp.ZugeteilteMenugePct, mp.Status, mp.RegistriertSeit, mp.GenerationType,
+			mp.Strasse, mp.Plz, mp.Ort,
 		).Scan(&mp.ID, &mp.CreatedAt); err != nil {
 			return nil, fmt.Errorf("insert new meter point: %w", err)
 		}
@@ -155,13 +163,13 @@ func (r *MeterPointRepository) Upsert(ctx context.Context, mp *domain.MeterPoint
 	}
 }
 
-const selectMeterPoint = `id, member_id, eeg_id, zaehlpunkt, energierichtung, verteilungsmodell, zugeteilte_menge_pct, status, registriert_seit, abgemeldet_am, generation_type, gap_alert_sent_at, notes, consent_id, created_at`
+const selectMeterPoint = `id, member_id, eeg_id, zaehlpunkt, energierichtung, verteilungsmodell, zugeteilte_menge_pct, status, registriert_seit, abgemeldet_am, generation_type, gap_alert_sent_at, notes, strasse, plz, ort, consent_id, created_at`
 
 func scanMeterPoint(row interface{ Scan(...any) error }, mp *domain.MeterPoint) error {
 	return row.Scan(
 		&mp.ID, &mp.MemberID, &mp.EegID, &mp.Zaehlpunkt,
 		&mp.Energierichtung, &mp.Verteilungsmodell, &mp.ZugeteilteMenugePct,
-		&mp.Status, &mp.RegistriertSeit, &mp.AbgemeldetAm, &mp.GenerationType, &mp.GapAlertSentAt, &mp.Notes, &mp.ConsentID, &mp.CreatedAt,
+		&mp.Status, &mp.RegistriertSeit, &mp.AbgemeldetAm, &mp.GenerationType, &mp.GapAlertSentAt, &mp.Notes, &mp.Strasse, &mp.Plz, &mp.Ort, &mp.ConsentID, &mp.CreatedAt,
 	)
 }
 
@@ -172,7 +180,7 @@ type MeterPointGap struct {
 	LastReadingAt *time.Time `json:"last_reading_at,omitempty"` // nil = never had readings
 }
 
-const selectMeterPointMP = `mp.id, mp.member_id, mp.eeg_id, mp.zaehlpunkt, mp.energierichtung, mp.verteilungsmodell, mp.zugeteilte_menge_pct, mp.status, mp.registriert_seit, mp.abgemeldet_am, mp.generation_type, mp.gap_alert_sent_at, mp.notes, mp.consent_id, mp.created_at`
+const selectMeterPointMP = `mp.id, mp.member_id, mp.eeg_id, mp.zaehlpunkt, mp.energierichtung, mp.verteilungsmodell, mp.zugeteilte_menge_pct, mp.status, mp.registriert_seit, mp.abgemeldet_am, mp.generation_type, mp.gap_alert_sent_at, mp.notes, mp.strasse, mp.plz, mp.ort, mp.consent_id, mp.created_at`
 
 // GetMeterPointsWithGap returns active, registered meter points that have no readings
 // within the last thresholdDays days and for which no gap alert has been sent yet.
@@ -518,12 +526,13 @@ func (r *MeterPointRepository) GetByID(ctx context.Context, id uuid.UUID) (*doma
 }
 
 func (r *MeterPointRepository) Create(ctx context.Context, mp *domain.MeterPoint) error {
-	q := `INSERT INTO meter_points (member_id, eeg_id, zaehlpunkt, energierichtung, verteilungsmodell, zugeteilte_menge_pct, status, registriert_seit, generation_type)
-	      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+	q := `INSERT INTO meter_points (member_id, eeg_id, zaehlpunkt, energierichtung, verteilungsmodell, zugeteilte_menge_pct, status, registriert_seit, generation_type, strasse, plz, ort)
+	      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 	      RETURNING id, created_at`
 	if err := r.db.QueryRow(ctx, q,
 		mp.MemberID, mp.EegID, mp.Zaehlpunkt, mp.Energierichtung,
 		mp.Verteilungsmodell, mp.ZugeteilteMenugePct, mp.Status, mp.RegistriertSeit, mp.GenerationType,
+		mp.Strasse, mp.Plz, mp.Ort,
 	).Scan(&mp.ID, &mp.CreatedAt); err != nil {
 		return err
 	}
@@ -537,10 +546,11 @@ func (r *MeterPointRepository) Create(ctx context.Context, mp *domain.MeterPoint
 
 func (r *MeterPointRepository) Update(ctx context.Context, mp *domain.MeterPoint) error {
 	q := `UPDATE meter_points SET
-	        energierichtung=$1, verteilungsmodell=$2, zugeteilte_menge_pct=$3, status=$4, generation_type=$5, notes=$6, abgemeldet_am=$7
-	      WHERE id=$8`
+	        energierichtung=$1, verteilungsmodell=$2, zugeteilte_menge_pct=$3, status=$4, generation_type=$5, notes=$6, abgemeldet_am=$7, strasse=$8, plz=$9, ort=$10
+	      WHERE id=$11`
 	_, err := r.db.Exec(ctx, q,
-		mp.Energierichtung, mp.Verteilungsmodell, mp.ZugeteilteMenugePct, mp.Status, mp.GenerationType, mp.Notes, mp.AbgemeldetAm, mp.ID,
+		mp.Energierichtung, mp.Verteilungsmodell, mp.ZugeteilteMenugePct, mp.Status, mp.GenerationType, mp.Notes, mp.AbgemeldetAm,
+		mp.Strasse, mp.Plz, mp.Ort, mp.ID,
 	)
 	if err != nil {
 		return fmt.Errorf("update: %w", err)
@@ -587,10 +597,11 @@ func (r *MeterPointRepository) CountActiveByMember(ctx context.Context, memberID
 }
 
 func (r *MeterPointRepository) SearchByEeg(ctx context.Context, eegID uuid.UUID, query string, limit int) ([]MeterPointSearchResult, error) {
-	q := `SELECT mp.id, mp.zaehlpunkt, mp.energierichtung, m.id, TRIM(m.name1 || ' ' || m.name2)
+	q := `SELECT mp.id, mp.zaehlpunkt, mp.energierichtung, m.id, TRIM(m.name1 || ' ' || m.name2), mp.strasse, mp.plz, mp.ort
 	      FROM meter_points mp
 	      JOIN members m ON m.id = mp.member_id
-	      WHERE mp.eeg_id = $1 AND mp.zaehlpunkt ILIKE $2
+	      WHERE mp.eeg_id = $1
+	        AND (mp.zaehlpunkt ILIKE $2 OR mp.strasse ILIKE $2 OR mp.plz ILIKE $2 OR mp.ort ILIKE $2)
 	      ORDER BY mp.zaehlpunkt
 	      LIMIT $3`
 	rows, err := r.db.Query(ctx, q, eegID, "%"+query+"%", limit)
@@ -602,7 +613,7 @@ func (r *MeterPointRepository) SearchByEeg(ctx context.Context, eegID uuid.UUID,
 	var results []MeterPointSearchResult
 	for rows.Next() {
 		var res MeterPointSearchResult
-		if err := rows.Scan(&res.ID, &res.Zaehlpunkt, &res.Energierichtung, &res.MemberID, &res.MemberName); err != nil {
+		if err := rows.Scan(&res.ID, &res.Zaehlpunkt, &res.Energierichtung, &res.MemberID, &res.MemberName, &res.Strasse, &res.Plz, &res.Ort); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
 		}
 		results = append(results, res)

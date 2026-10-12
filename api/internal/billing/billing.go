@@ -392,7 +392,7 @@ func (s *Service) SendAll(ctx context.Context, eegID uuid.UUID, billingRunID *uu
 			result.Errors = append(result.Errors, fmt.Sprintf("invoice %s (%s): build message: %v", inv.ID, member.Email, buildErr))
 			continue
 		}
-		subject := invoice.InvoiceSubject(inv, eeg)
+		subject := invoice.InvoiceSubject(inv, eeg, member)
 		entry := domain.EmailLogEntry{
 			EegID:     eeg.ID,
 			EmailType: "invoice",
@@ -558,13 +558,13 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		return nil, fmt.Errorf("get eeg: %w", err)
 	}
 
-	// Check for an active tariff schedule (EEG default) plus any active member-specific
-	// Individualtarif schedules, to use time-varying prices and per-member fee overrides.
-	defaultTariff, memberTariffs, err := s.tariffRepo.GetAllActiveForEEG(ctx, eegID, periodStart, periodEnd)
+	// Load the EEG's active tariff plans: the Standardtarif, other parallel EEG-wide plans
+	// (assigned to members), and member-specific Individualtarife. Resolved per member below.
+	tariffs, err := s.tariffRepo.LoadBillingTariffs(ctx, eegID, periodStart, periodEnd)
 	if err != nil {
 		return nil, fmt.Errorf("get active tariff: %w", err)
 	}
-	if defaultTariff != nil {
+	if defaultTariff := tariffs.Default; defaultTariff != nil {
 		slog.Info("using active tariff for billing",
 			"schedule_id", defaultTariff.ID,
 			"schedule_name", defaultTariff.Name,
@@ -572,8 +572,11 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 			"entry_count", defaultTariff.EntryCount,
 		)
 	}
-	if len(memberTariffs) > 0 {
-		slog.Info("using member-specific Individualtarif schedules", "count", len(memberTariffs))
+	if len(tariffs.Assignment) > 0 {
+		slog.Info("members assigned to parallel tariff plans", "count", len(tariffs.Assignment))
+	}
+	if len(tariffs.Individual) > 0 {
+		slog.Info("using member-specific Individualtarif schedules", "count", len(tariffs.Individual))
 	}
 
 	slog.Info("running billing",
@@ -703,47 +706,35 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		// Fetch member early — needed for effective period and credit-note VAT
 		member, memberErr := s.memberRepo.GetByID(ctx, sum.MemberID)
 
-		// ── Individualtarif resolution ───────────────────────────────────────────────
-		// A member with an active member-specific tariff schedule uses its non-nil
-		// *Override fields for fixed fees (activeTariff). Energy pricing (priceTariff)
-		// falls back along member entries → EEG default schedule entries → flat EEG
-		// prices: an Individualtarif that only overrides fees (no own entries) must
-		// NOT drop the member out of the EEG-wide tariff pricing.
-		activeTariff := defaultTariff
-		priceTariff := defaultTariff
-		if mt, ok := memberTariffs[sum.MemberID]; ok {
-			activeTariff = mt
-			if len(mt.Entries) > 0 {
-				priceTariff = mt
-			}
-		}
+		// ── Tariff resolution ────────────────────────────────────────────────────────
+		// Individualtarif > assigned EEG-wide plan > Standardtarif. Energy pricing
+		// (priceTariff) falls back along the first level with own entries → flat EEG prices;
+		// fee overrides cascade per field (nil = EEG value).
+		resolved := tariffs.Resolve(sum.MemberID)
+		priceTariff := resolved.PriceTariff
 		freeKwh, discountPct := eeg.FreeKwh, eeg.DiscountPct
 		meterFee, participationFee, zpGebuehr := eeg.MeterFeeEur, eeg.ParticipationFeeEur, eeg.ZaehlpunktsGebuehrEur
-		if activeTariff != nil && activeTariff.MemberID != nil {
-			if v := activeTariff.FreeKwhOverride; v != nil {
-				freeKwh = *v
-			}
-			if v := activeTariff.DiscountPctOverride; v != nil {
-				discountPct = *v
-			}
-			if v := activeTariff.MeterFeeEurOverride; v != nil {
-				meterFee = *v
-			}
-			if v := activeTariff.ParticipationFeeEurOverride; v != nil {
-				participationFee = *v
-			}
-			if v := activeTariff.ZaehlpunktsGebuehrOverride; v != nil {
-				zpGebuehr = *v
-			}
-		}
 		serviceFeeBezugRate, serviceFeeEinspeisungRate := eeg.ServicegebuehrBezugCtKwh, eeg.ServicegebuehrEinspeisungCtKwh
-		if activeTariff != nil && activeTariff.MemberID != nil {
-			if v := activeTariff.ServicegebuehrBezugCtKwhOverride; v != nil {
-				serviceFeeBezugRate = *v
-			}
-			if v := activeTariff.ServicegebuehrEinspeisungCtKwhOverride; v != nil {
-				serviceFeeEinspeisungRate = *v
-			}
+		if v := resolved.FreeKwh; v != nil {
+			freeKwh = *v
+		}
+		if v := resolved.DiscountPct; v != nil {
+			discountPct = *v
+		}
+		if v := resolved.MeterFeeEur; v != nil {
+			meterFee = *v
+		}
+		if v := resolved.ParticipationFeeEur; v != nil {
+			participationFee = *v
+		}
+		if v := resolved.ZaehlpunktsGebuehrEur; v != nil {
+			zpGebuehr = *v
+		}
+		if v := resolved.ServicegebuehrBezugCtKwh; v != nil {
+			serviceFeeBezugRate = *v
+		}
+		if v := resolved.ServicegebuehrEinspeisung; v != nil {
+			serviceFeeEinspeisungRate = *v
 		}
 		activeZPCount, _ := s.meterPointRepo.CountActiveByMember(ctx, sum.MemberID)
 

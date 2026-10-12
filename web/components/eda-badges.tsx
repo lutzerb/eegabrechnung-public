@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { edaMessageStatusLabelAndStyle } from "@/lib/eda-status-labels";
-import { formatXml } from "@/lib/format-xml";
+import { formatXml, extractXmlBlockForZaehlpunkt } from "@/lib/format-xml";
 
 // Shared by eda-messages-table.tsx and eda-processes-table.tsx so a message's direction/
 // status badge looks identical whether it's shown in the flat Nachrichten tab or nested
@@ -32,13 +32,19 @@ export function XmlPreviewToggle({
   messageId,
   filenameHint,
   align = "start",
+  excerptForZaehlpunkt,
 }: {
   eegId: string;
   messageId: string;
   filenameHint: string;
   align?: "start" | "end";
+  // When set, the inline preview shows only the <MPListData> block for this Zählpunkt
+  // instead of the full message (download link always offers the full XML). Falls back
+  // to the full XML if the block can't be found (e.g. older/differently-shaped messages).
+  excerptForZaehlpunkt?: string;
 }) {
   const [xml, setXml] = useState<string | "loading" | "error" | null>(null);
+  const [isExcerpt, setIsExcerpt] = useState(false);
 
   const toggleXml = async () => {
     if (xml !== null) {
@@ -49,7 +55,10 @@ export function XmlPreviewToggle({
     try {
       const res = await fetch(`/api/eegs/${eegId}/eda/messages/${messageId}/xml`);
       if (!res.ok) throw new Error(`status ${res.status}`);
-      setXml(formatXml(await res.text()));
+      const raw = await res.text();
+      const excerpt = excerptForZaehlpunkt ? extractXmlBlockForZaehlpunkt(raw, excerptForZaehlpunkt) : null;
+      setIsExcerpt(excerpt !== null);
+      setXml(formatXml(excerpt ?? raw));
     } catch {
       setXml("error");
     }
@@ -83,9 +92,18 @@ export function XmlPreviewToggle({
         <p className="mt-2 text-xs text-red-600">XML konnte nicht geladen werden.</p>
       )}
       {xml && xml !== "loading" && xml !== "error" && (
-        <pre className="mt-2 max-h-64 overflow-y-auto text-[11px] font-mono text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 whitespace-pre-wrap break-all">
-          {xml}
-        </pre>
+        <>
+          {excerptForZaehlpunkt && (
+            <p className="mt-2 text-[11px] text-slate-400">
+              {isExcerpt
+                ? "Nur relevanter Ausschnitt für diesen Zählpunkt — komplettes XML über \"herunterladen\"."
+                : "Ausschnitt für diesen Zählpunkt nicht gefunden — zeige vollständiges XML."}
+            </p>
+          )}
+          <pre className="mt-1 max-h-64 overflow-y-auto text-[11px] font-mono text-slate-700 bg-slate-50 border border-slate-200 rounded p-2 whitespace-pre-wrap break-all">
+            {xml}
+          </pre>
+        </>
       )}
     </div>
   );

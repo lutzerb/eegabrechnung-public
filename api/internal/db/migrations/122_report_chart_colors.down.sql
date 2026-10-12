@@ -1,0 +1,10 @@
+ALTER TABLE eegs DROP COLUMN report_chart_color_ausgetauscht;
+ALTER TABLE eegs DROP COLUMN report_chart_color_restbedarf;
+ALTER TABLE eegs DROP COLUMN report_chart_color_einspeisung_eeg;
+ALTER TABLE eegs DROP COLUMN report_chart_color_resteinspeisung;
+ALTER TABLE eegs DROP COLUMN report_chart_color_billed_einspeisung;
+ALTER TABLE eegs DROP COLUMN report_chart_color_billed_bezug;
+ALTER TABLE eegs DROP COLUMN report_chart_color_einnahmen;
+ALTER TABLE eegs DROP COLUMN report_chart_color_gutschriften;
+ALTER TABLE eegs DROP COLUMN report_chart_color_member_einspeisung;
+ALTER TABLE eegs DROP COLUMN report_chart_color_member_bezug;

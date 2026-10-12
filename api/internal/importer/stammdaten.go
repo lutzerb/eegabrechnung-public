@@ -42,6 +42,7 @@ func ParseStammdaten(path string) ([]domain.StammdatenRow, error) {
 //
 //	Mitglieds-Nr(0) Zählpunkt(1) Energierichtung(2) Verteilungsmodell(3)
 //	Zuteilung %(4) Status(5) Registriert seit(6)
+//	Zählpunkt-Straße(7) Zählpunkt-PLZ(8) Zählpunkt-Ort(9)  [optional, may be absent in older files]
 func parseInternalTwoSheetFormat(f *excelize.File) ([]domain.StammdatenRow, error) {
 	memberRows, err := f.GetRows("Mitglieder")
 	if err != nil {
@@ -118,6 +119,9 @@ func parseInternalTwoSheetFormat(f *excelize.File) ([]domain.StammdatenRow, erro
 			ZugeteilteMenugePct: pct,
 			Zaehlpunktstatus:    zpStatus,
 			RegistriertSeit:     get(row, 6),
+			MPStrasse:           get(row, 7),
+			MPPlz:               get(row, 8),
+			MPOrt:               get(row, 9),
 		})
 	}
 	return result, nil

@@ -91,6 +91,11 @@ type EEG struct {
 	InvoiceNumberPrefix            string  `json:"invoice_number_prefix"`
 	InvoiceNumberDigits            int     `json:"invoice_number_digits"`
 	InvoiceNumberStart             int     `json:"invoice_number_start"` // first invoice number for this EEG
+	// KundenkontoStart is a per-EEG floor/suggestion for the freely-editable
+	// Kundenkonto field on members — NOT a cross-EEG or org-wide sequence. An
+	// org with several EEGs that wants "virtually continuous" numbers across
+	// them sets a different start per EEG manually.
+	KundenkontoStart int `json:"kundenkonto_start"`
 	InvoicePreText                 string  `json:"invoice_pre_text"`
 	InvoicePostText                string  `json:"invoice_post_text"`
 	InvoiceFooterText              string  `json:"invoice_footer_text"`
@@ -108,6 +113,14 @@ type EEG struct {
 	// {betrag}/{iban}/{eeg_iban}/{eeg_bic}/{datum} placeholders (same convention
 	// as OnboardingContractText's {iban}/{datum}).
 	InvoicePaymentNoticeText string `json:"invoice_payment_notice_text"`
+	// Free-form template for the Rechnung/Gutschrift dispatch email's subject/body.
+	// Empty (default) = fall back to the hardcoded text in invoice/email.go.
+	// Supports {{name}}/{{vorname}}/{{nachname}}/{{mitglieds_nr}}/{{eeg_name}}/
+	// {{dokumenttyp}}/{{rechnungsnummer}}/{{zeitraum}}/{{zeitraum_von}}/{{zeitraum_bis}}/
+	// {{betrag}}/{{bezug_kwh}}/{{einspeisung_kwh}}/{{bezug_zeile}}/{{einspeisung_zeile}}/
+	// {{gesamtbetrag_zeile}}/{{zahlungshinweis}}/{{portal_link}}.
+	InvoiceEmailSubject string `json:"invoice_email_subject"`
+	InvoiceEmailBody    string `json:"invoice_email_body"`
 	// Controls how fixed fees (meter/participation fee, Zählpunktsgebühr) are charged:
 	// per_month (default: fee × started calendar months of the billing period) | per_invoice (once per billing run)
 	FeeBillingMode string `json:"fee_billing_mode"`
@@ -271,6 +284,20 @@ type EEG struct {
 	InvoiceChartLabelResteinspeisung      string `json:"invoice_chart_label_resteinspeisung"`
 	InvoiceChartLabelBezug                string `json:"invoice_chart_label_bezug"`
 	InvoiceChartLabelEinspeisung          string `json:"invoice_chart_label_einspeisung"`
+	// Report page chart colors (web reports page, /eegs/{id}/reports — see
+	// web/components/energy-charts.tsx). Independent of the InvoiceChartColor*
+	// fields above, which only affect the PDF invoice chart. Each defaults (via
+	// the migration 122 column default) to the chart's original hardcoded hex.
+	ReportChartColorAusgetauscht      string `json:"report_chart_color_ausgetauscht"`
+	ReportChartColorRestbedarf        string `json:"report_chart_color_restbedarf"`
+	ReportChartColorEinspeisungEeg    string `json:"report_chart_color_einspeisung_eeg"`
+	ReportChartColorResteinspeisung   string `json:"report_chart_color_resteinspeisung"`
+	ReportChartColorBilledEinspeisung string `json:"report_chart_color_billed_einspeisung"`
+	ReportChartColorBilledBezug       string `json:"report_chart_color_billed_bezug"`
+	ReportChartColorEinnahmen         string `json:"report_chart_color_einnahmen"`
+	ReportChartColorGutschriften      string `json:"report_chart_color_gutschriften"`
+	ReportChartColorMemberEinspeisung string `json:"report_chart_color_member_einspeisung"`
+	ReportChartColorMemberBezug       string `json:"report_chart_color_member_bezug"`
 	// ExtraMetersEnabled toggles the Zusatzzähler feature (manually-read submeters,
 	// e.g. Wärmepumpe) for this EEG. Default false — the UI only shows the extra-meter
 	// management pages/cards when this is on.
@@ -314,6 +341,11 @@ type Member struct {
 	ID          uuid.UUID `json:"id"`
 	EegID       uuid.UUID `json:"eeg_id"`
 	MitgliedsNr string    `json:"mitglieds_nr"`
+	// Kundenkonto is a freely editable customer account number (e.g. for the
+	// EEG operator's own external bookkeeping/CRM), independent of MitgliedsNr.
+	// Empty = not yet assigned. Unique per EEG (members_eeg_kundenkonto_uidx),
+	// never org-wide.
+	Kundenkonto string    `json:"kundenkonto"`
 	Name1       string    `json:"name1"`
 	Name2       string    `json:"name2"`
 	Email       string    `json:"email"`
@@ -348,7 +380,18 @@ type Member struct {
 	// link (resolved server-side from the onboarding request's referral code at
 	// submit time, carried over on conversion). Nil for organic joins.
 	ReferredByMemberID *uuid.UUID `json:"referred_by_member_id,omitempty"`
-	CreatedAt          time.Time  `json:"created_at"`
+	// TariffScheduleID (Migration 121) is the EEG-wide tariff plan explicitly assigned to the
+	// member; nil = the EEG's Standardtarif applies.
+	TariffScheduleID *uuid.UUID `json:"tariff_schedule_id,omitempty"`
+	CreatedAt        time.Time  `json:"created_at"`
+}
+
+// EffectiveTariff describes which tariff plan is valid for a member right now.
+// Source: "individual" (active Individualtarif) | "assigned" | "default".
+type EffectiveTariff struct {
+	ScheduleID *uuid.UUID `json:"schedule_id,omitempty"`
+	Name       string     `json:"name"`
+	Source     string     `json:"source"`
 }
 
 // MemberReferralBonus (Migration 114) records a manually-granted flat referral
@@ -401,6 +444,9 @@ type MeterPoint struct {
 	GenerationType      *string    `json:"generation_type,omitempty"` // PV | Windkraft | Wasserkraft; only for GENERATION meters
 	GapAlertSentAt      *time.Time `json:"gap_alert_sent_at,omitempty"`
 	Notes               string     `json:"notes"`
+	Strasse             string     `json:"strasse"` // optional, informational Standort-Adresse
+	Plz                 string     `json:"plz"`
+	Ort                 string     `json:"ort"`
 	ConsentID           string     `json:"consent_id"` // NB-assigned ConsentId from ZUSTIMMUNG_ECON; required for CM_REV_SP
 	CreatedAt           time.Time  `json:"created_at"`
 }
@@ -661,6 +707,9 @@ type OnboardingMeterPoint struct {
 	Direction           string  `json:"direction"`                      // CONSUMPTION or GENERATION
 	GenerationType      string  `json:"generation_type,omitempty"`      // PV | Windkraft | Wasserkraft | Biomasse | Sonstige — only for GENERATION
 	ParticipationFactor float64 `json:"participation_factor,omitempty"` // 0..100; 0 means default (100)
+	Strasse             string  `json:"strasse,omitempty"`              // optional Standort-Adresse
+	Plz                 string  `json:"plz,omitempty"`
+	Ort                 string  `json:"ort,omitempty"`
 }
 
 // OnboardingRequest tracks a new member signing up for an EEG.
@@ -720,6 +769,9 @@ type StammdatenRow struct {
 	MitgliedsNr         string
 	Zaehlpunktstatus    string
 	RegistriertSeit     string
+	MPStrasse           string // optional Standort-Adresse des Zählpunkts
+	MPPlz               string
+	MPOrt               string
 }
 
 // EnergyRow holds a single parsed row from an energy XLSX.
@@ -771,15 +823,21 @@ type EEGDocument struct {
 // is a member-specific Individualtarif that overrides individual EEG fee fields when
 // the corresponding *Override pointer is non-nil (nil = fall back to the EEG default).
 type TariffSchedule struct {
-	ID          uuid.UUID     `json:"id"`
-	EegID       uuid.UUID     `json:"eeg_id"`
-	MemberID    *uuid.UUID    `json:"member_id,omitempty"`
-	Name        string        `json:"name"`
-	Granularity string        `json:"granularity"` // annual | monthly | daily | quarter_hour
-	IsActive    bool          `json:"is_active"`
-	EntryCount  int           `json:"entry_count,omitempty"`
-	Entries     []TariffEntry `json:"entries,omitempty"`
-	CreatedAt   time.Time     `json:"created_at"`
+	ID          uuid.UUID  `json:"id"`
+	EegID       uuid.UUID  `json:"eeg_id"`
+	MemberID    *uuid.UUID `json:"member_id,omitempty"`
+	Name        string     `json:"name"`
+	Granularity string     `json:"granularity"` // annual | monthly | daily | quarter_hour
+	// IsActive on an EEG-wide plan means "released/assignable" (several may be active in parallel);
+	// on an Individualtarif it means "currently applied" (at most one per member).
+	IsActive bool `json:"is_active"`
+	// IsDefault marks the EEG-wide Standardtarif (exactly one per EEG, always active).
+	IsDefault bool `json:"is_default"`
+	// AssignedMemberCount is the number of members explicitly assigned to this EEG-wide plan.
+	AssignedMemberCount int           `json:"assigned_member_count"`
+	EntryCount          int           `json:"entry_count,omitempty"`
+	Entries             []TariffEntry `json:"entries,omitempty"`
+	CreatedAt           time.Time     `json:"created_at"`
 
 	// Member-specific overrides (only meaningful when MemberID != nil). nil = use EEG default.
 	FreeKwhOverride             *float64 `json:"free_kwh_override,omitempty"`
