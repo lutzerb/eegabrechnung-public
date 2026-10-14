@@ -7,6 +7,8 @@ const TYP_COLORS: Record<string, string> = {
   EEG: "bg-blue-50 text-blue-700",
   BEG: "bg-violet-50 text-violet-700",
   GEA: "bg-amber-50 text-amber-700",
+  P2P: "bg-sky-50 text-sky-700",
+  EVA: "bg-rose-50 text-rose-700",
 };
 
 const ASSIGN_FORM_ID = "kundenkonten-assign-form";

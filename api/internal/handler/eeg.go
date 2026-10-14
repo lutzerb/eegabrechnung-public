@@ -2,8 +2,10 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -13,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/lutzerb/eegabrechnung/internal/auth"
 	"github.com/lutzerb/eegabrechnung/internal/domain"
 	"github.com/lutzerb/eegabrechnung/internal/invoice"
@@ -450,7 +453,11 @@ func (h *EEGHandler) CreateEEG(w http.ResponseWriter, r *http.Request) {
 		jsonError(w, "name is required", http.StatusBadRequest)
 		return
 	}
-	if req.GemeinschaftTyp != "BEG" && req.Netzbetreiber == "" {
+	if req.GemeinschaftTyp != "" && !domain.ValidGemeinschaftTyp(req.GemeinschaftTyp) {
+		jsonError(w, "invalid gemeinschaft_typ", http.StatusBadRequest)
+		return
+	}
+	if !domain.AllowsMultiNetzbetreiber(req.GemeinschaftTyp) && req.Netzbetreiber == "" {
 		jsonError(w, "netzbetreiber is required", http.StatusBadRequest)
 		return
 	}
@@ -541,6 +548,11 @@ func (h *EEGHandler) CreateEEG(w http.ResponseWriter, r *http.Request) {
 		eeg.Gruendungsdatum = &t
 	}
 	if err := h.eegRepo.Create(r.Context(), eeg); err != nil {
+		if msg, ok := eegUniqueViolationMessage(err); ok {
+			jsonError(w, msg, http.StatusConflict)
+			return
+		}
+		slog.Error("create EEG failed", "error", err)
 		jsonError(w, "failed to create EEG", http.StatusInternalServerError)
 		return
 	}
@@ -668,6 +680,10 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 		existing.Netzbetreiber = req.Netzbetreiber
 	}
 	if req.GemeinschaftTyp != "" {
+		if !domain.ValidGemeinschaftTyp(req.GemeinschaftTyp) {
+			jsonError(w, "invalid gemeinschaft_typ", http.StatusBadRequest)
+			return
+		}
 		existing.GemeinschaftTyp = req.GemeinschaftTyp
 	}
 	existing.EnergyPrice = req.EnergyPrice
@@ -955,6 +971,11 @@ func (h *EEGHandler) UpdateEEG(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.eegRepo.Update(r.Context(), existing); err != nil {
+		if msg, ok := eegUniqueViolationMessage(err); ok {
+			jsonError(w, msg, http.StatusConflict)
+			return
+		}
+		slog.Error("update EEG failed", "eeg_id", existing.ID, "error", err)
 		jsonError(w, "failed to update EEG", http.StatusInternalServerError)
 		return
 	}
@@ -1543,4 +1564,17 @@ func (h *EEGHandler) DeleteEEG(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// eegUniqueViolationMessage turns a unique-constraint violation on the eegs
+// table into a user-facing message (HTTP 409 instead of a bare 500).
+func eegUniqueViolationMessage(err error) (string, bool) {
+	var pgErr *pgconn.PgError
+	if !errors.As(err, &pgErr) || pgErr.Code != "23505" {
+		return "", false
+	}
+	if pgErr.ConstraintName == "eegs_gemeinschaft_id_key" {
+		return "Diese Gemeinschafts-ID ist bereits vergeben (eine leere ID kann nur einmal verwendet werden — bitte die ID der Gemeinschaft angeben).", true
+	}
+	return "Eintrag existiert bereits (" + pgErr.ConstraintName + ").", true
 }

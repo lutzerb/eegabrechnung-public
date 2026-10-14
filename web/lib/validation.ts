@@ -112,7 +112,7 @@ export function validateZaehlpunkt(raw: string, nb?: NetzbetreiberContext): stri
 
   if (nb) {
     const resolved = resolveNetzbetreiberID(zp, nb);
-    if (nb.gemeinschaftTyp === "BEG") {
+    if (["BEG", "P2P", "EVA"].includes(nb.gemeinschaftTyp)) {
       if (!resolved.ok) {
         return "Zählpunkt konnte keinem bekannten Strom-Netzbetreiber zugeordnet werden — bitte prüfen, ob es sich tatsächlich um einen Strom-Zählpunkt handelt (kein Gas-/Wasserzähler).";
       }

@@ -3,7 +3,7 @@
 export interface EEG {
   id: string;
   gemeinschaft_id: string;
-  gemeinschaft_typ: string; // "EEG" | "GEA" | "BEG"
+  gemeinschaft_typ: string; // "EEG" | "GEA" | "BEG" | "P2P" | "EVA"
   netzbetreiber: string;
   name: string;
   display_name?: string; // optional alias shown everywhere except legal documents (invoices, SEPA, onboarding declaration); empty = fall back to name

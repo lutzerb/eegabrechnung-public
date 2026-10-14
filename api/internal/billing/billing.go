@@ -997,34 +997,23 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		// Admin-granted via /eegs/{eegID}/referrals/{id}/grant-bonus, applied in full
 		// to the referrer's next billing run regardless of size (may push the Saldo
 		// negative on a small Rechnung, or enlarge a Gutschrift — both intentional).
-		// Rechnung: folded into consumptionNet pre-VAT (same principle as free_kwh/
-		// discount_pct), using the EEG's own consumption VAT rate.
-		// Gutschrift (isCreditNote): folded into generationCredit pre-VAT instead,
-		// using the REFERRER's own generation VAT rate (0/13/20/Reverse Charge) —
-		// not the EEG's — so the granted amount is a round gross figure regardless
-		// of the referrer's UID/Landwirt status.
-		var werbebonusNet float64
+		// Deliberately kept OUT of consumptionNet/generationCredit and out of the VAT
+		// calculation entirely: it's a referral incentive, not a price reduction on the
+		// electricity delivered, so it must not shrink the taxable Bezug/Einspeisung
+		// basis. It is applied once, as a flat gross amount, to totalAmount at the very
+		// end (after Bezug and Einspeisung — including VAT — are fully computed), and
+		// shown on the document as its own closing line just above the final Saldo.
+		// See BackfillSplitAmounts and EAImportPreview (repository/ea.go) for the two
+		// places that must independently know about this amount — it is intentionally
+		// NOT folded into ConsumptionNetAmount/GenerationNetAmount (invoice.go), so a
+		// bonus gets its own booking line in the E/A-Buchhaltung import instead of
+		// silently reducing (or being dropped from) the Bezug/Einspeisung booking.
+		var werbebonusAmount float64
 		var werbebonusBonusIDs []uuid.UUID
 		if s.referralBonusRepo != nil {
 			if gross, ids, err := s.referralBonusRepo.SumPendingForMember(ctx, eegID, sum.MemberID); err == nil && gross > 0 {
+				werbebonusAmount = gross
 				werbebonusBonusIDs = ids
-				if isCreditNote {
-					genVatPct := 0.0
-					if memberErr == nil {
-						genVatPct = invoice.GenerationVATPct(member)
-					}
-					werbebonusNet = gross
-					if genVatPct > 0 {
-						werbebonusNet = gross / (1 + genVatPct/100)
-					}
-					generationCredit += werbebonusNet
-				} else {
-					werbebonusNet = gross
-					if eeg.UseVat {
-						werbebonusNet = gross / (1 + eeg.VatPct/100)
-					}
-					consumptionNet -= werbebonusNet
-				}
 			}
 		}
 
@@ -1040,11 +1029,6 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		consumptionVatPct := 0.0
 		consumptionVatAmount := 0.0
 		consumptionGross := consumptionNet
-		// != 0 (not > 0): a Werbebonus can push consumptionNet negative — VAT must
-		// still apply proportionally so the bonus's gross reduction stays exact
-		// (see Werbebonus comment above). Positive consumptionNet keeps its
-		// pre-existing behavior unchanged; exactly 0 also behaves identically
-		// either way (0 × anything = 0).
 		if eeg.UseVat && consumptionNet != 0 {
 			consumptionVatPct = eeg.VatPct
 			consumptionVatAmount = consumptionNet * eeg.VatPct / 100
@@ -1066,7 +1050,8 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 			}
 		}
 
-		totalAmount := consumptionGross - generationGross
+		// Werbebonus applied last, flat and VAT-free, straight off the energy saldo.
+		totalAmount := consumptionGross - generationGross - werbebonusAmount
 		vatAmount := consumptionVatAmount + generationVatAmount
 		vatPctApplied := consumptionVatPct // EEG-level rate (for DATEV / summary)
 
@@ -1116,7 +1101,7 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 			ServiceFeeEinspeisungKwh:   generationKwh,
 			ServiceFeeEinspeisungCtKwh: serviceFeeEinspeisungRate,
 			ServiceFeeEinspeisungTotal: serviceFeeEinspeisungTotal,
-			WerbebonusTotal:            werbebonusNet,
+			WerbebonusTotal:            werbebonusAmount,
 		}
 
 		inv := &domain.Invoice{
@@ -1126,7 +1111,7 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 			PeriodEnd:            effectiveEnd,
 			TotalKwh:             consumptionKwh,
 			TotalAmount:          totalAmount,
-			NetAmount:            consumptionNet - generationCredit,
+			NetAmount:            consumptionNet - generationCredit - werbebonusAmount,
 			VatAmount:            vatAmount,
 			VatPctApplied:        vatPctApplied,
 			ConsumptionKwh:       consumptionKwh,
@@ -1195,9 +1180,9 @@ func (s *Service) RunBilling(ctx context.Context, eegID uuid.UUID, opts RunOptio
 		var pdfData []byte
 		if isCreditNote {
 			if individuell {
-				pdfData, err = invoice.GenerateCreditNotePDFThemed(inv, eeg, member, producerPriceCt, generationKwh, generationMPs, monthlyItems, chartHistory, invoice.ThemeFromEEG(eeg), werbebonusNet)
+				pdfData, err = invoice.GenerateCreditNotePDFThemed(inv, eeg, member, producerPriceCt, generationKwh, generationMPs, monthlyItems, chartHistory, invoice.ThemeFromEEG(eeg), werbebonusAmount)
 			} else {
-				pdfData, err = invoice.GenerateCreditNotePDF(inv, eeg, member, producerPriceCt, generationKwh, generationMPs, monthlyItems, chartHistory, werbebonusNet)
+				pdfData, err = invoice.GenerateCreditNotePDF(inv, eeg, member, producerPriceCt, generationKwh, generationMPs, monthlyItems, chartHistory, werbebonusAmount)
 			}
 		} else if individuell {
 			energyRows := s.energyPeriodRows(ctx, sum.MemberID, effectiveStart, effectiveEnd)
@@ -1430,10 +1415,12 @@ func (s *Service) RegeneratePDF(ctx context.Context, invoiceID uuid.UUID) ([]byt
 	var pdfData []byte
 	if isCreditNote {
 		// monthlyItems not available during regeneration — falls back to single-month layout.
-		// werbebonusNet is not reconstructed here (best-effort path, like the fee/price
-		// reconstruction above) — a regenerated Gutschrift PDF folds any Werbebonus back
-		// into the raw Einspeisung line instead of showing it separately; the totals
-		// (inv.TotalAmount etc.) stay correct either way since they come from stored fields.
+		// werbebonusAmount is not reconstructed here (best-effort path, like the fee/price
+		// reconstruction above — inv.NetAmount, not the pure ConsumptionNetAmount/
+		// GenerationNetAmount, is what gets re-split) — a regenerated Gutschrift PDF folds
+		// any Werbebonus back into the raw Einspeisung line instead of showing it
+		// separately as its own closing row; the totals (inv.TotalAmount etc.) stay
+		// correct either way since they come from stored fields, not from this recompute.
 		if individuell {
 			pdfData, err = invoice.GenerateCreditNotePDFThemed(inv, eeg, member, producerPriceCt, generationKwh, generationMPs, nil, chartHistory, invoice.ThemeFromEEG(eeg), 0)
 		} else {

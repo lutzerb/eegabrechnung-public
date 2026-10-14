@@ -902,7 +902,7 @@ func (h *MemberPortalHandler) ChangeParticipationFactor(w http.ResponseWriter, r
 			jsonError(w, fmt.Sprintf("Unbekannter Netzbetreiber-Code für Zählpunkt %s", req.Zaehlpunkt), http.StatusUnprocessableEntity)
 			return
 		}
-		if eeg.GemeinschaftTyp != "BEG" && resolved != eeg.EdaNetzbetreiberID {
+		if !domain.AllowsMultiNetzbetreiber(eeg.GemeinschaftTyp) && resolved != eeg.EdaNetzbetreiberID {
 			jsonError(w, fmt.Sprintf("Zählpunkt %s passt nicht zum konfigurierten Netzbetreiber %s", req.Zaehlpunkt, eeg.EdaNetzbetreiberID), http.StatusBadRequest)
 			return
 		}

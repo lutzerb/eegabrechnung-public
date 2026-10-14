@@ -350,7 +350,7 @@ func Overrides() map[string]string {
 // For EEG/GEA, the Zählpunkt must resolve (via ResolveRoutingID, which also
 // honors prefixOverrides) to the configured edaNetzbetreiberID — the same
 // check handler/eda.go already performs for outbound EDA actions, just
-// applied earlier at data-entry time. For BEG, there is no single configured
+// applied earlier at data-entry time. For BEG/P2P/EVA, there is no single configured
 // Netzbetreiber (a BEG may span several), so it's enough that the Zählpunkt
 // resolves to ANY known Austrian electricity grid operator.
 //
@@ -360,7 +360,7 @@ func Overrides() map[string]string {
 func ValidateZaehlpunkt(zaehlpunkt, gemeinschaftTyp, edaNetzbetreiberID string) error {
 	resolved, ok := ResolveRoutingID(zaehlpunkt)
 
-	if gemeinschaftTyp == "BEG" {
+	if domain.AllowsMultiNetzbetreiber(gemeinschaftTyp) {
 		if !ok {
 			return fmt.Errorf("Zählpunkt %s konnte keinem bekannten Strom-Netzbetreiber zugeordnet werden — bitte prüfen, ob es sich tatsächlich um einen Strom-Zählpunkt handelt (kein Gas-/Wasserzähler)", zaehlpunkt)
 		}

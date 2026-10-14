@@ -148,6 +148,7 @@ func (r *EARepository) SeedDefaultKonten(ctx context.Context, eegID uuid.UUID) e
 		{Nummer: "6300", Name: "Vereinskosten", Typ: "AUSGABE", UstRelevanz: "VST", StandardUstPct: ptr64(20), K1KZ: "9230", Sortierung: 220},                      // Übrige Aufwendungen
 		{Nummer: "6400", Name: "IT / Hosting / Software", Typ: "AUSGABE", UstRelevanz: "VST", StandardUstPct: ptr64(20), K1KZ: "9230", Sortierung: 230},            // Übrige Aufwendungen
 		{Nummer: "6500", Name: "Steuerberatung / Buchhaltung", Typ: "AUSGABE", UstRelevanz: "VST", StandardUstPct: ptr64(20), K1KZ: "9230", Sortierung: 240},       // Übrige Aufwendungen
+		{Nummer: "6600", Name: "Werbeprämien (Mitglieder werben Mitglieder)", Typ: "AUSGABE", UstRelevanz: "KEINE", K1KZ: "9230", Sortierung: 250},                 // Übrige Aufwendungen — cash incentive, no VAT
 		{Nummer: "6900", Name: "Sonstige Ausgaben", Typ: "AUSGABE", UstRelevanz: "VST", StandardUstPct: ptr64(20), K1KZ: "9230", Sortierung: 290},                  // Übrige Aufwendungen
 		// Geldkonten — kein K1 KZ (Bestandskonten)
 		{Nummer: "1000", Name: "Bankkonto Hauptkonto", Typ: "SONSTIG", UstRelevanz: "KEINE", Sortierung: 500},
@@ -947,6 +948,7 @@ func (r *EARepository) QueryInvoicesForImport(ctx context.Context, eegID uuid.UU
 		       COALESCE(m.business_role,'privat') AS business_role,
 		       i.net_amount, i.consumption_net_amount, i.generation_net_amount,
 		       i.consumption_vat_pct, i.consumption_vat_amount,
+		       COALESCE(bb.bonus_total, 0) AS bonus_total,
 		       EXISTS(SELECT 1 FROM ea_buchungen b WHERE b.eeg_id=i.eeg_id AND b.quelle_id=i.id AND b.deleted_at IS NULL) AS already_imported,
 		       e.invoice_number_prefix, COALESCE(e.invoice_number_digits, 5),
 		       e.credit_note_number_prefix, COALESCE(e.credit_note_number_digits, 5),
@@ -957,6 +959,12 @@ func (r *EARepository) QueryInvoicesForImport(ctx context.Context, eegID uuid.UU
 		JOIN billing_runs br ON br.id = i.billing_run_id AND br.status = 'finalized'
 		LEFT JOIN members m ON m.id = i.member_id
 		JOIN eegs e ON e.id = i.eeg_id
+		LEFT JOIN (
+		  SELECT applied_invoice_id, SUM(amount_eur) AS bonus_total
+		  FROM member_referral_bonuses
+		  WHERE applied_invoice_id IS NOT NULL
+		  GROUP BY applied_invoice_id
+		) bb ON bb.applied_invoice_id = i.id
 		WHERE %s
 		ORDER BY COALESCE(i.sent_at, i.created_at), i.document_type, i.invoice_number`, where)
 
@@ -974,6 +982,7 @@ func (r *EARepository) QueryInvoicesForImport(ctx context.Context, eegID uuid.UU
 		var docType, businessRole string
 		var netAmt, consumptionNet, generationNet float64
 		var consumptionVatPct, consumptionVatAmount float64
+		var bonusTotal float64
 		var alreadyImported, eegUseVat bool
 		var invPrefix, creditPrefix string
 		var invDigits, creditDigits int
@@ -982,7 +991,7 @@ func (r *EARepository) QueryInvoicesForImport(ctx context.Context, eegID uuid.UU
 		if err := rows.Scan(&invoiceID, &invoiceNr, &datum, &docType,
 			&mitgliedName, &businessRole,
 			&netAmt, &consumptionNet, &generationNet,
-			&consumptionVatPct, &consumptionVatAmount,
+			&consumptionVatPct, &consumptionVatAmount, &bonusTotal,
 			&alreadyImported, &invPrefix, &invDigits, &creditPrefix, &creditDigits,
 			&eegUseVat, &pdfPath, &paidAt); err != nil {
 			return nil, fmt.Errorf("scan: %w", err)
@@ -1014,8 +1023,11 @@ func (r *EARepository) QueryInvoicesForImport(ctx context.Context, eegID uuid.UU
 		// After migrations 063–065 + Go backfill, all prosumer invoices satisfy this.
 		// The only remaining edge case is invoices where the backfill couldn't recover
 		// exact values (tariff changed after billing) — those fall through to default.
+		// consumption_net_amount/generation_net_amount never include a Werbebonus
+		// (Migration 114) — it is booked as its own line below — so bonus_total is
+		// added back here before comparing against the (bonus-reduced) net_amount.
 		isSplit := consumptionNet > 0 && generationNet > 0 &&
-			math.Abs((consumptionNet-generationNet)-netAmt) <= 0.005
+			math.Abs((consumptionNet-generationNet)-(netAmt+bonusTotal)) <= 0.005
 
 		switch {
 		case docType == "credit_note" || (consumptionNet == 0 && generationNet > 0):
@@ -1070,8 +1082,10 @@ func (r *EARepository) QueryInvoicesForImport(ctx context.Context, eegID uuid.UU
 			// For un-backfillable prosumers: book net_amount as Bezug (conservative fallback).
 			amount := consumptionNet
 			if consumptionNet == 0 || (consumptionNet > 0 && generationNet > 0) {
-				// prosumer fallback: use net_amount (may be negative → still book as Bezug with actual sign)
-				amount = netAmt
+				// prosumer fallback: use net_amount, bonus added back (consistent with the
+				// Werbebonus getting its own booking line below — may be negative →
+				// still book as Bezug with actual sign).
+				amount = netAmt + bonusTotal
 			}
 			var brutto float64
 			if bezugUstCode == "UST_20" {
@@ -1090,6 +1104,24 @@ func (r *EARepository) QueryInvoicesForImport(ctx context.Context, eegID uuid.UU
 				KontoNummer: "4000", KontoName: "Bezugsgebühren Mitglieder",
 				UstCode: bezugUstCode, BetragBrutto: brutto, BetragNetto: netto, UstBetrag: ust,
 				AlreadyImported: alreadyImported, PdfPath: pdfPath,
+			})
+		}
+
+		// Werbebonus (Migration 114) — a granted referral bonus is never folded into
+		// the Bezug/Einspeisung rows above (see billing.go); it gets its own booking
+		// line instead, on the "Werbeprämien" expense account (6600). PdfPath is left
+		// empty — the invoice PDF is already attached via the row above, same
+		// convention as the Einspeisung half of a prosumer split.
+		if bonusTotal > 0 {
+			_, bonusUst, bonusNetto := CalcUSt(bonusTotal, "KEINE")
+			result = append(result, domain.EAImportPreviewRow{
+				InvoiceID: invoiceID, InvoiceNr: invoiceNrStr, Datum: datum, PaidAt: paidAt,
+				DocumentType: docType, BusinessRole: businessRole, MitgliedName: mitgliedName,
+				SplitPart:    "werbebonus",
+				Beschreibung: "Werbebonus " + invoiceNrStr + " – " + mitgliedName,
+				KontoNummer: "6600", KontoName: "Werbeprämien (Mitglieder werben Mitglieder)",
+				UstCode: "KEINE", BetragBrutto: bonusTotal, BetragNetto: bonusNetto, UstBetrag: bonusUst,
+				AlreadyImported: alreadyImported,
 			})
 		}
 	}

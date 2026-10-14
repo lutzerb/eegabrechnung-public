@@ -1808,13 +1808,6 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 			"Servicegebühr Einspeisung", formatKwh(vat.ServiceFeeEinspeisungKwh), fmt.Sprintf("%.4f ct", vat.ServiceFeeEinspeisungCtKwh), formatAmount(vat.ServiceFeeEinspeisungTotal))
 	}
 
-	// Werbebonus — Mitglieder-werben-Mitglieder-Prämie, already folded into
-	// ConsumptionNet above; shown as its own negative row for transparency.
-	if vat.WerbebonusTotal > 0 {
-		drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
-			"Werbebonus (Mitglied geworben)", "", "", "-"+formatAmount(vat.WerbebonusTotal))
-	}
-
 	// Zusatzzähler — manually-read submeters (e.g. Wärmepumpe), one line each.
 	for _, em := range vat.ExtraMeterLines {
 		label := fmt.Sprintf("%s (Zusatzzähler)", em.Label)
@@ -1874,6 +1867,13 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 		}
 
 		theme.ln(pdf, 2)
+		// Werbebonus — applied last, after Bezug and Einspeisung (including VAT) are
+		// fully settled — not part of either block above.
+		if vat.WerbebonusTotal > 0 {
+			pdf.CellFormat(colDesc+colKwh+colPrice, vatH, "Werbebonus (Mitglied geworben)", "0", 0, "R", false, 0, "")
+			pdf.CellFormat(colAmount, vatH, "-"+formatAmount(vat.WerbebonusTotal), "0", 1, "R", false, 0, "")
+			theme.ln(pdf, 1)
+		}
 		drawThemedSaldoRow(pdf, colDesc+colKwh+colPrice+colAmount, inv, vat, theme)
 	} else {
 		pdf.CellFormat(colDesc+colKwh+colPrice, vatH, "Nettobetrag Bezug", "0", 0, "R", false, 0, "")
@@ -1890,7 +1890,29 @@ func GeneratePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *domain.Memb
 			pdf.CellFormat(colAmount, vatH, "0,00 €", "0", 1, "R", false, 0, "")
 		}
 		theme.ln(pdf, 2)
-		drawThemedTotalLine(pdf, fmt.Sprintf("Bruttobetrag Bezug: %s", formatAmount(inv.TotalAmount)), theme)
+		if vat.WerbebonusTotal > 0 {
+			pdf.SetFont("Theme", "B", theme.size(0))
+			pdf.CellFormat(colDesc+colKwh+colPrice, vatH, "Bruttobetrag Bezug", "0", 0, "R", false, 0, "")
+			pdf.CellFormat(colAmount, vatH, formatAmount(vat.ConsumptionGross), "0", 1, "R", false, 0, "")
+			pdf.SetFont("Theme", "", theme.size(0))
+			theme.ln(pdf, 2)
+			pdf.CellFormat(colDesc+colKwh+colPrice, vatH, "Werbebonus (Mitglied geworben)", "0", 0, "R", false, 0, "")
+			pdf.CellFormat(colAmount, vatH, "-"+formatAmount(vat.WerbebonusTotal), "0", 1, "R", false, 0, "")
+			theme.ln(pdf, 1)
+			var totalLabel string
+			if inv.TotalAmount < 0 {
+				totalLabel = fmt.Sprintf("Saldo (EEG zahlt an Sie): %s", formatAmount(-inv.TotalAmount))
+			} else {
+				totalLabel = fmt.Sprintf("Saldo (Zahlungsbetrag): %s", formatAmount(inv.TotalAmount))
+			}
+			drawThemedTotalLine(pdf, totalLabel, theme)
+		} else {
+			label := fmt.Sprintf("Bruttobetrag Bezug: %s", formatAmount(inv.TotalAmount))
+			if inv.TotalAmount < 0 {
+				label = fmt.Sprintf("Saldo (EEG zahlt an Sie): %s", formatAmount(-inv.TotalAmount))
+			}
+			drawThemedTotalLine(pdf, label, theme)
+		}
 	}
 
 	theme.ln(pdf, 4)
@@ -2038,12 +2060,11 @@ func drawThemedTotalLine(pdf *fpdf.Fpdf, label string, theme InvoiceTheme) {
 // creditNotePricingTableHeight is the GenerateCreditNotePDFThemed counterpart
 // of themedPricingTableHeight (see there) — same page-break-avoidance purpose,
 // mirrors this function's own banner/header/line-item/drawMpSubRow branches.
-func creditNotePricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domain.EEG, generationMeterPoints []MeterPointKwh, monthlyItems []MonthlyKwh, colDesc, rowH float64, periodStart, periodEnd time.Time, werbebonusNet float64) float64 {
+func creditNotePricingTableHeight(pdf *fpdf.Fpdf, theme InvoiceTheme, eeg *domain.EEG, generationMeterPoints []MeterPointKwh, monthlyItems []MonthlyKwh, colDesc, rowH float64, periodStart, periodEnd time.Time) float64 {
 	h := rowH // banner
 	h += rowH // column header
-	if werbebonusNet > 0 {
-		h += rowH // Werbebonus row
-	}
+	// Werbebonus (if any) is shown after the VAT block, not inside this table —
+	// see GenerateCreditNotePDFThemed — so it adds no height here.
 	multiMonth := periodSpansMultipleMonths(periodStart, periodEnd)
 	showGenRows := multiMonth && (eeg.InvoiceShowMonthlyBreakdown || monthlyGenerationPriceVaries(monthlyItems) || monthlyGenerationMonthCount(monthlyItems) <= 1)
 	if multiMonth {
@@ -2173,7 +2194,7 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 	rowH := theme.h(8.0)
 	vatH := theme.h(6.0)
 
-	ensurePageSpace(pdf, creditNotePricingTableHeight(pdf, theme, eeg, generationMeterPoints, monthlyItems, colDesc, rowH, inv.PeriodStart, inv.PeriodEnd, werbebonusNet))
+	ensurePageSpace(pdf, creditNotePricingTableHeight(pdf, theme, eeg, generationMeterPoints, monthlyItems, colDesc, rowH, inv.PeriodStart, inv.PeriodEnd))
 
 	pdf.SetFont("Theme", "B", theme.size(0))
 	theme.apply(pdf)
@@ -2228,14 +2249,6 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 		drawMpSubRowThemed(pdf, theme, generationMeterPoints)
 	}
 
-	// Werbebonus — shown separately so the "Einspeisung Strom" row above stays a
-	// pure kWh × Tarif figure; the Nettobetrag/Gutschriftbetrag below folds it in
-	// via inv.GenerationNetAmount.
-	if werbebonusNet > 0 {
-		drawWrappingLineRow(pdf, theme, colDesc, colKwh, colPrice, colAmount, rowH,
-			"Werbebonus (Mitglied geworben)", "", "", formatAmount(werbebonusNet))
-	}
-
 	// ── VAT section ──────────────────────────────────────────────────────────
 	vatText := GenerationVATText(member)
 	genVatPct := inv.GenerationVatPct
@@ -2273,6 +2286,17 @@ func GenerateCreditNotePDFThemed(inv *domain.Invoice, eeg *domain.EEG, member *d
 	}
 
 	theme.ln(pdf, 2)
+	// Werbebonus — applied last, after the Einspeisung VAT block above. Unlike on a
+	// Rechnung, it INCREASES what the EEG pays out (the referrer is the producer
+	// receiving this Gutschrift) and carries no VAT of its own.
+	if werbebonusNet > 0 {
+		pdf.SetFont("Theme", "", theme.size(0))
+		pdf.CellFormat(colDesc+colKwh+colPrice, vatH, "Werbebonus (Mitglied geworben)", "0", 0, "R", false, 0, "")
+		pdf.CellFormat(colAmount, vatH, "+"+formatAmount(werbebonusNet), "0", 1, "R", false, 0, "")
+		theme.ln(pdf, 1)
+		totalDisplay += werbebonusNet
+		payDisplay += werbebonusNet
+	}
 	drawThemedTotalLine(pdf, fmt.Sprintf("Gutschriftbetrag: %s", formatAmount(totalDisplay)), theme)
 	theme.ln(pdf, 2)
 

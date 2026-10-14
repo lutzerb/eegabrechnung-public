@@ -7,9 +7,15 @@ import Link from "next/link";
 import NetzbetreiberSelect from "@/components/netzbetreiber-select";
 
 const GEMEINSCHAFT_ID_RE = /^AT[A-Z0-9]{31}$/;
-const MARKTPARTNER_RC_RE = /^RC\d{6}$/;
-const MARKTPARTNER_GC_RE = /^GC\d{6}$/;
-const MARKTPARTNER_CC_RE = /^CC\d{6}$/;
+type Typ = "EEG" | "GEA" | "BEG" | "P2P" | "EVA";
+
+const TYP_INFO: Record<Typ, { prefix: string; label: string; multiNb: boolean }> = {
+  EEG: { prefix: "RC", label: "Erneuerbare-Energie-Gemeinschaft", multiNb: false },
+  GEA: { prefix: "GC", label: "Gemeinschaftliche Erzeugungsanlage", multiNb: false },
+  BEG: { prefix: "CC", label: "Bürgerenergiegemeinschaft", multiNb: true },
+  P2P: { prefix: "PP", label: "Peer-to-Peer", multiNb: true },
+  EVA: { prefix: "SC", label: "Eigenversorgungsanlage", multiNb: true },
+};
 
 function validateGemeinschaftId(v: string): string | null {
   if (!v) return null;
@@ -21,8 +27,8 @@ function validateGemeinschaftId(v: string): string | null {
 
 function validateMarktpartnerId(v: string, typ: string): string | null {
   if (!v) return null;
-  const prefix = typ === "GEA" ? "GC" : typ === "BEG" ? "CC" : "RC";
-  const re = typ === "GEA" ? MARKTPARTNER_GC_RE : typ === "BEG" ? MARKTPARTNER_CC_RE : MARKTPARTNER_RC_RE;
+  const prefix = TYP_INFO[typ as Typ]?.prefix ?? "RC";
+  const re = new RegExp(`^${prefix}\\d{6}$`);
   if (!v.startsWith(prefix)) return `Muss mit "${prefix}" beginnen (${typ}).`;
   if (v.length !== 8) return `Muss genau 8 Zeichen lang sein (aktuell: ${v.length}).`;
   if (!re.test(v)) return `Format: ${prefix} gefolgt von 6 Ziffern (z.B. ${prefix}105970).`;
@@ -35,7 +41,7 @@ export default function NewEEGPage() {
 
   const [formData, setFormData] = useState({
     name: "",
-    gemeinschaft_typ: "EEG" as "EEG" | "GEA" | "BEG",
+    gemeinschaft_typ: "EEG" as Typ,
     gemeinschaft_id: "",
     eda_marktpartner_id: "",
     netzbetreiber: "",
@@ -49,7 +55,7 @@ export default function NewEEGPage() {
   const marktpartnerIdError = validateMarktpartnerId(formData.eda_marktpartner_id, formData.gemeinschaft_typ);
   const isValid = !gemeinschaftIdError && !marktpartnerIdError;
 
-  const marktpartnerPrefix = formData.gemeinschaft_typ === "GEA" ? "GC" : formData.gemeinschaft_typ === "BEG" ? "CC" : "RC";
+  const marktpartnerPrefix = TYP_INFO[formData.gemeinschaft_typ].prefix;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,8 +153,8 @@ export default function NewEEGPage() {
               <label className="block text-sm font-medium text-slate-700 mb-1.5">
                 Art der Gemeinschaft *
               </label>
-              <div className="grid grid-cols-3 gap-3">
-                {(["EEG", "GEA", "BEG"] as const).map((typ) => (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {(Object.keys(TYP_INFO) as Typ[]).map((typ) => (
                   <label
                     key={typ}
                     className={`flex items-start gap-3 px-4 py-3 border rounded-lg cursor-pointer transition-colors ${
@@ -172,7 +178,7 @@ export default function NewEEGPage() {
                     <div>
                       <span className="block font-medium">{typ}</span>
                       <span className="block text-xs text-slate-500 mt-0.5">
-                        {typ === "EEG" ? "Erneuerbare-Energie-Gemeinschaft" : typ === "GEA" ? "Gemeinschaftliche Erzeugungsanlage" : "Bürgerenergiegemeinschaft"}
+                        {TYP_INFO[typ].label}
                       </span>
                     </div>
                   </label>
@@ -222,8 +228,8 @@ export default function NewEEGPage() {
               )}
             </div>
 
-            {/* Netzbetreiber — nicht relevant für BEG (wird pro Zählpunkt aus dem ZP-Präfix abgeleitet) */}
-            {formData.gemeinschaft_typ !== "BEG" && (
+            {/* Netzbetreiber — nicht relevant für BEG/P2P/EVA (wird pro Zählpunkt aus dem ZP-Präfix abgeleitet) */}
+            {!TYP_INFO[formData.gemeinschaft_typ].multiNb && (
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1.5">
                   Netzbetreiber *

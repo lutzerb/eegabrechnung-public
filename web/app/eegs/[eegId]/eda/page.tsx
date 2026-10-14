@@ -107,7 +107,7 @@ export default async function EDAPage({ params, searchParams }: Props) {
 
   const edaConfigured = !!(
     eeg?.eda_marktpartner_id &&
-    (eeg?.eda_netzbetreiber_id || eeg?.gemeinschaft_typ === "BEG") &&
+    (eeg?.eda_netzbetreiber_id || ["BEG", "P2P", "EVA"].includes(eeg?.gemeinschaft_typ ?? "")) &&
     eeg?.eda_imap_host && eeg?.has_eda_imap_password &&
     eeg?.eda_smtp_host && eeg?.has_eda_smtp_password
   );

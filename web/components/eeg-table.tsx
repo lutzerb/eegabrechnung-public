@@ -81,6 +81,10 @@ export default function EEGTable({ eegs }: EEGTableProps) {
                     ? "bg-purple-100 text-purple-700"
                     : eeg.gemeinschaft_typ === "BEG"
                     ? "bg-amber-100 text-amber-700"
+                    : eeg.gemeinschaft_typ === "P2P"
+                    ? "bg-sky-100 text-sky-700"
+                    : eeg.gemeinschaft_typ === "EVA"
+                    ? "bg-rose-100 text-rose-700"
                     : "bg-green-100 text-green-700"
                 }`}>
                   {eeg.gemeinschaft_typ || "EEG"}

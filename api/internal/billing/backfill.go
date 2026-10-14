@@ -23,22 +23,39 @@ import (
 // Invoices where the re-computed result does not match net_amount are skipped with a warning
 // (this may happen if EEG settings were changed after the invoice was issued).
 //
+// Werbebonus (Migration 114): a granted referral bonus is intentionally NOT folded into
+// consumption_net_amount/generation_net_amount (see the Werbebonus comment in billing.go) —
+// it only reduces net_amount/total_amount directly. So for an invoice with a reserved bonus,
+// consumption_net_amount − generation_net_amount legitimately differs from net_amount by
+// exactly the bonus amount; that is not an inconsistency to "fix". Both the consistency
+// check and the recompute target below add the bonus back before comparing against
+// net_amount, so bonus invoices are left alone once their split amounts are themselves
+// correct (bonus-free).
+//
 // This function is idempotent: once all affected invoices are fixed, the WHERE clause matches
 // nothing and the function exits immediately.
 func BackfillSplitAmounts(ctx context.Context, db *pgxpool.Pool) error {
-	// Find all prosumer invoices whose stored split amounts don't add up to net_amount.
-	// We tolerate a rounding gap of 0.001 EUR to avoid re-processing already-exact rows.
+	// Find all prosumer invoices whose stored split amounts don't add up to
+	// net_amount + any reserved Werbebonus. We tolerate a rounding gap of 0.001 EUR
+	// to avoid re-processing already-exact rows.
 	const gapThreshold = 0.001
 	q := `
 		SELECT i.id, i.eeg_id, i.member_id, i.period_start, i.period_end,
 		       i.consumption_kwh, i.generation_kwh, i.net_amount,
+		       COALESCE(b.bonus_total, 0) AS bonus_total,
 		       e.free_kwh, e.discount_pct, e.meter_fee_eur, e.participation_fee_eur,
 		       e.energy_price AS flat_energy_price, e.producer_price AS flat_producer_price
 		FROM invoices i
 		JOIN eegs e ON e.id = i.eeg_id
+		LEFT JOIN (
+		  SELECT applied_invoice_id, SUM(amount_eur) AS bonus_total
+		  FROM member_referral_bonuses
+		  WHERE applied_invoice_id IS NOT NULL
+		  GROUP BY applied_invoice_id
+		) b ON b.applied_invoice_id = i.id
 		WHERE i.consumption_kwh > 0
 		  AND i.generation_kwh  > 0
-		  AND ABS((i.consumption_net_amount - i.generation_net_amount) - i.net_amount) > $1`
+		  AND ABS((i.consumption_net_amount - i.generation_net_amount) - (i.net_amount + COALESCE(b.bonus_total, 0))) > $1`
 
 	rows, err := db.Query(ctx, q, gapThreshold)
 	if err != nil {
@@ -51,6 +68,7 @@ func BackfillSplitAmounts(ctx context.Context, db *pgxpool.Pool) error {
 		periodStart, periodEnd       time.Time
 		consumptionKwh, generationKwh float64
 		netAmount                    float64
+		bonusTotal                   float64
 		freeKwh, discountPct         float64
 		meterFeeEur, participationFeeEur float64
 		flatEnergyPrice, flatProducerPrice float64
@@ -61,7 +79,7 @@ func BackfillSplitAmounts(ctx context.Context, db *pgxpool.Pool) error {
 		var r invoiceRow
 		if err := rows.Scan(
 			&r.id, &r.eegID, &r.memberID, &r.periodStart, &r.periodEnd,
-			&r.consumptionKwh, &r.generationKwh, &r.netAmount,
+			&r.consumptionKwh, &r.generationKwh, &r.netAmount, &r.bonusTotal,
 			&r.freeKwh, &r.discountPct, &r.meterFeeEur, &r.participationFeeEur,
 			&r.flatEnergyPrice, &r.flatProducerPrice,
 		); err != nil {
@@ -80,12 +98,14 @@ func BackfillSplitAmounts(ctx context.Context, db *pgxpool.Pool) error {
 
 	fixed, skipped := 0, 0
 	for _, inv := range affected {
+		// The split amounts (bonus-free) must satisfy consumptionNet − generationNet =
+		// net_amount + bonus (net_amount already has the bonus subtracted).
 		consumptionNet, generationNet, ok := recomputeSplitAmounts(ctx, db, inv.id, inv.eegID, inv.memberID,
 			inv.periodStart, inv.periodEnd,
 			inv.consumptionKwh, inv.generationKwh,
 			inv.freeKwh, inv.discountPct, inv.meterFeeEur, inv.participationFeeEur,
 			inv.flatEnergyPrice, inv.flatProducerPrice,
-			inv.netAmount,
+			inv.netAmount+inv.bonusTotal,
 		)
 		if !ok {
 			skipped++

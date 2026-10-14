@@ -579,7 +579,7 @@ func drawRechnungsstellerBlock(pdf *fpdf.Fpdf, eeg *domain.EEG) {
 // Gutschriftbetrag summary below is read from inv's stored totals (not
 // recomputed from generationKwh×producerPriceCt) so it stays consistent with
 // that extra row.
-func GenerateCreditNotePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, producerPriceCt, generationKwh float64, generationMeterPoints []MeterPointKwh, monthlyItems []MonthlyKwh, history []MonthlyKwh, werbebonusNet float64) ([]byte, error) {
+func GenerateCreditNotePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, producerPriceCt, generationKwh float64, generationMeterPoints []MeterPointKwh, monthlyItems []MonthlyKwh, history []MonthlyKwh, werbebonusAmount float64) ([]byte, error) {
 	pdf := newPDF()
 	pdf.AddPage()
 	pdf.SetMargins(20, 20, 20)
@@ -713,16 +713,6 @@ func GenerateCreditNotePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.
 		drawMpSubRow(pdf, generationMeterPoints)
 	}
 
-	// Werbebonus — shown separately so the "Einspeisung Strom" row above stays a
-	// pure kWh × Tarif figure; the Nettobetrag/Gutschriftbetrag below folds it in
-	// via inv.GenerationNetAmount.
-	if werbebonusNet > 0 {
-		pdf.CellFormat(colDesc, rowH, "Werbebonus (Mitglied geworben)", "1", 0, "L", false, 0, "")
-		pdf.CellFormat(colKwh, rowH, "", "1", 0, "R", false, 0, "")
-		pdf.CellFormat(colPrice, rowH, "", "1", 0, "R", false, 0, "")
-		pdf.CellFormat(colAmount, rowH, formatAmount(werbebonusNet), "1", 1, "R", false, 0, "")
-	}
-
 	// ── VAT section ──────────────────────────────────────────────────────────
 	// For landwirt_pauschaliert: 13 % VAT is added on top (§ 22 UStG).
 	// For all others: VAT is 0 (Reverse Charge or exempt — text-only notice).
@@ -764,6 +754,18 @@ func GenerateCreditNotePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.
 	}
 
 	pdf.Ln(2)
+	// Werbebonus — Mitglieder-werben-Mitglieder-Prämie: applied last, after the
+	// Einspeisung VAT block above, same end-of-document placement as on a Rechnung.
+	// Unlike there, it INCREASES what the EEG pays out (the referrer is the
+	// producer receiving this Gutschrift) and carries no VAT of its own.
+	if werbebonusAmount > 0 {
+		pdf.SetFont("DejaVu", "", 10)
+		pdf.CellFormat(colDesc+colKwh+colPrice, vatH, "Werbebonus (Mitglied geworben)", "0", 0, "R", false, 0, "")
+		pdf.CellFormat(colAmount, vatH, "+"+formatAmount(werbebonusAmount), "0", 1, "R", false, 0, "")
+		pdf.Ln(1)
+		totalDisplay += werbebonusAmount
+		payDisplay += werbebonusAmount
+	}
 	pdf.SetFont("DejaVu", "B", 10)
 	pdf.CellFormat(0, 10, fmt.Sprintf("Gutschriftbetrag: %s", formatAmount(totalDisplay)), "", 1, "R", false, 0, "")
 	pdf.Ln(2)
@@ -1068,15 +1070,6 @@ func GeneratePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, va
 		pdf.CellFormat(colAmount, rowH, formatAmount(vat.ServiceFeeEinspeisungTotal), "1", 1, "R", false, 0, "")
 	}
 
-	// Werbebonus — Mitglieder-werben-Mitglieder-Prämie, already folded into
-	// ConsumptionNet above; shown as its own negative row for transparency.
-	if vat.WerbebonusTotal > 0 {
-		pdf.CellFormat(colDesc, rowH, "Werbebonus (Mitglied geworben)", "1", 0, "L", false, 0, "")
-		pdf.CellFormat(colKwh, rowH, "", "1", 0, "R", false, 0, "")
-		pdf.CellFormat(colPrice, rowH, "", "1", 0, "R", false, 0, "")
-		pdf.CellFormat(colAmount, rowH, "-"+formatAmount(vat.WerbebonusTotal), "1", 1, "R", false, 0, "")
-	}
-
 	// Zusatzzähler — manually-read submeters (e.g. Wärmepumpe), one line each.
 	for _, em := range vat.ExtraMeterLines {
 		label := fmt.Sprintf("%s (Zusatzzähler)", em.Label)
@@ -1141,6 +1134,15 @@ func GeneratePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, va
 		}
 
 		pdf.Ln(2)
+		// Werbebonus — Mitglieder-werben-Mitglieder-Prämie: a flat, VAT-free deduction
+		// applied last, after Bezug and Einspeisung (including VAT) are fully settled —
+		// not part of either block above. See billing.go's Werbebonus comment.
+		if vat.WerbebonusTotal > 0 {
+			pdf.SetFont("DejaVu", "", 10)
+			pdf.CellFormat(colDesc+colKwh+colPrice, vatH, "Werbebonus (Mitglied geworben)", "0", 0, "R", false, 0, "")
+			pdf.CellFormat(colAmount, vatH, "-"+formatAmount(vat.WerbebonusTotal), "0", 1, "R", false, 0, "")
+			pdf.Ln(1)
+		}
 		pdf.SetFont("DejaVu", "B", 10)
 		// For RC generation: EEG remits VAT to Finanzamt — only net is transferred to member.
 		saldoBetrag := inv.TotalAmount
@@ -1169,9 +1171,35 @@ func GeneratePDF(inv *domain.Invoice, eeg *domain.EEG, member *domain.Member, va
 			}
 			pdf.CellFormat(colAmount, vatH, "0,00 €", "0", 1, "R", false, 0, "")
 		}
-		pdf.Ln(2)
 		pdf.SetFont("DejaVu", "B", 10)
-		pdf.CellFormat(0, 10, fmt.Sprintf("Bruttobetrag Bezug: %s", formatAmount(inv.TotalAmount)), "", 1, "R", false, 0, "")
+		if vat.WerbebonusTotal > 0 {
+			// Werbebonus present: break Bruttobetrag Bezug out as its own row first
+			// (it no longer equals the final payable amount), then the bonus, then
+			// a distinctly-labelled closing Saldo — same pattern as the prosumer
+			// (Bezug + Einspeisung) block above.
+			pdf.CellFormat(colDesc+colKwh+colPrice, vatH, "Bruttobetrag Bezug", "0", 0, "R", false, 0, "")
+			pdf.CellFormat(colAmount, vatH, formatAmount(vat.ConsumptionGross), "0", 1, "R", false, 0, "")
+			pdf.SetFont("DejaVu", "", 10)
+			pdf.Ln(2)
+			pdf.CellFormat(colDesc+colKwh+colPrice, vatH, "Werbebonus (Mitglied geworben)", "0", 0, "R", false, 0, "")
+			pdf.CellFormat(colAmount, vatH, "-"+formatAmount(vat.WerbebonusTotal), "0", 1, "R", false, 0, "")
+			pdf.Ln(1)
+			pdf.SetFont("DejaVu", "B", 10)
+			var totalLabel string
+			if inv.TotalAmount < 0 {
+				totalLabel = fmt.Sprintf("Saldo (EEG zahlt an Sie): %s", formatAmount(-inv.TotalAmount))
+			} else {
+				totalLabel = fmt.Sprintf("Saldo (Zahlungsbetrag): %s", formatAmount(inv.TotalAmount))
+			}
+			pdf.CellFormat(0, 10, totalLabel, "", 1, "R", false, 0, "")
+		} else {
+			// No bonus: ConsumptionGross == TotalAmount, keep the single combined line.
+			label := fmt.Sprintf("Bruttobetrag Bezug: %s", formatAmount(inv.TotalAmount))
+			if inv.TotalAmount < 0 {
+				label = fmt.Sprintf("Saldo (EEG zahlt an Sie): %s", formatAmount(-inv.TotalAmount))
+			}
+			pdf.CellFormat(0, 10, label, "", 1, "R", false, 0, "")
+		}
 	}
 
 	pdf.Ln(4)

@@ -60,7 +60,7 @@ type EEG struct {
 	OrganizationID  uuid.UUID `json:"organization_id"`
 	PortalBaseURL   string    `json:"-"` // organizations.portal_base_url of the owning org — not serialized, used server-side for building links in outbound emails
 	GemeinschaftID  string    `json:"gemeinschaft_id"`
-	GemeinschaftTyp string    `json:"gemeinschaft_typ"` // EEG, GEA or BEG
+	GemeinschaftTyp string    `json:"gemeinschaft_typ"` // EEG, GEA, BEG, P2P or EVA
 	Netzbetreiber   string    `json:"netzbetreiber"`
 	Name            string    `json:"name"`
 	// Optional alias shown everywhere except legally binding documents (invoice
@@ -873,4 +873,50 @@ type EmailLogEntry struct {
 	MemberID  *uuid.UUID `json:"member_id,omitempty"`
 	InvoiceID *uuid.UUID `json:"invoice_id,omitempty"`
 	CreatedAt time.Time  `json:"created_at"`
+}
+
+// Gemeinschaftstypen. The Marktpartner-ID prefix of the EDA participant
+// depends on the type (see MarktpartnerPrefix).
+const (
+	GemeinschaftEEG = "EEG" // Erneuerbare-Energie-Gemeinschaft (§79 EAG), RC
+	GemeinschaftGEA = "GEA" // Gemeinschaftliche Erzeugungsanlage (§16c ElWOG), GC
+	GemeinschaftBEG = "BEG" // Bürgerenergiegemeinschaft (§16a ElWOG), CC
+	GemeinschaftP2P = "P2P" // Peer-to-Peer (ElWG-Novelle 2026), Präfix PP
+	GemeinschaftEVA = "EVA" // Eigenversorgungsanlage (ElWG-Novelle 2026), Präfix SC
+)
+
+// MarktpartnerPrefix returns the two-letter Marktpartner-ID prefix for a
+// Gemeinschaftstyp and whether the type is known.
+func MarktpartnerPrefix(typ string) (string, bool) {
+	switch typ {
+	case GemeinschaftEEG:
+		return "RC", true
+	case GemeinschaftGEA:
+		return "GC", true
+	case GemeinschaftBEG:
+		return "CC", true
+	case GemeinschaftP2P:
+		return "PP", true
+	case GemeinschaftEVA:
+		return "SC", true
+	}
+	return "", false
+}
+
+// ValidGemeinschaftTyp reports whether typ is a known Gemeinschaftstyp.
+func ValidGemeinschaftTyp(typ string) bool {
+	_, ok := MarktpartnerPrefix(typ)
+	return ok
+}
+
+// AllowsMultiNetzbetreiber reports whether a community of this type may span
+// several Netzbetreiber: no single eda_netzbetreiber_id is required and the
+// target NB is derived per Zählpunkt (BEG; P2P/EVA from 2026-10 — initially only
+// within one NB, multi-NB expected ~April 2027).
+func AllowsMultiNetzbetreiber(typ string) bool {
+	switch typ {
+	case GemeinschaftBEG, GemeinschaftP2P, GemeinschaftEVA:
+		return true
+	}
+	return false
 }
