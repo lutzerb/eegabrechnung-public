@@ -17,8 +17,9 @@ Genau aus dieser Motivation ist `eegabrechnung` entstanden: ein Werkzeug, das f�
 
 ## Für wen das gedacht ist
 
-- kleine bis mittlere Energiegemeinschaften in Österreich
+- Energiegemeinschaften in Österreich jeder Größe: vom kleinen Verein bis zur großen Gemeinschaft mit vielen Mitgliedern und Zählpunkten (auch im Betrieb mit größeren Gemeinschaften erprobt)
 - Vereine, Hausgemeinschaften und Initiativen mit wenig interner IT-Kapazität
+- Gemeinschaften, die von einem anderen System oder von Excel-Listen umsteigen wollen (siehe [Umstieg von einem anderen System](#umstieg-von-einem-anderen-system))
 - Dienstleister, die EEGs technisch oder operativ betreuen
 - Betreiber, die ein selbst hostbares System mit nachvollziehbarem Datenmodell wollen
 
@@ -46,6 +47,18 @@ Genau aus dieser Motivation ist `eegabrechnung` entstanden: ein Werkzeug, das f�
 - Gemeinschaftstypen EEG, GEA, Bürgerenergiegemeinschaft (BEG) sowie neu (Gerüst, siehe [Grenzen](#grenzen-und-ehrliche-hinweise)) Peer-to-Peer (P2P) und Eigenversorgungsanlage (EVA); bei BEG, P2P und EVA mit mehreren Netzbetreibern und zählpunktweisem EDA-Routing
 - mehrere Organisationen/Kunden mit eigener Domain in einer Instanz (White-Label, strikt mandantengetrennt)
 - Backup und selektive Wiederherstellung einer EEG (JSON-Snapshot, wählbare Bereiche)
+
+## Umstieg von einem anderen System
+
+Ein laufender Betrieb muss nicht bei null anfangen. Mit den vorhandenen Import- und Abgleichwerkzeugen lässt sich eine bestehende Energiegemeinschaft in der Regel ohne Neuerfassung per Hand übernehmen:
+
+1. **Stammdaten**: Mitglieder und Zählpunkte per XLSX-Vorlage in einem Schritt anlegen (Massenanlage, inkl. Beitritts-/Austrittsdaten, IBAN und Zählpunkt-Adresse).
+2. **Energiedaten**: Messwerte aus EDA-Portal-Exporten per XLSX importieren, mit Vorschau, Konflikterkennung und Qualitätsfilter (auch Exporte einer BEG mit mehreren Netzbetreibern). Wer bereits mit der Gemeinschafts-ID und Zustimmungen arbeitet, kann zusätzlich beim Netzbetreiber nachfordern: historische Daten für alle aktiven Registrierungsperioden, oder gezielt nur die Zeiträume, in denen Messwerte fehlen.
+3. **Zählpunktdaten abgleichen**: Die Zählpunktliste des Netzbetreibers (`EC_PODLIST`) wird gegen die gespeicherten Daten verglichen (Teilnahmefaktor, Energierichtung, Consent-ID, Anlagentyp, Registrierung). Abweichungen werden als Änderungsvorschläge angezeigt und erst nach Freigabe übernommen. So lassen sich auch fehlende `ConsentId`s für spätere Widerrufe nachziehen, ohne bestehende Zustimmungen neu einzuholen.
+4. **Tarife und Rechnungen**: Tarifpläne, Rechnungsnummern-Startwert und Kundenkonto-Startnummern lassen sich so setzen, dass die bisherige Nummerierung nahtlos weiterläuft.
+5. **Sicherheitsnetz**: Datenabdeckung und Lückenerkennung zeigen, ob nach dem Import alles vollständig ist; ein JSON-Backup mit selektiver Wiederherstellung erlaubt, einzelne Bereiche gefahrlos zu wiederholen.
+
+Hinweis: Wie der Wechsel der EDA-Anbindung (Marktpartner-ID, Postfach, bestehende Zustimmungen beim Netzbetreiber) ablaufen muss, hängt vom bisherigen Betreiber und vom Netzbetreiber ab und ist vorab mit beiden zu klären. Die Werkzeuge oben erleichtern die Datenübernahme, ersetzen diese Abstimmung aber nicht.
 
 ## Screenshots
 
